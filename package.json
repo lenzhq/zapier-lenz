@@ -1,11 +1,17 @@
 {
   "name": "zapier-lenz",
   "version": "1.0.0",
-  "description": "",
+  "description": "Fact-check claims and catch AI hallucinations with Lenz - verified, sourced verdicts inside your Zaps.",
+  "homepage": "https://lenz.io",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lenzhq/zapier-lenz.git"
+  },
   "scripts": {
     "test": "jest --testTimeout 10000"
   },
   "dependencies": {
+    "lenz-io": "^2.3.0",
     "zapier-platform-core": "19.0.0"
   },
   "devDependencies": {

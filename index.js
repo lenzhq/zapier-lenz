@@ -1,5 +1,10 @@
 const authentication = require('./authentication');
-const { befores = [], afters = [] } = require('./middleware');
+
+const newVerification = require('./triggers/new_verification');
+const verifyClaim = require('./creates/verify_claim');
+const assess = require('./creates/assess');
+const extractClaims = require('./creates/extract_claims');
+const ask = require('./creates/ask');
 
 module.exports = {
   // This is just shorthand to reference the installed dependencies you have.
@@ -9,18 +14,23 @@ module.exports = {
 
   authentication,
 
-  beforeRequest: [...befores],
+  // All Lenz calls go through the lenz-io SDK, which manages its own
+  // Authorization header — no z.request-based before/after middleware needed.
+  beforeRequest: [],
+  afterResponse: [],
 
-  afterResponse: [...afters],
+  triggers: {
+    [newVerification.key]: newVerification,
+  },
 
-  // If you want your trigger to show up, you better include it here!
-  triggers: {},
-
-  // If you want your searches to show up, you better include it here!
   searches: {},
 
-  // If you want your creates to show up, you better include it here!
-  creates: {},
+  creates: {
+    [verifyClaim.key]: verifyClaim,
+    [assess.key]: assess,
+    [extractClaims.key]: extractClaims,
+    [ask.key]: ask,
+  },
 
   resources: {},
 };
