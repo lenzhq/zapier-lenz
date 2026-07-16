@@ -22,7 +22,8 @@ module.exports = {
       type: 'password',
       required: true,
       helpText:
-        'Your Lenz API key (starts with `lenz_`). Get one at [lenz.io/api-integration](https://lenz.io/api-integration).',
+        'Your Lenz API key (starts with `lenz_`). Get one at [lenz.io/api-integration](https://lenz.io/api-integration).' +
+        ' If you plan to use "Verify a Claim," also generate a webhook secret there first (one-time, in your API key settings) — otherwise that action will fail on its first run.',
     },
   ],
 
