@@ -1,6 +1,6 @@
 'use strict';
 
-const { Lenz } = require('lenz-io');
+const { Lenz, LenzError } = require('lenz-io');
 
 function isPassingVerdict(verdict) {
   return verdict === 'True' || verdict === 'Mostly True';
@@ -23,7 +23,21 @@ const perform = (z, bundle) => {
     .then((accepted) => ({
       task_id: accepted.task_id,
       status: 'processing',
-    }));
+    }))
+    .catch((err) => {
+      // Lenz rejects webhook_url on a key with no signing secret yet, tagged
+      // with this machine-readable code (public_authed.py) — turn it into a
+      // precise, actionable message instead of the raw API error text.
+      if (err instanceof LenzError && err.body && err.body.code === 'webhook_secret_missing') {
+        throw new z.errors.Error(
+          'This API key doesn\'t have a webhook secret yet. Go to lenz.io → API key ' +
+            'settings → "Generate webhook secret" (Webhooks panel) once, then try this step again.',
+          'WebhookSecretMissing',
+          422,
+        );
+      }
+      throw err;
+    });
 };
 
 // Lenz's webhook POST is only the wake-up signal here — the terminal result

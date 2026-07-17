@@ -7,7 +7,7 @@ jest.mock('lenz-io', () => {
   return { ...actual, Lenz: jest.fn() };
 });
 
-const { Lenz: LenzClient } = require('lenz-io');
+const { Lenz: LenzClient, LenzValidationError } = require('lenz-io');
 const App = require('../index');
 
 const appTester = zapier.createAppTester(App);
@@ -45,6 +45,35 @@ describe('creates.verify_claim', () => {
         webhookUrl: 'https://auth-json-server.zapier-staging.com/echo',
       }),
     );
+  });
+
+  it('perform surfaces a clear, actionable message when the key has no webhook secret yet', async () => {
+    const apiError = new LenzValidationError({
+      message: 'webhook_url was supplied but this API key has no HMAC secret. Generate one at https://lenz.io/api-integration.',
+      statusCode: 422,
+      body: { detail: 'webhook_url was supplied but this API key has no HMAC secret.', code: 'webhook_secret_missing' },
+    });
+    const client = mockClient({ verify: jest.fn().mockRejectedValue(apiError) });
+    LenzClient.mockImplementation(() => client);
+
+    const bundle = {
+      authData: { apiKey: 'lenz_good' },
+      inputData: { claim: 'The Eiffel Tower is 330 metres tall.' },
+    };
+
+    await expect(appTester(App.creates.verify_claim.operation.perform, bundle)).rejects.toThrow(
+      /generate webhook secret/i,
+    );
+  });
+
+  it('perform re-throws any other error unchanged', async () => {
+    const apiError = new LenzValidationError({ message: 'Text is required.', statusCode: 422, body: { detail: 'Text is required.' } });
+    const client = mockClient({ verify: jest.fn().mockRejectedValue(apiError) });
+    LenzClient.mockImplementation(() => client);
+
+    const bundle = { authData: { apiKey: 'lenz_good' }, inputData: { claim: '' } };
+
+    await expect(appTester(App.creates.verify_claim.operation.perform, bundle)).rejects.toThrow('Text is required.');
   });
 
   it('performResume fetches the terminal status and shapes a completed verdict', async () => {
