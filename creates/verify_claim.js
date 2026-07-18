@@ -6,10 +6,34 @@ function isPassingVerdict(verdict) {
   return verdict === 'True' || verdict === 'Mostly True';
 }
 
+const SAMPLE = {
+  task_id: '2f8b2e2b6a4a4e6c9e8f9a6c3f4b2a1c',
+  status: 'completed',
+  passed: true,
+  verification_id: 'ab12cd34',
+  claim: 'The Eiffel Tower is 330 metres tall.',
+  verdict: 'True',
+  confidence: 'high',
+  lenz_score: 9,
+  executive_summary: 'Confirmed by multiple official sources.',
+  sources: [{ title: 'Official Eiffel Tower site', url: 'https://www.toureiffel.paris' }],
+};
+
 // Kicks off the full pipeline and hands Lenz a Zapier-managed callback URL as
 // the per-call webhook_url. Zapier parks the Task as "waiting" until Lenz
 // posts back to that URL (see performResume) or ~90s median passes.
 const perform = (z, bundle) => {
+  // A callback-based action can never actually resolve while someone is just
+  // testing in the Zap editor — Zapier doesn't wait for the callback there,
+  // so without this, this step's test output would forever be stuck at
+  // {status: 'processing'} with no verification_id, which permanently blocks
+  // testing any downstream step (e.g. Ask Follow-Up) that needs to map
+  // against it. Short-circuit with realistic placeholder data instead; real
+  // live runs (isLoadingSample is false/undefined then) are unaffected.
+  if (bundle.meta && bundle.meta.isLoadingSample) {
+    return Promise.resolve({ ...SAMPLE, claim: bundle.inputData.claim || SAMPLE.claim });
+  }
+
   const client = new Lenz({ apiKey: bundle.authData.apiKey });
   const callbackUrl = z.generateCallbackUrl();
 
@@ -116,18 +140,7 @@ module.exports = {
     ],
     perform,
     performResume,
-    sample: {
-      task_id: '2f8b2e2b6a4a4e6c9e8f9a6c3f4b2a1c',
-      status: 'completed',
-      passed: true,
-      verification_id: 'ab12cd34',
-      claim: 'The Eiffel Tower is 330 metres tall.',
-      verdict: 'True',
-      confidence: 'high',
-      lenz_score: 9,
-      executive_summary: 'Confirmed by multiple official sources.',
-      sources: [{ title: 'Official Eiffel Tower site', url: 'https://www.toureiffel.paris' }],
-    },
+    sample: SAMPLE,
     outputFields: [
       { key: 'task_id', label: 'Task ID' },
       { key: 'status', label: 'Status' },

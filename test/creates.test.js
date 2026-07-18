@@ -47,6 +47,21 @@ describe('creates.verify_claim', () => {
     );
   });
 
+  it('perform short-circuits with sample data while loading a sample in the editor, skipping the real API call', async () => {
+    const client = mockClient({ verify: jest.fn() });
+    LenzClient.mockImplementation(() => client);
+
+    const bundle = {
+      authData: { apiKey: 'lenz_good' },
+      inputData: { claim: 'A different claim.' },
+      meta: { isLoadingSample: true },
+    };
+    const result = await appTester(App.creates.verify_claim.operation.perform, bundle);
+
+    expect(result).toMatchObject({ status: 'completed', verification_id: 'ab12cd34', claim: 'A different claim.' });
+    expect(client.verify).not.toHaveBeenCalled();
+  });
+
   it('perform surfaces a clear, actionable message when the key has no webhook secret yet', async () => {
     const apiError = new LenzValidationError({
       message: 'webhook_url was supplied but this API key has no HMAC secret. Generate one at https://lenz.io/api-integration.',
