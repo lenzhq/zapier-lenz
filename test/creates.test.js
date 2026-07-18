@@ -182,6 +182,17 @@ describe('creates.assess', () => {
 
     expect(result).toMatchObject({ status: 'no_claim', message: 'No claim found.' });
   });
+
+  it('short-circuits with sample data while loading a sample, skipping the real call', async () => {
+    const client = mockClient({ assess: jest.fn() });
+    LenzClient.mockImplementation(() => client);
+
+    const bundle = { authData: { apiKey: 'lenz_good' }, inputData: { text: 'A' }, meta: { isLoadingSample: true } };
+    const result = await appTester(App.creates.assess.operation.perform, bundle);
+
+    expect(result.status).toBe('ok');
+    expect(client.assess).not.toHaveBeenCalled();
+  });
 });
 
 describe('creates.extract_claims', () => {
@@ -195,6 +206,18 @@ describe('creates.extract_claims', () => {
     const result = await appTester(App.creates.extract_claims.operation.perform, bundle);
 
     expect(result).toMatchObject({ status: 'ok', claim: 'A' });
+  });
+
+  it('short-circuits with sample data while loading a sample, skipping the real call', async () => {
+    const client = mockClient({ extract: jest.fn() });
+    LenzClient.mockImplementation(() => client);
+
+    const bundle = { authData: { apiKey: 'lenz_good' }, inputData: { text: 'A' }, meta: { isLoadingSample: true } };
+    const result = await appTester(App.creates.extract_claims.operation.perform, bundle);
+
+    expect(result.status).toBe('ok');
+    expect(Array.isArray(result.identified_claims)).toBe(true);
+    expect(client.extract).not.toHaveBeenCalled();
   });
 });
 
@@ -213,5 +236,20 @@ describe('creates.ask', () => {
 
     expect(result).toEqual({ answer: 'Because sources say so.' });
     expect(client.ask.send).toHaveBeenCalledWith('ab12cd34', expect.objectContaining({ message: 'Why?' }));
+  });
+
+  it('short-circuits with sample data while loading a sample, skipping the real call', async () => {
+    const client = mockClient({ ask: { send: jest.fn() } });
+    LenzClient.mockImplementation(() => client);
+
+    const bundle = {
+      authData: { apiKey: 'lenz_good' },
+      inputData: { verificationId: 'ab12cd34', question: 'Why?' },
+      meta: { isLoadingSample: true },
+    };
+    const result = await appTester(App.creates.ask.operation.perform, bundle);
+
+    expect(result.answer).toBeTruthy();
+    expect(client.ask.send).not.toHaveBeenCalled();
   });
 });

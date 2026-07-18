@@ -6,9 +6,28 @@ function isPassingVerdict(verdict) {
   return verdict === 'True' || verdict === 'Mostly True';
 }
 
+const SAMPLE = {
+  status: 'ok',
+  claims: [
+    {
+      claim: 'The Eiffel Tower is 330 metres tall.',
+      verdict: 'True',
+      confidence: 'high',
+      passed: true,
+      verification_url: 'https://lenz.io/c/eiffel-tower-height-ab12cd34',
+    },
+  ],
+};
+
 // Fast 3-model panel verdict (~5-10s) — one entry per claim found in the
 // text. Well under Zapier's 30s action timeout, so this is a plain sync call.
 const perform = async (z, bundle) => {
+  // Skip the real (paid, quota-metered) call while someone's just testing in
+  // the editor — same reasoning as Verify a Claim and Ask Follow-Up.
+  if (bundle.meta && bundle.meta.isLoadingSample) {
+    return Promise.resolve(SAMPLE);
+  }
+
   const client = new Lenz({ apiKey: bundle.authData.apiKey });
   const result = await client.assess({
     text: bundle.inputData.text,
@@ -62,18 +81,7 @@ module.exports = {
       },
     ],
     perform,
-    sample: {
-      status: 'ok',
-      claims: [
-        {
-          claim: 'The Eiffel Tower is 330 metres tall.',
-          verdict: 'True',
-          confidence: 'high',
-          passed: true,
-          verification_url: 'https://lenz.io/c/eiffel-tower-height-ab12cd34',
-        },
-      ],
-    },
+    sample: SAMPLE,
     outputFields: [
       { key: 'status', label: 'Status' },
       { key: 'message', label: 'Message' },
