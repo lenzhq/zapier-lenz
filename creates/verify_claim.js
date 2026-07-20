@@ -23,20 +23,16 @@ const SAMPLE = {
 // the per-call webhook_url. Zapier parks the Task as "waiting" until Lenz
 // posts back to that URL (see performResume) or ~90s median passes.
 const perform = (z, bundle) => {
-  // A callback-based action can never actually resolve while someone is just
-  // testing in the Zap editor — Zapier doesn't wait for the callback there,
-  // so without this, this step's test output would forever be stuck at
-  // {status: 'processing'} with no verification_id, which permanently blocks
-  // testing any downstream step (e.g. Ask Follow-Up) that needs to map
-  // against it. Short-circuit with realistic placeholder data instead; real
-  // live runs (isLoadingSample is false/undefined then) are unaffected.
-  if (bundle.meta && bundle.meta.isLoadingSample) {
-    return Promise.resolve({ ...SAMPLE, claim: bundle.inputData.claim || SAMPLE.claim });
-  }
-
   const client = new Lenz({ apiKey: bundle.authData.apiKey });
   const callbackUrl = z.generateCallbackUrl();
 
+  // The real submission always runs — in a live run AND while someone's
+  // testing in the editor. That's deliberate: the webhook-secret-missing
+  // check (see .catch below) happens synchronously at submission time, not
+  // during the ~90s wait, so it must never be skipped — a key that's really
+  // missing its secret needs to fail the moment you test this step, not only
+  // after you've published and it's too late to notice cheaply. Only the
+  // (structurally un-testable) wait for the real verdict gets faked below.
   return client
     .verify({
       claim: bundle.inputData.claim,
@@ -44,10 +40,18 @@ const perform = (z, bundle) => {
       language: bundle.inputData.language || undefined,
       webhookUrl: callbackUrl,
     })
-    .then((accepted) => ({
-      task_id: accepted.task_id,
-      status: 'processing',
-    }))
+    .then((accepted) => {
+      // Zapier's editor never waits for the real callback when testing, so
+      // performResume (and the real verdict) would never arrive here no
+      // matter how long the test step ran. Hand back realistic placeholder
+      // verdict data instead, merged with the REAL task_id from the REAL
+      // submission above, so a downstream step (e.g. Ask Follow-Up) has
+      // something to map against during testing too.
+      if (bundle.meta && bundle.meta.isLoadingSample) {
+        return { ...SAMPLE, task_id: accepted.task_id, claim: bundle.inputData.claim || SAMPLE.claim };
+      }
+      return { task_id: accepted.task_id, status: 'processing' };
+    })
     .catch((err) => {
       // Lenz rejects webhook_url on a key with no signing secret yet, tagged
       // with this machine-readable code (public_authed.py) — turn it into a

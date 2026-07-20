@@ -9,16 +9,17 @@ const SAMPLE = {
 // Asks a question grounded in the full research behind a completed
 // Verify a Claim result. Requires the verification_id that create returns —
 // not usable standalone.
+//
+// Deliberately always makes the real call, in both test and live runs — an
+// earlier version skipped it during editor testing to save a quota-metered
+// call, but that also hid real errors (bad auth, no quota, invalid input)
+// behind a fake "success". Testing this step chained right after Verify a
+// Claim's test output will genuinely 404 ("Verification not found"), since
+// that placeholder ID doesn't exist for real — that's an honest signal, not
+// a bug: a real verification_id only exists after Verify a Claim's actual
+// ~90s pipeline finishes, which the editor can't wait through either way.
+// Testing with a real, already-completed verification_id works correctly.
 const perform = async (z, bundle) => {
-  // The verificationId here is very likely Verify a Claim's own placeholder
-  // sample ID (since that step also short-circuits during editor testing),
-  // which doesn't exist in Lenz's real system — calling the real API with it
-  // would 404 ("Verification not found") every time someone tests this step
-  // right after Verify a Claim. Skip the real call during sample loading.
-  if (bundle.meta && bundle.meta.isLoadingSample) {
-    return Promise.resolve(SAMPLE);
-  }
-
   const client = new Lenz({ apiKey: bundle.authData.apiKey });
   const reply = await client.ask.send(bundle.inputData.verificationId, {
     message: bundle.inputData.question,

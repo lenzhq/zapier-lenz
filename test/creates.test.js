@@ -47,8 +47,8 @@ describe('creates.verify_claim', () => {
     );
   });
 
-  it('perform short-circuits with sample data while loading a sample in the editor, skipping the real API call', async () => {
-    const client = mockClient({ verify: jest.fn() });
+  it('perform still makes the real submission while loading a sample, so a missing webhook secret still surfaces during testing', async () => {
+    const client = mockClient({ verify: jest.fn().mockResolvedValue({ task_id: 'task_123' }) });
     LenzClient.mockImplementation(() => client);
 
     const bundle = {
@@ -58,8 +58,35 @@ describe('creates.verify_claim', () => {
     };
     const result = await appTester(App.creates.verify_claim.operation.perform, bundle);
 
-    expect(result).toMatchObject({ status: 'completed', verification_id: 'ab12cd34', claim: 'A different claim.' });
-    expect(client.verify).not.toHaveBeenCalled();
+    // Real task_id from the real submission, merged with placeholder verdict
+    // data (since the ~90s wait for the real verdict can't happen in a test).
+    expect(result).toMatchObject({
+      task_id: 'task_123',
+      status: 'completed',
+      verification_id: 'ab12cd34',
+      claim: 'A different claim.',
+    });
+    expect(client.verify).toHaveBeenCalled();
+  });
+
+  it('perform surfaces the webhook-secret-missing error even while loading a sample (not just in a live run)', async () => {
+    const apiError = new LenzValidationError({
+      message: 'webhook_url was supplied but this API key has no HMAC secret.',
+      statusCode: 422,
+      body: { detail: 'webhook_url was supplied but this API key has no HMAC secret.', code: 'webhook_secret_missing' },
+    });
+    const client = mockClient({ verify: jest.fn().mockRejectedValue(apiError) });
+    LenzClient.mockImplementation(() => client);
+
+    const bundle = {
+      authData: { apiKey: 'lenz_good' },
+      inputData: { claim: 'The Eiffel Tower is 330 metres tall.' },
+      meta: { isLoadingSample: true },
+    };
+
+    await expect(appTester(App.creates.verify_claim.operation.perform, bundle)).rejects.toThrow(
+      /generate webhook secret/i,
+    );
   });
 
   it('perform surfaces a clear, actionable message when the key has no webhook secret yet', async () => {
@@ -183,15 +210,17 @@ describe('creates.assess', () => {
     expect(result).toMatchObject({ status: 'no_claim', message: 'No claim found.' });
   });
 
-  it('short-circuits with sample data while loading a sample, skipping the real call', async () => {
-    const client = mockClient({ assess: jest.fn() });
+  it('still makes the real call while loading a sample — no async-wait problem to justify faking it', async () => {
+    const client = mockClient({
+      assess: jest.fn().mockResolvedValue({ claims: [{ claim: 'A', verdict: 'True', confidence: 'high' }] }),
+    });
     LenzClient.mockImplementation(() => client);
 
     const bundle = { authData: { apiKey: 'lenz_good' }, inputData: { text: 'A' }, meta: { isLoadingSample: true } };
     const result = await appTester(App.creates.assess.operation.perform, bundle);
 
     expect(result.status).toBe('ok');
-    expect(client.assess).not.toHaveBeenCalled();
+    expect(client.assess).toHaveBeenCalled();
   });
 });
 
@@ -208,8 +237,10 @@ describe('creates.extract_claims', () => {
     expect(result).toMatchObject({ status: 'ok', claim: 'A' });
   });
 
-  it('short-circuits with sample data while loading a sample, skipping the real call', async () => {
-    const client = mockClient({ extract: jest.fn() });
+  it('still makes the real call while loading a sample — it is free and has no async-wait problem', async () => {
+    const client = mockClient({
+      extract: jest.fn().mockResolvedValue({ status: 'ok', claim: 'A', identified_claims: ['A'] }),
+    });
     LenzClient.mockImplementation(() => client);
 
     const bundle = { authData: { apiKey: 'lenz_good' }, inputData: { text: 'A' }, meta: { isLoadingSample: true } };
@@ -217,7 +248,7 @@ describe('creates.extract_claims', () => {
 
     expect(result.status).toBe('ok');
     expect(Array.isArray(result.identified_claims)).toBe(true);
-    expect(client.extract).not.toHaveBeenCalled();
+    expect(client.extract).toHaveBeenCalled();
   });
 });
 
@@ -238,8 +269,10 @@ describe('creates.ask', () => {
     expect(client.ask.send).toHaveBeenCalledWith('ab12cd34', expect.objectContaining({ message: 'Why?' }));
   });
 
-  it('short-circuits with sample data while loading a sample, skipping the real call', async () => {
-    const client = mockClient({ ask: { send: jest.fn() } });
+  it('still makes the real call while loading a sample, so a bad ID or auth error surfaces during testing too', async () => {
+    const client = mockClient({
+      ask: { send: jest.fn().mockResolvedValue({ role: 'expert', content: 'Because sources say so.' }) },
+    });
     LenzClient.mockImplementation(() => client);
 
     const bundle = {
@@ -250,6 +283,6 @@ describe('creates.ask', () => {
     const result = await appTester(App.creates.ask.operation.perform, bundle);
 
     expect(result.answer).toBeTruthy();
-    expect(client.ask.send).not.toHaveBeenCalled();
+    expect(client.ask.send).toHaveBeenCalled();
   });
 });

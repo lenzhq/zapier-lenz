@@ -21,13 +21,13 @@ const SAMPLE = {
 
 // Fast 3-model panel verdict (~5-10s) — one entry per claim found in the
 // text. Well under Zapier's 30s action timeout, so this is a plain sync call.
+//
+// Deliberately always makes the real call, including while testing in the
+// editor — a prior version skipped it to save a quota-metered call, but that
+// also hid real errors (bad auth, no quota) behind a fake "success". There's
+// no async-wait problem here to justify faking it (unlike Verify a Claim),
+// so there's no good reason to trade away real error-catching for it.
 const perform = async (z, bundle) => {
-  // Skip the real (paid, quota-metered) call while someone's just testing in
-  // the editor — same reasoning as Verify a Claim and Ask Follow-Up.
-  if (bundle.meta && bundle.meta.isLoadingSample) {
-    return Promise.resolve(SAMPLE);
-  }
-
   const client = new Lenz({ apiKey: bundle.authData.apiKey });
   const result = await client.assess({
     text: bundle.inputData.text,

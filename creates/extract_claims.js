@@ -16,14 +16,12 @@ const SAMPLE = {
 // Free — pulls the verifiable factual claims out of a block of text without
 // checking them. Useful as a first step before running Assess or Verify on
 // each claim individually.
+//
+// Always makes the real call, including while testing — it's free (no quota
+// cost) and fully synchronous, so there's no async-wait problem to justify
+// faking it, and a real call catches real errors (bad auth, malformed input)
+// that fake data would otherwise hide during testing.
 const perform = (z, bundle) => {
-  // Same reasoning as the other creates — skip the real call while someone's
-  // just testing in the editor, so e.g. a downstream Looping step always has
-  // a real (if fake) identified_claims array to map against.
-  if (bundle.meta && bundle.meta.isLoadingSample) {
-    return Promise.resolve(SAMPLE);
-  }
-
   const client = new Lenz({ apiKey: bundle.authData.apiKey });
   return client.extract({
     text: bundle.inputData.text,
