@@ -12,28 +12,20 @@ const SAMPLE = {
     'Sample answer shown while testing in the Zap editor — a live, turned-on Zap returns the real answer, grounded in the verification’s sources.',
 };
 
-// Verify a Claim's own sample data (creates/verify_claim.js) is the only
-// source of this placeholder ID — importing it (rather than duplicating the
-// literal) guarantees this never silently drifts out of sync with it.
-const { verification_id: PLACEHOLDER_VERIFICATION_ID } = require('./verify_claim').operation.sample;
-
 // Asks a question grounded in the full research behind a completed
 // Verify a Claim result. Requires the verification_id that create returns —
 // not usable standalone.
 //
-// Always makes the real call — including in the editor — UNLESS the
-// verificationId is specifically Verify a Claim's own known placeholder ID,
-// which can never be real (it only ever comes from that step's test-mode
-// output, never from a live run). Calling the real API with that exact,
-// known-fake value would never teach us anything — it would just 404 every
-// time, purely because the two steps were chained during editor testing,
-// not because of a real problem. Any other value (a real ID typed in, or a
-// wrong one) still makes the real call and still surfaces real errors —
-// this is a narrow, targeted exception, not a return to broadly hiding
-// errors behind bundle.meta.isLoadingSample.
+// Editor testing (isLoadingSample) returns stubbed sample data and makes NO
+// real call, so a user never spends an ask exchange just for clicking "Test
+// step." This also cleanly handles the chained case (Ask Follow-Up right
+// after Verify a Claim), where the only verification_id available in the
+// editor is Verify a Claim's canned placeholder — which isn't real and would
+// only ever 404. Auth is validated at connect time; the real answer comes
+// back on any live run.
 const perform = async (z, bundle) => {
-  if (bundle.meta && bundle.meta.isLoadingSample && bundle.inputData.verificationId === PLACEHOLDER_VERIFICATION_ID) {
-    return Promise.resolve(SAMPLE);
+  if (bundle.meta && bundle.meta.isLoadingSample) {
+    return SAMPLE;
   }
 
   const client = new Lenz({ apiKey: bundle.authData.apiKey });

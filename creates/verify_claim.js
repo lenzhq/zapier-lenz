@@ -29,16 +29,23 @@ const SAMPLE = {
 // the per-call webhook_url. Zapier parks the Task as "waiting" until Lenz
 // posts back to that URL (see performResume) or ~90s median passes.
 const perform = (z, bundle) => {
+  // Editor testing (isLoadingSample) returns stubbed sample data and makes NO
+  // real API call. This is Zapier's own recommended handling for a callback
+  // action (the ~90s pipeline can't be waited on in the editor anyway), and
+  // it means a user never spends a verify credit — nor triggers a full,
+  // discarded pipeline run — just for clicking "Test step" while building
+  // their Zap. Auth is already validated at connection time (GET /me/usage).
+  // The one thing this can't catch at test time is a key with no webhook
+  // secret yet; that's communicated up front (connection help text + the
+  // action description) and still surfaces with a clear message on the first
+  // live run (see the .catch below, which only runs live).
+  if (bundle.meta && bundle.meta.isLoadingSample) {
+    return Promise.resolve({ ...SAMPLE });
+  }
+
   const client = new Lenz({ apiKey: bundle.authData.apiKey });
   const callbackUrl = z.generateCallbackUrl();
 
-  // The real submission always runs — in a live run AND while someone's
-  // testing in the editor. That's deliberate: the webhook-secret-missing
-  // check (see .catch below) happens synchronously at submission time, not
-  // during the ~90s wait, so it must never be skipped — a key that's really
-  // missing its secret needs to fail the moment you test this step, not only
-  // after you've published and it's too late to notice cheaply. Only the
-  // (structurally un-testable) wait for the real verdict gets faked below.
   return client
     .verify({
       claim: bundle.inputData.claim,
@@ -46,22 +53,7 @@ const perform = (z, bundle) => {
       language: bundle.inputData.language || undefined,
       webhookUrl: callbackUrl,
     })
-    .then((accepted) => {
-      // Zapier's editor never waits for the real callback when testing, so
-      // performResume (and the real verdict) would never arrive here no
-      // matter how long the test step ran. Hand back the FULLY canned sample
-      // instead — self-consistent Eiffel-Tower example data, obvious dummy
-      // values (Zapier's own sample-data convention). We deliberately do NOT
-      // splice in bundle.inputData.claim: doing so produced an incoherent
-      // record (the user's real claim glued to a hardcoded Eiffel verdict +
-      // Eiffel follow-up answer), which reads as a broken mismatch in a
-      // chained test — most visibly in a final "send email" step. Only
-      // task_id stays real, so the webhook-secret check above still runs.
-      if (bundle.meta && bundle.meta.isLoadingSample) {
-        return { ...SAMPLE, task_id: accepted.task_id };
-      }
-      return { task_id: accepted.task_id, status: 'processing' };
-    })
+    .then((accepted) => ({ task_id: accepted.task_id, status: 'processing' }))
     .catch((err) => {
       // Lenz rejects webhook_url on a key with no signing secret yet, tagged
       // with this machine-readable code (public_authed.py) — turn it into a
