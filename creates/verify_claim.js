@@ -15,7 +15,13 @@ const SAMPLE = {
   verdict: 'True',
   confidence: 'high',
   lenz_score: 9,
-  executive_summary: 'Confirmed by multiple official sources.',
+  // The prose "response" fields (executive_summary here, answer in ask.js)
+  // carry an explicit sample label so a chained editor test — most visibly a
+  // final "send email" step — can never be mistaken for a real, mismatched
+  // result. Live runs never use SAMPLE (performResume builds from the real
+  // status.result), so the label only ever shows during editor testing.
+  executive_summary:
+    'Sample summary shown while testing in the Zap editor — a live, turned-on Zap returns the real analysis for your claim.',
   sources: [{ title: 'Official Eiffel Tower site', url: 'https://www.toureiffel.paris' }],
 };
 

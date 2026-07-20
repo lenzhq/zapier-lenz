@@ -3,7 +3,13 @@
 const { Lenz } = require('lenz-io');
 
 const SAMPLE = {
-  answer: 'The strongest source is the official Eiffel Tower website, which states the height directly.',
+  // Explicit sample label (mirrors verify_claim.js's executive_summary): this
+  // is the follow-up "answer" a user typically maps into an email body, so it
+  // must never be mistaken for a real, mismatched answer during a chained
+  // editor test. The real API answer replaces this on any live run and on a
+  // standalone test with a real verification_id.
+  answer:
+    'Sample answer shown while testing in the Zap editor — a live, turned-on Zap returns the real answer, grounded in the verification’s sources.',
 };
 
 // Verify a Claim's own sample data (creates/verify_claim.js) is the only
