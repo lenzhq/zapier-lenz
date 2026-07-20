@@ -269,7 +269,7 @@ describe('creates.ask', () => {
     expect(client.ask.send).toHaveBeenCalledWith('ab12cd34', expect.objectContaining({ message: 'Why?' }));
   });
 
-  it('still makes the real call while loading a sample, so a bad ID or auth error surfaces during testing too', async () => {
+  it('still makes the real call while loading a sample for a non-placeholder ID, so a bad ID or auth error surfaces during testing too', async () => {
     const client = mockClient({
       ask: { send: jest.fn().mockResolvedValue({ role: 'expert', content: 'Because sources say so.' }) },
     });
@@ -277,12 +277,31 @@ describe('creates.ask', () => {
 
     const bundle = {
       authData: { apiKey: 'lenz_good' },
+      // A real (non-placeholder) ID a user typed in manually — must still
+      // hit the real API even while isLoadingSample is true.
+      inputData: { verificationId: 'a-real-verification-id', question: 'Why?' },
+      meta: { isLoadingSample: true },
+    };
+    const result = await appTester(App.creates.ask.operation.perform, bundle);
+
+    expect(result.answer).toBeTruthy();
+    expect(client.ask.send).toHaveBeenCalledWith('a-real-verification-id', expect.anything());
+  });
+
+  it('short-circuits only for Verify a Claim’s exact known placeholder ID during sample loading', async () => {
+    const client = mockClient({ ask: { send: jest.fn() } });
+    LenzClient.mockImplementation(() => client);
+
+    const bundle = {
+      authData: { apiKey: 'lenz_good' },
+      // ab12cd34 is verify_claim.js's own sample verification_id — chaining
+      // the two steps in the editor always produces exactly this value.
       inputData: { verificationId: 'ab12cd34', question: 'Why?' },
       meta: { isLoadingSample: true },
     };
     const result = await appTester(App.creates.ask.operation.perform, bundle);
 
     expect(result.answer).toBeTruthy();
-    expect(client.ask.send).toHaveBeenCalled();
+    expect(client.ask.send).not.toHaveBeenCalled();
   });
 });

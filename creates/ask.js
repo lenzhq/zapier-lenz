@@ -6,20 +6,30 @@ const SAMPLE = {
   answer: 'The strongest source is the official Eiffel Tower website, which states the height directly.',
 };
 
+// Verify a Claim's own sample data (creates/verify_claim.js) is the only
+// source of this placeholder ID — importing it (rather than duplicating the
+// literal) guarantees this never silently drifts out of sync with it.
+const { verification_id: PLACEHOLDER_VERIFICATION_ID } = require('./verify_claim').operation.sample;
+
 // Asks a question grounded in the full research behind a completed
 // Verify a Claim result. Requires the verification_id that create returns —
 // not usable standalone.
 //
-// Deliberately always makes the real call, in both test and live runs — an
-// earlier version skipped it during editor testing to save a quota-metered
-// call, but that also hid real errors (bad auth, no quota, invalid input)
-// behind a fake "success". Testing this step chained right after Verify a
-// Claim's test output will genuinely 404 ("Verification not found"), since
-// that placeholder ID doesn't exist for real — that's an honest signal, not
-// a bug: a real verification_id only exists after Verify a Claim's actual
-// ~90s pipeline finishes, which the editor can't wait through either way.
-// Testing with a real, already-completed verification_id works correctly.
+// Always makes the real call — including in the editor — UNLESS the
+// verificationId is specifically Verify a Claim's own known placeholder ID,
+// which can never be real (it only ever comes from that step's test-mode
+// output, never from a live run). Calling the real API with that exact,
+// known-fake value would never teach us anything — it would just 404 every
+// time, purely because the two steps were chained during editor testing,
+// not because of a real problem. Any other value (a real ID typed in, or a
+// wrong one) still makes the real call and still surfaces real errors —
+// this is a narrow, targeted exception, not a return to broadly hiding
+// errors behind bundle.meta.isLoadingSample.
 const perform = async (z, bundle) => {
+  if (bundle.meta && bundle.meta.isLoadingSample && bundle.inputData.verificationId === PLACEHOLDER_VERIFICATION_ID) {
+    return Promise.resolve(SAMPLE);
+  }
+
   const client = new Lenz({ apiKey: bundle.authData.apiKey });
   const reply = await client.ask.send(bundle.inputData.verificationId, {
     message: bundle.inputData.question,
