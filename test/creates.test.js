@@ -58,13 +58,16 @@ describe('creates.verify_claim', () => {
     };
     const result = await appTester(App.creates.verify_claim.operation.perform, bundle);
 
-    // Real task_id from the real submission, merged with placeholder verdict
-    // data (since the ~90s wait for the real verdict can't happen in a test).
+    // Real task_id from the real submission, merged with the FULLY canned
+    // sample (the ~90s wait for the real verdict can't happen in a test).
+    // The real input claim is deliberately NOT spliced in — the sample stays
+    // a self-consistent Eiffel-Tower example so a chained test (esp. the
+    // final email) reads as obvious example data, not a broken mismatch.
     expect(result).toMatchObject({
       task_id: 'task_123',
       status: 'completed',
       verification_id: 'ab12cd34',
-      claim: 'A different claim.',
+      claim: 'The Eiffel Tower is 330 metres tall.',
     });
     expect(client.verify).toHaveBeenCalled();
   });

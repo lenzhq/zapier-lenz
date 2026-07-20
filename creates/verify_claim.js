@@ -43,12 +43,16 @@ const perform = (z, bundle) => {
     .then((accepted) => {
       // Zapier's editor never waits for the real callback when testing, so
       // performResume (and the real verdict) would never arrive here no
-      // matter how long the test step ran. Hand back realistic placeholder
-      // verdict data instead, merged with the REAL task_id from the REAL
-      // submission above, so a downstream step (e.g. Ask Follow-Up) has
-      // something to map against during testing too.
+      // matter how long the test step ran. Hand back the FULLY canned sample
+      // instead — self-consistent Eiffel-Tower example data, obvious dummy
+      // values (Zapier's own sample-data convention). We deliberately do NOT
+      // splice in bundle.inputData.claim: doing so produced an incoherent
+      // record (the user's real claim glued to a hardcoded Eiffel verdict +
+      // Eiffel follow-up answer), which reads as a broken mismatch in a
+      // chained test — most visibly in a final "send email" step. Only
+      // task_id stays real, so the webhook-secret check above still runs.
       if (bundle.meta && bundle.meta.isLoadingSample) {
-        return { ...SAMPLE, task_id: accepted.task_id, claim: bundle.inputData.claim || SAMPLE.claim };
+        return { ...SAMPLE, task_id: accepted.task_id };
       }
       return { task_id: accepted.task_id, status: 'processing' };
     })
