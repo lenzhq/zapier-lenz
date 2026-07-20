@@ -19,6 +19,12 @@ module.exports = {
   beforeRequest: [],
   afterResponse: [],
 
+  // Opt out of Zapier's automatic input-data cleaning (trimming empty
+  // strings/nulls/etc.) globally, rather than leaving it implicit per D028.
+  flags: {
+    cleanInputData: false,
+  },
+
   triggers: {
     [newVerification.key]: newVerification,
   },
