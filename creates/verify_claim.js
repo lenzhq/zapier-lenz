@@ -28,22 +28,36 @@ const SAMPLE = {
 // Kicks off the full pipeline and hands Lenz a Zapier-managed callback URL as
 // the per-call webhook_url. Zapier parks the Task as "waiting" until Lenz
 // posts back to that URL (see performResume) or ~90s median passes.
-const perform = (z, bundle) => {
-  // Editor testing (isLoadingSample) returns stubbed sample data and makes NO
-  // real API call. This is Zapier's own recommended handling for a callback
-  // action (the ~90s pipeline can't be waited on in the editor anyway), and
-  // it means a user never spends a verify credit — nor triggers a full,
-  // discarded pipeline run — just for clicking "Test step" while building
-  // their Zap. Auth is already validated at connection time (GET /me/usage).
-  // The one thing this can't catch at test time is a key with no webhook
-  // secret yet; that's communicated up front (connection help text + the
-  // action description) and still surfaces with a clear message on the first
-  // live run (see the .catch below, which only runs live).
+const perform = async (z, bundle) => {
+  const client = new Lenz({ apiKey: bundle.authData.apiKey });
+
+  // Editor testing (isLoadingSample) never runs the real ~90s pipeline and
+  // never spends a verify credit — Zapier's recommended handling for a
+  // callback action. But rather than stubbing blindly, we make the ONE free
+  // call that costs nothing (GET /me/usage — no credit) to answer the only
+  // question the stub otherwise can't: does this key have a webhook secret?
+  // Verify a Claim REQUIRES one (it always sends a callback webhook_url, which
+  // Lenz refuses on a secret-less key). If it's missing, warn NOW at test time
+  // instead of showing a false "accepted" and only failing on the first live
+  // run. usage() also re-validates auth for free.
+  //
+  // Strict `=== false`: older servers that don't yet return the field leave it
+  // undefined, so the check is a no-op there (plain stub) — the backend field
+  // and this check can deploy in any order.
   if (bundle.meta && bundle.meta.isLoadingSample) {
-    return Promise.resolve({ ...SAMPLE });
+    const usage = await client.usage();
+    if (usage && usage.has_webhook_secret === false) {
+      throw new z.errors.Error(
+        'Verify a Claim needs a webhook secret on this API key, and this key doesn\'t have one yet. ' +
+          'Go to lenz.io → API key settings → "Generate webhook secret" (Webhooks panel) once, then try this step again. ' +
+          '(Assess, Extract Claims, and Ask Follow-Up work without a secret.)',
+        'WebhookSecretMissing',
+        422,
+      );
+    }
+    return { ...SAMPLE };
   }
 
-  const client = new Lenz({ apiKey: bundle.authData.apiKey });
   const callbackUrl = z.generateCallbackUrl();
 
   return client

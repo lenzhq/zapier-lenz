@@ -19,6 +19,7 @@ function mockClient(overrides = {}) {
     assess: jest.fn(),
     extract: jest.fn(),
     ask: { send: jest.fn() },
+    usage: jest.fn(),
     ...overrides,
   };
 }
@@ -47,8 +48,11 @@ describe('creates.verify_claim', () => {
     );
   });
 
-  it('perform stubs a self-consistent sample and makes NO real API call while loading a sample (no credit / no discarded pipeline)', async () => {
-    const client = mockClient({ verify: jest.fn() });
+  it('while loading a sample: makes only the free usage() check (never verify) and stubs when the key has a webhook secret', async () => {
+    const client = mockClient({
+      verify: jest.fn(),
+      usage: jest.fn().mockResolvedValue({ plan: 'plus', has_webhook_secret: true }),
+    });
     LenzClient.mockImplementation(() => client);
 
     const bundle = {
@@ -59,13 +63,52 @@ describe('creates.verify_claim', () => {
     const result = await appTester(App.creates.verify_claim.operation.perform, bundle);
 
     // Fully canned Eiffel-Tower example — the real input claim is NOT spliced
-    // in, so a chained test (esp. a final email) reads as obvious example
-    // data, not a broken mismatch. Crucially, no real submission is made.
+    // in, so a chained test reads as obvious example data, not a mismatch.
     expect(result).toMatchObject({
       status: 'completed',
       verification_id: 'ab12cd34',
       claim: 'The Eiffel Tower is 330 metres tall.',
     });
+    // Free usage() call only; NO credit-spending verify submission.
+    expect(client.usage).toHaveBeenCalled();
+    expect(client.verify).not.toHaveBeenCalled();
+  });
+
+  it('while loading a sample: warns at test time when the key has no webhook secret (has_webhook_secret === false)', async () => {
+    const client = mockClient({
+      verify: jest.fn(),
+      usage: jest.fn().mockResolvedValue({ plan: 'plus', has_webhook_secret: false }),
+    });
+    LenzClient.mockImplementation(() => client);
+
+    const bundle = {
+      authData: { apiKey: 'lenz_nosecret' },
+      inputData: { claim: 'A claim.' },
+      meta: { isLoadingSample: true },
+    };
+
+    await expect(appTester(App.creates.verify_claim.operation.perform, bundle)).rejects.toThrow(
+      /webhook secret/i,
+    );
+    expect(client.verify).not.toHaveBeenCalled();
+  });
+
+  it('while loading a sample: degrades gracefully on an older server that omits has_webhook_secret (no false warning)', async () => {
+    const client = mockClient({
+      verify: jest.fn(),
+      // Old server: field absent → undefined → strict === false check is a no-op.
+      usage: jest.fn().mockResolvedValue({ plan: 'plus' }),
+    });
+    LenzClient.mockImplementation(() => client);
+
+    const bundle = {
+      authData: { apiKey: 'lenz_good' },
+      inputData: { claim: 'A claim.' },
+      meta: { isLoadingSample: true },
+    };
+    const result = await appTester(App.creates.verify_claim.operation.perform, bundle);
+
+    expect(result).toMatchObject({ status: 'completed', verification_id: 'ab12cd34' });
     expect(client.verify).not.toHaveBeenCalled();
   });
 
