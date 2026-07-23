@@ -132,7 +132,8 @@ module.exports = {
     label: 'Verify a Claim',
     description:
       'Submits a claim to the full Lenz pipeline (research, debate, adjudication) and waits for the sourced verdict (~90s median). Reserve for high-stakes claims — use Assess for a faster check.' +
-      ' **Requires a one-time setup step**: your API key needs a webhook secret generated before this action will work — go to lenz.io → API key settings → "Generate webhook secret" once, then come back and try again.',
+      ' **Requires a one-time setup step**: your API key needs a webhook secret generated before this action will work — go to lenz.io → API key settings → "Generate webhook secret" once, then come back and try again.' +
+      ' **Testing shows example output**: clicking Test returns a fixed sample verdict so you can map the output fields — a turned-on Zap verifies the claim you actually enter.',
   },
   operation: {
     inputFields: [
