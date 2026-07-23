@@ -67,7 +67,9 @@ describe('creates.verify_claim', () => {
     expect(result).toMatchObject({
       status: 'completed',
       verification_id: 'ab12cd34',
-      claim: 'The Eiffel Tower is 330 metres tall.',
+      claim: expect.stringContaining('Eiffel Tower'),
+      // First field of the test output: an explicit "this is sample data" notice.
+      note: expect.stringMatching(/testing/i),
     });
     // Free usage() call only; NO credit-spending verify submission.
     expect(client.usage).toHaveBeenCalled();

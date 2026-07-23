@@ -7,11 +7,16 @@ function isPassingVerdict(verdict) {
 }
 
 const SAMPLE = {
+  // Leads the test output so the "this is a sample" signal is the first thing
+  // shown when someone clicks Test. Present only in editor sample data — a live
+  // run (performResume) returns the real fields with no such notice.
+  note:
+    'Example output shown only while testing in the Zap editor. A turned-on Zap ignores this sample and returns the real verdict for the claim you enter — the claim, verdict, and score below are fixed placeholders.',
   task_id: '2f8b2e2b6a4a4e6c9e8f9a6c3f4b2a1c',
   status: 'completed',
   passed: true,
   verification_id: 'ab12cd34',
-  claim: 'The Eiffel Tower is 330 metres tall.',
+  claim: 'The Eiffel Tower is 330 metres tall. (sample claim)',
   verdict: 'True',
   confidence: 'high',
   lenz_score: 9,
@@ -163,6 +168,7 @@ module.exports = {
     performResume,
     sample: SAMPLE,
     outputFields: [
+      { key: 'note', label: 'Note' },
       { key: 'task_id', label: 'Task ID' },
       { key: 'status', label: 'Status' },
       { key: 'passed', label: 'Passed', type: 'boolean' },
