@@ -145,7 +145,8 @@ module.exports = {
         label: 'Claim',
         type: 'text',
         required: true,
-        helpText: 'The claim to investigate in depth.',
+        helpText:
+          'The claim to investigate in depth. Clicking Test shows an example verdict so you can map the output fields — a turned-on Zap verifies this claim and returns the real result.',
       },
       {
         key: 'sourceUrl',
