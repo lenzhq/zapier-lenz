@@ -2,6 +2,7 @@
   "name": "zapier-lenz",
   "version": "1.0.0",
   "description": "Fact-check claims and catch AI hallucinations with Lenz - verified, sourced verdicts inside your Zaps.",
+  "license": "MIT",
   "homepage": "https://lenz.io",
   "repository": {
     "type": "git",
