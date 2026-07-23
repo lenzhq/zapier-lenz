@@ -6,23 +6,26 @@ function isPassingVerdict(verdict) {
   return verdict === 'True' || verdict === 'Mostly True';
 }
 
-// Every user-facing field uses obvious "Sample …" placeholder text so the test
-// output is unmistakably example data — even a chained editor test (e.g. a final
-// "send email" step) can't be mistaken for a real result. Live runs never use
-// SAMPLE (performResume builds from the real status.result), so this text only
-// ever shows while testing in the Zap editor.
+// Realistic, internally coherent example (Eiffel Tower) — Zapier's build
+// guidelines want representative sample values ("'Bob', not 'string'"), not
+// placeholder text, for public review. The "this is a test sample" signal
+// lives in the action description (shown above the fields) and the labeled
+// executive_summary, NOT in fake field values. A coherent example also means a
+// chained editor test (e.g. a final "send email" step) reads as example data,
+// never a mismatched real result. Live runs never use SAMPLE (performResume
+// builds from the real status.result), so this only shows while testing.
 const SAMPLE = {
   task_id: '2f8b2e2b6a4a4e6c9e8f9a6c3f4b2a1c',
   status: 'completed',
   passed: true,
   verification_id: 'ab12cd34',
-  claim: 'Sample claim (example only) — a live Zap verifies the claim you enter.',
+  claim: 'The Eiffel Tower is 330 metres tall.',
   verdict: 'True',
   confidence: 'high',
   lenz_score: 9,
   executive_summary:
     'Sample summary shown while testing in the Zap editor — a live, turned-on Zap returns the real analysis for your claim.',
-  sources: [{ title: 'Sample source', url: 'https://example.com' }],
+  sources: [{ title: 'Official Eiffel Tower site', url: 'https://www.toureiffel.paris' }],
 };
 
 // Kicks off the full pipeline and hands Lenz a Zapier-managed callback URL as

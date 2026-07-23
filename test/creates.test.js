@@ -67,7 +67,7 @@ describe('creates.verify_claim', () => {
     expect(result).toMatchObject({
       status: 'completed',
       verification_id: 'ab12cd34',
-      claim: expect.stringContaining('Sample claim'),
+      claim: expect.stringContaining('Eiffel Tower'),
     });
     // Free usage() call only; NO credit-spending verify submission.
     expect(client.usage).toHaveBeenCalled();
