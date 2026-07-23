@@ -6,28 +6,23 @@ function isPassingVerdict(verdict) {
   return verdict === 'True' || verdict === 'Mostly True';
 }
 
+// Every user-facing field uses obvious "Sample …" placeholder text so the test
+// output is unmistakably example data — even a chained editor test (e.g. a final
+// "send email" step) can't be mistaken for a real result. Live runs never use
+// SAMPLE (performResume builds from the real status.result), so this text only
+// ever shows while testing in the Zap editor.
 const SAMPLE = {
-  // Leads the test output so the "this is a sample" signal is the first thing
-  // shown when someone clicks Test. Present only in editor sample data — a live
-  // run (performResume) returns the real fields with no such notice.
-  note:
-    'Example output shown only while testing in the Zap editor. A turned-on Zap ignores this sample and returns the real verdict for the claim you enter — the claim, verdict, and score below are fixed placeholders.',
   task_id: '2f8b2e2b6a4a4e6c9e8f9a6c3f4b2a1c',
   status: 'completed',
   passed: true,
   verification_id: 'ab12cd34',
-  claim: 'The Eiffel Tower is 330 metres tall. (sample claim)',
+  claim: 'Sample claim (example only) — a live Zap verifies the claim you enter.',
   verdict: 'True',
   confidence: 'high',
   lenz_score: 9,
-  // The prose "response" fields (executive_summary here, answer in ask.js)
-  // carry an explicit sample label so a chained editor test — most visibly a
-  // final "send email" step — can never be mistaken for a real, mismatched
-  // result. Live runs never use SAMPLE (performResume builds from the real
-  // status.result), so the label only ever shows during editor testing.
   executive_summary:
     'Sample summary shown while testing in the Zap editor — a live, turned-on Zap returns the real analysis for your claim.',
-  sources: [{ title: 'Official Eiffel Tower site', url: 'https://www.toureiffel.paris' }],
+  sources: [{ title: 'Sample source', url: 'https://example.com' }],
 };
 
 // Kicks off the full pipeline and hands Lenz a Zapier-managed callback URL as
@@ -168,7 +163,6 @@ module.exports = {
     performResume,
     sample: SAMPLE,
     outputFields: [
-      { key: 'note', label: 'Note' },
       { key: 'task_id', label: 'Task ID' },
       { key: 'status', label: 'Status' },
       { key: 'passed', label: 'Passed', type: 'boolean' },
