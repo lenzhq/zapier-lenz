@@ -3,13 +3,14 @@
 const { Lenz } = require('lenz-io');
 
 const SAMPLE = {
-  // Explicit sample label (mirrors verify_claim.js's executive_summary): this
-  // is the follow-up "answer" a user typically maps into an email body, so it
-  // must never be mistaken for a real, mismatched answer during a chained
-  // editor test. The real API answer replaces this on any live run and on a
-  // standalone test with a real verification_id.
+  // Realistic, representative example answer, coherent with Verify's Eiffel
+  // sample — Zapier's build guidelines want representative sample values, not
+  // placeholder text. The "this is a test sample" signal lives in the action
+  // description and the Question help text, not in a fake answer. The real API
+  // answer replaces this on any live run (and on a standalone test with a real
+  // verification_id).
   answer:
-    'Sample answer shown while testing in the Zap editor — a live, turned-on Zap returns the real answer, grounded in the verification’s sources.',
+    'The 330-metre figure includes the broadcast antennas at the top; the structure alone is about 300 metres. Both are confirmed by the tower’s official operator and independent surveys.',
 };
 
 // Asks a question grounded in the full research behind a completed
@@ -41,7 +42,9 @@ module.exports = {
   noun: 'Answer',
   display: {
     label: 'Ask Follow-Up',
-    description: 'Asks a grounded follow-up question about a completed Verify a Claim result.',
+    description:
+      'Asks a grounded follow-up question about a completed Verify a Claim result.' +
+      ' **Testing shows example output**: clicking Test returns an example answer so you can map the output fields — a turned-on Zap returns the real answer for your question.',
   },
   operation: {
     inputFields: [
@@ -57,7 +60,8 @@ module.exports = {
         label: 'Question',
         type: 'string',
         required: true,
-        helpText: 'The follow-up question, answered from the verification full research and evidence.',
+        helpText:
+          'The follow-up question, answered from the verification’s full research and evidence. Clicking Test shows an example answer so you can map the output fields — a turned-on Zap answers this question for real.',
       },
       {
         key: 'language',
