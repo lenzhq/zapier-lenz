@@ -53,7 +53,12 @@ module.exports = {
         label: 'Verification ID',
         type: 'string',
         required: true,
-        helpText: 'The verification_id from a completed Verify a Claim result (not a task_id).',
+        // Dynamic dropdown sourced from the New Verification Completed trigger:
+        // value = the item's id (aliased to verification_id), label = the claim.
+        // Users can still map a verification_id from a prior Verify a Claim step.
+        dynamic: 'new_verification.id.claim',
+        helpText:
+          'Pick a recent verification, or map the verification_id from a completed Verify a Claim step (not a task_id).',
       },
       {
         key: 'question',

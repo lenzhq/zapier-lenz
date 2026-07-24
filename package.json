@@ -12,7 +12,7 @@
     "test": "jest --testTimeout 10000"
   },
   "dependencies": {
-    "lenz-io": "^2.3.0",
+    "lenz-io": "^2.4.0",
     "zapier-platform-core": "19.0.0"
   },
   "devDependencies": {
