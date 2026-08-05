@@ -9,11 +9,15 @@ function isPassingVerdict(verdict) {
 // Realistic, internally coherent example (Eiffel Tower) — Zapier's build
 // guidelines want representative sample values ("'Bob', not 'string'"), not
 // placeholder text, for public review. The "this is a test sample" signal
-// lives in the action description (shown above the fields) and the labeled
-// executive_summary, NOT in fake field values. A coherent example also means a
-// chained editor test (e.g. a final "send email" step) reads as example data,
-// never a mismatched real result. Live runs never use SAMPLE (performResume
-// builds from the real status.result), so this only shows while testing.
+// lives in the action description (shown above the fields) and in the two
+// prose fields a user is likely to map into a downstream step on its own —
+// key_finding and executive_summary — NOT in the structured field values. A
+// coherent example also means a chained editor test (e.g. a final "send
+// email" step) reads as example data, never a mismatched real result; that
+// is why key_finding carries the marker too rather than a bare factual
+// sentence, since outputFields points users at it as the short form of the
+// summary. Live runs never use SAMPLE (performResume builds from the real
+// status.result), so this only shows while testing.
 const SAMPLE = {
   task_id: '2f8b2e2b6a4a4e6c9e8f9a6c3f4b2a1c',
   status: 'completed',
@@ -23,6 +27,8 @@ const SAMPLE = {
   verdict: 'True',
   confidence: 'high',
   lenz_score: 9,
+  key_finding:
+    'Sample finding shown while testing in the Zap editor — a live, turned-on Zap returns the real finding for your claim.',
   executive_summary:
     'Sample summary shown while testing in the Zap editor — a live, turned-on Zap returns the real analysis for your claim.',
   sources: [{ title: 'Official Eiffel Tower site', url: 'https://www.toureiffel.paris' }],
@@ -105,6 +111,7 @@ const performResume = async (z, bundle) => {
       verdict: result.verdict || null,
       confidence: result.confidence || null,
       lenz_score: result.lenz_score ?? null,
+      key_finding: result.key_finding || '',
       executive_summary: result.executive_summary || '',
       sources: (result.sources || []).map((s) => ({ title: s.title || '', url: s.url || '' })),
     };
@@ -175,6 +182,10 @@ module.exports = {
       { key: 'verdict', label: 'Verdict' },
       { key: 'confidence', label: 'Confidence' },
       { key: 'lenz_score', label: 'Lenz Score', type: 'integer' },
+      // One declarative sentence stating the finding — the short form to map
+      // into a Slack/email step when the full summary is too long. Empty on
+      // claims that pre-date the field.
+      { key: 'key_finding', label: 'Key Finding' },
       { key: 'executive_summary', label: 'Executive Summary' },
     ],
   },

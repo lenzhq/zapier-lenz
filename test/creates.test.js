@@ -151,6 +151,7 @@ describe('creates.verify_claim', () => {
           verdict: 'True',
           confidence: 'high',
           lenz_score: 9,
+          key_finding: 'Official Eiffel Tower figures confirm a current height of 330 metres.',
           executive_summary: 'Confirmed by multiple official sources.',
           sources: [{ title: 'Official site', url: 'https://www.toureiffel.paris' }],
         },
@@ -170,8 +171,35 @@ describe('creates.verify_claim', () => {
       passed: true,
       verification_id: 'ab12cd34',
       verdict: 'True',
+      key_finding: 'Official Eiffel Tower figures confirm a current height of 330 metres.',
     });
     expect(client.getStatus).toHaveBeenCalledWith('task_123');
+  });
+
+  it('performResume defaults key_finding to "" on claims that pre-date the field', async () => {
+    const client = mockClient({
+      getStatus: jest.fn().mockResolvedValue({
+        status: 'completed',
+        result: {
+          verification_id: 'ab12cd34',
+          claim: 'The Eiffel Tower is 330 metres tall.',
+          verdict: 'True',
+          confidence: 'high',
+          lenz_score: 9,
+          executive_summary: 'Confirmed by multiple official sources.',
+          sources: [],
+        },
+      }),
+    });
+    LenzClient.mockImplementation(() => client);
+
+    const bundle = {
+      authData: { apiKey: 'lenz_good' },
+      outputData: { task_id: 'task_123', status: 'processing' },
+    };
+    const result = await appTester(App.creates.verify_claim.operation.performResume, bundle);
+
+    expect(result.key_finding).toBe('');
   });
 
   it('performResume surfaces a needs_input pause without throwing', async () => {
