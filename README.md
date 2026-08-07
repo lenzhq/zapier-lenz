@@ -74,3 +74,7 @@ For a lighter check on lower-stakes content, swap the action to **Assess (Fast)*
 ## Version history
 
 * **1.0.0** — Initial implementation. Verify a Claim (callback-based), Assess (Fast), Extract Claims, and Ask Follow-Up actions; New Verification Completed polling trigger; API-key credential with a live test against `/me/usage`.
+
+## Maintainer
+
+[@David19782](https://github.com/David19782)
