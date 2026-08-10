@@ -51,7 +51,10 @@ function quotaError() {
     message: 'No remaining claim checks.',
     statusCode: 402,
   });
-  err.upgradeUrl = 'https://lenz.io/plans';
+  // Deliberately NOT the hardcoded fallback in lib/errors.js. If this were
+  // 'https://lenz.io/plans', deleting the `err.upgradeUrl` read entirely
+  // would leave every assertion below green.
+  err.upgradeUrl = 'https://example.test/upgrade-sentinel';
   err.remaining = 0;
   err.resetsAt = '2026-09-01T00:00:00+00:00';
   return err;
@@ -80,7 +83,7 @@ describe('quota (402) → HaltedError', () => {
     expect(err).toBeTruthy();
     expect(err.name).toBe('HaltedError');
     expect(err.message).toContain('No remaining claim checks.');
-    expect(err.message).toContain('lenz.io/plans');
+    expect(err.message).toContain('https://example.test/upgrade-sentinel');
     // Must not invite a retry — a 402 never clears on retry.
     expect(err.message).toContain("Retrying won't help");
   });
@@ -169,7 +172,10 @@ describe('rate limit (429) → ThrottledError', () => {
     });
 
     expect(err.name).toBe('ThrottledError');
-    expect(err.message).toContain('300');
+    // The delay ARGUMENT is the entire point of ThrottledError — asserting
+    // only the interpolated message text passes even if it's never passed.
+    // Core stores it as JSON.stringify({ message, delay }).
+    expect(JSON.parse(err.message).delay).toBe(300);
   });
 
   it('clamps an implausibly long wait to something Zapier will schedule', async () => {
@@ -185,7 +191,87 @@ describe('rate limit (429) → ThrottledError', () => {
     });
 
     expect(err.name).toBe('ThrottledError');
-    expect(err.message).toContain('3600');
+    expect(JSON.parse(err.message).delay).toBe(3600);
+  });
+
+  it('floors a malformed wait instead of hot-looping', async () => {
+    // A negative retryAfter is truthy, so `|| DEFAULT` does not catch it. Left
+    // unhandled it clamps to a 1-second replay — a hot retry loop against a
+    // server that just throttled us.
+    for (const bad of [-5, 0, NaN, undefined, 'abc']) {
+      const err429 = new LenzRateLimitError({ message: 'slow', statusCode: 429 });
+      err429.retryAfter = bad;
+      LenzClient.mockImplementation(() =>
+        mockClient({ extract: jest.fn().mockRejectedValue(err429) }),
+      );
+
+      const err = await captureError(App.creates.extract_claims.operation.perform, {
+        ...AUTH,
+        inputData: { text: 'x' },
+      });
+
+      expect(err.name).toBe('ThrottledError');
+      expect(JSON.parse(err.message).delay).toBe(60);
+    }
+  });
+
+  it('hands the platform whole seconds', async () => {
+    const err429 = new LenzRateLimitError({ message: 'slow', statusCode: 429 });
+    err429.retryAfter = 1.5;
+    LenzClient.mockImplementation(() =>
+      mockClient({ extract: jest.fn().mockRejectedValue(err429) }),
+    );
+
+    const err = await captureError(App.creates.extract_claims.operation.perform, {
+      ...AUTH,
+      inputData: { text: 'x' },
+    });
+
+    expect(Number.isInteger(JSON.parse(err.message).delay)).toBe(true);
+  });
+});
+
+describe('quota fallbacks when the server omits fields', () => {
+  it('falls back to the plans page when upgrade_url is absent', async () => {
+    // Older SDKs don't populate upgradeUrl at all, so the fallback is the live
+    // path until 2.7.0 is installed everywhere.
+    const bare = new LenzQuotaExceededError({
+      message: 'No remaining claim checks.',
+      statusCode: 402,
+    });
+    LenzClient.mockImplementation(() =>
+      mockClient({ assess: jest.fn().mockRejectedValue(bare) }),
+    );
+
+    const err = await captureError(App.creates.assess.operation.perform, {
+      ...AUTH,
+      inputData: { text: 'x' },
+    });
+
+    expect(err.name).toBe('HaltedError');
+    expect(err.message).toContain('https://lenz.io/plans');
+    // No reset clause when the server didn't state one.
+    expect(err.message).not.toContain('Quota resets');
+  });
+});
+
+describe('editor-test path (isLoadingSample)', () => {
+  it('maps a rejected key on the Test click, not just on a live run', async () => {
+    // verify_claim probes /me/usage while the user is building the Zap. That
+    // is the FIRST place a revoked key surfaces, so it must produce the same
+    // ExpiredAuthError a live run would.
+    const err401 = new LenzAuthError({ message: 'Unauthorized', statusCode: 401 });
+    LenzClient.mockImplementation(() =>
+      mockClient({ usage: jest.fn().mockRejectedValue(err401) }),
+    );
+
+    const err = await captureError(App.creates.verify_claim.operation.perform, {
+      ...AUTH,
+      inputData: { claim: 'x' },
+      meta: { isLoadingSample: true },
+    });
+
+    expect(err.name).toBe('ExpiredAuthError');
   });
 });
 

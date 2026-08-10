@@ -55,7 +55,10 @@ const perform = async (z, bundle) => {
   // undefined, so the check is a no-op there (plain stub) — the backend field
   // and this check can deploy in any order.
   if (bundle.meta && bundle.meta.isLoadingSample) {
-    const usage = await client.usage();
+    // Mapped like every other call: this is the FIRST place a revoked key
+    // surfaces (the user clicking Test in the editor), so it's the last place
+    // that should throw a raw SDK error instead of an ExpiredAuthError.
+    const usage = await client.usage().catch((err) => mapLenzError(z, err));
     if (usage && usage.has_webhook_secret === false) {
       throw new z.errors.Error(
         'Verify a Claim needs a webhook secret on this API key, and this key doesn\'t have one yet. ' +
