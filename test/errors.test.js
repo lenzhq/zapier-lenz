@@ -1,0 +1,223 @@
+/* globals describe, it, expect, jest */
+
+/**
+ * Zapier error-taxonomy mapping.
+ *
+ * These are the only tests in this app with real signal on the change: every
+ * other suite mocks the SDK client wholesale, so its assertions pass
+ * identically before and after. What matters here is not the message text but
+ * WHICH Zapier error class is thrown, because that decides whether the user's
+ * Zap keeps running:
+ *
+ *   HaltedError    → run stops, does NOT count as an error
+ *   ThrottledError → Zapier replays after the given delay
+ *   ExpiredAuthError → user is prompted to reconnect
+ *   Error          → hard failure; enough of these turn the Zap OFF
+ */
+
+const zapier = require('zapier-platform-core');
+
+jest.mock('lenz-io', () => {
+  const actual = jest.requireActual('lenz-io');
+  return { ...actual, Lenz: jest.fn() };
+});
+
+const {
+  Lenz: LenzClient,
+  LenzQuotaExceededError,
+  LenzRateLimitError,
+  LenzAuthError,
+  LenzError,
+} = require('lenz-io');
+const App = require('../index');
+
+const appTester = zapier.createAppTester(App);
+
+function mockClient(overrides = {}) {
+  return {
+    verify: jest.fn(),
+    getStatus: jest.fn(),
+    assess: jest.fn(),
+    extract: jest.fn(),
+    ask: { send: jest.fn() },
+    usage: jest.fn(),
+    verifications: { list: jest.fn() },
+    ...overrides,
+  };
+}
+
+function quotaError() {
+  const err = new LenzQuotaExceededError({
+    message: 'No remaining claim checks.',
+    statusCode: 402,
+  });
+  err.upgradeUrl = 'https://lenz.io/plans';
+  err.remaining = 0;
+  err.resetsAt = '2026-09-01T00:00:00+00:00';
+  return err;
+}
+
+async function captureError(performFn, bundle) {
+  return appTester(performFn, bundle).then(
+    () => null,
+    (e) => e,
+  );
+}
+
+const AUTH = { authData: { apiKey: 'lenz_good' } };
+
+describe('quota (402) → HaltedError', () => {
+  it('halts rather than erroring, so running out of credits cannot disable a Zap', async () => {
+    LenzClient.mockImplementation(() =>
+      mockClient({ assess: jest.fn().mockRejectedValue(quotaError()) }),
+    );
+
+    const err = await captureError(App.creates.assess.operation.perform, {
+      ...AUTH,
+      inputData: { text: 'The Great Wall is visible from space.' },
+    });
+
+    expect(err).toBeTruthy();
+    expect(err.name).toBe('HaltedError');
+    expect(err.message).toContain('No remaining claim checks.');
+    expect(err.message).toContain('lenz.io/plans');
+    // Must not invite a retry — a 402 never clears on retry.
+    expect(err.message).toContain("Retrying won't help");
+  });
+
+  it('surfaces the reset time when the server states one', async () => {
+    LenzClient.mockImplementation(() =>
+      mockClient({ extract: jest.fn().mockRejectedValue(quotaError()) }),
+    );
+
+    const err = await captureError(App.creates.extract_claims.operation.perform, {
+      ...AUTH,
+      inputData: { text: 'some text' },
+    });
+
+    expect(err.name).toBe('HaltedError');
+    expect(err.message).toContain('2026-09-01');
+  });
+
+  it('applies on the Ask action too', async () => {
+    LenzClient.mockImplementation(() =>
+      mockClient({ ask: { send: jest.fn().mockRejectedValue(quotaError()) } }),
+    );
+
+    const err = await captureError(App.creates.ask.operation.perform, {
+      ...AUTH,
+      inputData: { verificationId: 'ab12cd34', question: 'Which source is strongest?' },
+    });
+
+    expect(err.name).toBe('HaltedError');
+  });
+
+  it('applies on the polling trigger, which fires on every Zap', async () => {
+    LenzClient.mockImplementation(() =>
+      mockClient({ verifications: { list: jest.fn().mockRejectedValue(quotaError()) } }),
+    );
+
+    const err = await captureError(App.triggers.new_verification.operation.perform, AUTH);
+
+    expect(err.name).toBe('HaltedError');
+  });
+
+  it('applies on Verify a Claim without losing the webhook-secret branch', async () => {
+    LenzClient.mockImplementation(() =>
+      mockClient({ verify: jest.fn().mockRejectedValue(quotaError()) }),
+    );
+
+    const err = await captureError(App.creates.verify_claim.operation.perform, {
+      ...AUTH,
+      inputData: { claim: 'The Eiffel Tower is 330 metres tall.' },
+    });
+
+    expect(err.name).toBe('HaltedError');
+  });
+
+  it('still maps webhook_secret_missing to its own precise error', async () => {
+    const err422 = new LenzError({ message: 'Webhook secret missing', statusCode: 422 });
+    err422.body = { code: 'webhook_secret_missing' };
+    LenzClient.mockImplementation(() =>
+      mockClient({ verify: jest.fn().mockRejectedValue(err422) }),
+    );
+
+    const err = await captureError(App.creates.verify_claim.operation.perform, {
+      ...AUTH,
+      inputData: { claim: 'x' },
+    });
+
+    expect(err.name).not.toBe('HaltedError');
+    expect(err.message).toContain('webhook secret');
+  });
+});
+
+describe('rate limit (429) → ThrottledError', () => {
+  it('hands Zapier the wait so it replays instead of burning the run', async () => {
+    const err429 = new LenzRateLimitError({
+      message: 'Daily /extract limit of 1000 reached.',
+      statusCode: 429,
+    });
+    err429.retryAfter = 300;
+    LenzClient.mockImplementation(() =>
+      mockClient({ extract: jest.fn().mockRejectedValue(err429) }),
+    );
+
+    const err = await captureError(App.creates.extract_claims.operation.perform, {
+      ...AUTH,
+      inputData: { text: 'some text' },
+    });
+
+    expect(err.name).toBe('ThrottledError');
+    expect(err.message).toContain('300');
+  });
+
+  it('clamps an implausibly long wait to something Zapier will schedule', async () => {
+    const err429 = new LenzRateLimitError({ message: 'capped', statusCode: 429 });
+    err429.retryAfter = 86400; // seconds-until-UTC-midnight from the /extract cap
+    LenzClient.mockImplementation(() =>
+      mockClient({ extract: jest.fn().mockRejectedValue(err429) }),
+    );
+
+    const err = await captureError(App.creates.extract_claims.operation.perform, {
+      ...AUTH,
+      inputData: { text: 'some text' },
+    });
+
+    expect(err.name).toBe('ThrottledError');
+    expect(err.message).toContain('3600');
+  });
+});
+
+describe('bad key (401) → ExpiredAuthError', () => {
+  it('prompts a reconnect rather than leaving the user to decode a 401', async () => {
+    const err401 = new LenzAuthError({ message: 'Unauthorized', statusCode: 401 });
+    LenzClient.mockImplementation(() =>
+      mockClient({ assess: jest.fn().mockRejectedValue(err401) }),
+    );
+
+    const err = await captureError(App.creates.assess.operation.perform, {
+      ...AUTH,
+      inputData: { text: 'x' },
+    });
+
+    expect(err.name).toBe('ExpiredAuthError');
+  });
+});
+
+describe('non-quota 403 stays a hard error', () => {
+  it('a private verification is a real failure, not a billing state', async () => {
+    const err403 = new LenzError({ message: 'This report is private.', statusCode: 403 });
+    LenzClient.mockImplementation(() =>
+      mockClient({ ask: { send: jest.fn().mockRejectedValue(err403) } }),
+    );
+
+    const err = await captureError(App.creates.ask.operation.perform, {
+      ...AUTH,
+      inputData: { verificationId: 'ab12cd34', question: 'q' },
+    });
+
+    expect(err.name).not.toBe('HaltedError');
+    expect(err.message).toContain('private');
+  });
+});

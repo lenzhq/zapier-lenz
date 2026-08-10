@@ -1,6 +1,7 @@
 'use strict';
 
 const { Lenz } = require('lenz-io');
+const { mapLenzError } = require('../lib/errors');
 
 const SAMPLE = {
   // Realistic, representative example answer, coherent with Verify's Eiffel
@@ -30,10 +31,12 @@ const perform = async (z, bundle) => {
   }
 
   const client = new Lenz({ apiKey: bundle.authData.apiKey });
-  const reply = await client.ask.send(bundle.inputData.verificationId, {
-    message: bundle.inputData.question,
-    language: bundle.inputData.language || undefined,
-  });
+  const reply = await client.ask
+    .send(bundle.inputData.verificationId, {
+      message: bundle.inputData.question,
+      language: bundle.inputData.language || undefined,
+    })
+    .catch((err) => mapLenzError(z, err));
   return { answer: reply.content || '' };
 };
 

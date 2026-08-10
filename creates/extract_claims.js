@@ -1,6 +1,7 @@
 'use strict';
 
 const { Lenz } = require('lenz-io');
+const { mapLenzError } = require('../lib/errors');
 
 const SAMPLE = {
   status: 'ok',
@@ -26,10 +27,12 @@ const perform = (z, bundle) => {
   }
 
   const client = new Lenz({ apiKey: bundle.authData.apiKey });
-  return client.extract({
-    text: bundle.inputData.text,
-    language: bundle.inputData.language || undefined,
-  });
+  return client
+    .extract({
+      text: bundle.inputData.text,
+      language: bundle.inputData.language || undefined,
+    })
+    .catch((err) => mapLenzError(z, err));
 };
 
 module.exports = {

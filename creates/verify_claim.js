@@ -1,6 +1,7 @@
 'use strict';
 
 const { Lenz, LenzError } = require('lenz-io');
+const { mapLenzError } = require('../lib/errors');
 
 function isPassingVerdict(verdict) {
   return verdict === 'True' || verdict === 'Mostly True';
@@ -83,7 +84,7 @@ const perform = async (z, bundle) => {
           422,
         );
       }
-      throw err;
+      return mapLenzError(z, err);
     });
 };
 
@@ -92,7 +93,9 @@ const perform = async (z, bundle) => {
 // represents the raw callback body (bundle.cleanedRequest / rawRequest).
 const performResume = async (z, bundle) => {
   const client = new Lenz({ apiKey: bundle.authData.apiKey });
-  const status = await client.getStatus(bundle.outputData.task_id);
+  const status = await client
+    .getStatus(bundle.outputData.task_id)
+    .catch((err) => mapLenzError(z, err));
 
   if (status.status === 'completed' && status.result) {
     const result = status.result;
