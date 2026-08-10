@@ -73,6 +73,7 @@ For a lighter check on lower-stakes content, swap the action to **Assess (Fast)*
 
 ## Version history
 
+* **1.2.0** — Mapped Lenz failures onto Zapier's error taxonomy (`lib/errors.js`), which previously went unused. **Running out of Lenz credits no longer counts against the Zap.** It used to raise a plain error, so a spent balance accumulated hard errors and could get a customer's automation turned off — for a billing state that resolves the moment they top up. It is now a `HaltedError`, which stops the run without penalising the Zap. A rate limit becomes a `ThrottledError` carrying the wait, so Zapier replays instead of burning the run; a rejected key becomes an `ExpiredAuthError`, which prompts a reconnect. Every action and the polling trigger now handle errors — three actions and the trigger previously had no `.catch` at all. Requires `lenz-io` ≥ 2.7.0.
 * **1.1.0** — Added the `key_finding` output field (one declarative sentence stating the finding) to Verify a Claim and New Verification Completed. Additive: existing Zaps keep working, and the new field is available to map.
 * **1.0.0** — Initial implementation. Verify a Claim (callback-based), Assess (Fast), Extract Claims, and Ask Follow-Up actions; New Verification Completed polling trigger; API-key credential with a live test against `/me/usage`.
 

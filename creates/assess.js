@@ -1,6 +1,7 @@
 'use strict';
 
 const { Lenz } = require('lenz-io');
+const { mapLenzError } = require('../lib/errors');
 
 function isPassingVerdict(verdict) {
   return verdict === 'True' || verdict === 'Mostly True';
@@ -31,10 +32,12 @@ const perform = async (z, bundle) => {
   }
 
   const client = new Lenz({ apiKey: bundle.authData.apiKey });
-  const result = await client.assess({
-    text: bundle.inputData.text,
-    language: bundle.inputData.language || undefined,
-  });
+  const result = await client
+    .assess({
+      text: bundle.inputData.text,
+      language: bundle.inputData.language || undefined,
+    })
+    .catch((err) => mapLenzError(z, err));
 
   if (!result.claims || result.claims.length === 0) {
     return {
