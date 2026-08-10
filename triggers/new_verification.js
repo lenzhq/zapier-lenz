@@ -1,7 +1,7 @@
 'use strict';
 
-const { Lenz } = require('lenz-io');
 const { mapLenzError } = require('../lib/errors');
+const { lenzClient } = require('../client');
 
 // Polling trigger: Claim rows are only persisted once the pipeline reaches a
 // terminal state, so every item on this page is already "completed" — no
@@ -9,7 +9,7 @@ const { mapLenzError } = require('../lib/errors');
 // (order_by('-created_at')) and scoped to the connected key's own claims.
 // Zapier dedupes on `id`, so verification_id is aliased to it.
 const perform = async (z, bundle) => {
-  const client = new Lenz({ apiKey: bundle.authData.apiKey });
+  const client = lenzClient(bundle);
   // A polling trigger fires on every Zap, so an unmapped failure here is the
   // fastest way to accumulate errors against the user's account.
   const result = await client.verifications

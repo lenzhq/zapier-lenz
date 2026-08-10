@@ -1,12 +1,12 @@
 'use strict';
 
-const { Lenz } = require('lenz-io');
+const { lenzClient } = require('./client');
 
 // Zapier calls this once when a user connects (or reconnects) their account.
 // Throwing here — lenz-io throws a typed LenzAuthError on a 401 — surfaces
 // as a failed connection with the error's message shown to the user.
 const test = async (z, bundle) => {
-  const client = new Lenz({ apiKey: bundle.authData.apiKey });
+  const client = lenzClient(bundle);
   return client.usage();
 };
 

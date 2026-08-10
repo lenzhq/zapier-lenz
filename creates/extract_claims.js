@@ -1,7 +1,7 @@
 'use strict';
 
-const { Lenz } = require('lenz-io');
 const { mapLenzError } = require('../lib/errors');
+const { lenzClient } = require('../client');
 
 const SAMPLE = {
   status: 'ok',
@@ -26,7 +26,7 @@ const perform = (z, bundle) => {
     return Promise.resolve(SAMPLE);
   }
 
-  const client = new Lenz({ apiKey: bundle.authData.apiKey });
+  const client = lenzClient(bundle);
   return client
     .extract({
       text: bundle.inputData.text,

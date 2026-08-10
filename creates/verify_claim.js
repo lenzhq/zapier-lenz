@@ -1,7 +1,8 @@
 'use strict';
 
-const { Lenz, LenzError } = require('lenz-io');
+const { LenzError } = require('lenz-io');
 const { mapLenzError } = require('../lib/errors');
+const { lenzClient } = require('../client');
 
 function isPassingVerdict(verdict) {
   return verdict === 'True' || verdict === 'Mostly True';
@@ -39,7 +40,7 @@ const SAMPLE = {
 // the per-call webhook_url. Zapier parks the Task as "waiting" until Lenz
 // posts back to that URL (see performResume) or ~90s median passes.
 const perform = async (z, bundle) => {
-  const client = new Lenz({ apiKey: bundle.authData.apiKey });
+  const client = lenzClient(bundle);
 
   // Editor testing (isLoadingSample) never runs the real ~90s pipeline and
   // never spends a verify credit — Zapier's recommended handling for a
@@ -101,7 +102,7 @@ const perform = async (z, bundle) => {
 // is fetched fresh via getStatus() so this never depends on how Zapier
 // represents the raw callback body (bundle.cleanedRequest / rawRequest).
 const performResume = async (z, bundle) => {
-  const client = new Lenz({ apiKey: bundle.authData.apiKey });
+  const client = lenzClient(bundle);
   const status = await client
     .getStatus(bundle.outputData.task_id)
     .catch((err) => mapLenzError(z, err));

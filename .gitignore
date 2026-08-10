@@ -58,7 +58,14 @@ typings/
 
 # environment variables file
 .env
+.env*
 .environment
+
+# Credentials that must never be committed. .zapierrc holds the Zapier deploy
+# key — it normally lives in ~, but `zapier login` can write one into the cwd.
+# .npmrc can hold a registry auth token.
+.zapierrc
+.npmrc
 
 # next.js build output
 .next
