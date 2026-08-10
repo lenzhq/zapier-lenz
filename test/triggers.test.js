@@ -39,6 +39,29 @@ describe('triggers.new_verification', () => {
     expect(client.verifications.list).toHaveBeenCalledWith({ page: 1 });
   });
 
+  it('passes key_finding through and defaults it to "" when the row omits it', async () => {
+    const client = {
+      verifications: {
+        list: jest.fn().mockResolvedValue({
+          items: [
+            { verification_id: 'ab12cd34', claim: 'A', key_finding: 'Official figures confirm 330 metres.' },
+            { verification_id: 'ef56gh78', claim: 'B' },
+          ],
+          total: 2,
+          page: 1,
+          page_size: 20,
+        }),
+      },
+    };
+    LenzClient.mockImplementation(() => client);
+
+    const bundle = { authData: { apiKey: 'lenz_good' } };
+    const result = await appTester(App.triggers.new_verification.operation.perform, bundle);
+
+    expect(result[0].key_finding).toBe('Official figures confirm 330 metres.');
+    expect(result[1].key_finding).toBe('');
+  });
+
   it('returns an empty array when there are no verifications yet', async () => {
     const client = {
       verifications: { list: jest.fn().mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 }) },

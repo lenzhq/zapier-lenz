@@ -10,7 +10,16 @@ const { Lenz } = require('lenz-io');
 const perform = async (z, bundle) => {
   const client = new Lenz({ apiKey: bundle.authData.apiKey });
   const result = await client.verifications.list({ page: 1 });
-  return result.items.map((item) => ({ id: item.verification_id, ...item }));
+  // key_finding is normalized to '' to match what the Verify a Claim action
+  // emits (creates/verify_claim.js). The API always sends the field, so this
+  // only bites if a future/older server omits it — but a field that is ''
+  // on one surface and undefined on the other silently breaks a Zap that
+  // maps it.
+  return result.items.map((item) => ({
+    id: item.verification_id,
+    ...item,
+    key_finding: item.key_finding || '',
+  }));
 };
 
 module.exports = {
@@ -31,6 +40,7 @@ module.exports = {
       verdict: 'True',
       confidence: 'high',
       lenz_score: 9,
+      key_finding: 'Official Eiffel Tower figures confirm a current height of 330 metres.',
       executive_summary: 'Confirmed by multiple official sources.',
       created_at: '2026-07-14T12:00:00Z',
       modified_at: null,
@@ -43,6 +53,9 @@ module.exports = {
       { key: 'verdict', label: 'Verdict' },
       { key: 'confidence', label: 'Confidence' },
       { key: 'lenz_score', label: 'Lenz Score', type: 'integer' },
+      // One declarative sentence stating the finding; '' on claims that
+      // pre-date the field. Carried through by the `...item` spread above.
+      { key: 'key_finding', label: 'Key Finding' },
       { key: 'executive_summary', label: 'Executive Summary' },
       { key: 'created_at', label: 'Created At', type: 'datetime' },
     ],

@@ -73,6 +73,7 @@ For a lighter check on lower-stakes content, swap the action to **Assess (Fast)*
 
 ## Version history
 
+* **1.1.0** — Added the `key_finding` output field (one declarative sentence stating the finding) to Verify a Claim and New Verification Completed. Additive: existing Zaps keep working, and the new field is available to map.
 * **1.0.0** — Initial implementation. Verify a Claim (callback-based), Assess (Fast), Extract Claims, and Ask Follow-Up actions; New Verification Completed polling trigger; API-key credential with a live test against `/me/usage`.
 
 ## Maintainer
