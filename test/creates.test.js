@@ -114,7 +114,7 @@ describe('creates.verify_claim', () => {
 
   it('perform surfaces a clear, actionable message when the key has no webhook secret yet (live run)', async () => {
     const apiError = new LenzValidationError({
-      message: 'webhook_url was supplied but this API key has no HMAC secret. Generate one at https://lenz.io/api-integration.',
+      message: 'webhook_url was supplied but this API key has no HMAC secret. Generate one at https://lenz.io/api-credentials.',
       statusCode: 422,
       body: { detail: 'webhook_url was supplied but this API key has no HMAC secret.', code: 'webhook_secret_missing' },
     });
