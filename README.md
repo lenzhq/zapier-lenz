@@ -38,7 +38,7 @@ Every claim-checking action returns a `passed` boolean (derived from the verdict
 
 You'll need a Lenz API key:
 
-1. Sign up at [lenz.io/api-integration](https://lenz.io/api-integration) to get a key (starts with `lenz_`).
+1. Sign up at [lenz.io/api-credentials](https://lenz.io/api-credentials) to get a key (starts with `lenz_`).
 2. In Zapier, when connecting the Lenz app, paste the key and Zapier will test it automatically against your account's usage endpoint.
 
 ## Usage
