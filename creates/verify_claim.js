@@ -147,10 +147,13 @@ module.exports = {
   noun: 'Verification',
   display: {
     label: 'Verify a Claim',
+    // Zapier's build guidelines: concise, opens with a singular third-person
+    // verb, ends with a period, and carries no platform name. The
+    // webhook-secret requirement and the "Test returns a sample" note used to
+    // sit here; both moved to help text, which is where Zapier asks for extra
+    // detail and the only place Markdown is documented to render.
     description:
-      'Submits a claim to the full Lenz pipeline (research, debate, adjudication) and waits for the sourced verdict (~90s median). Reserve for high-stakes claims — use Assess for a faster check.' +
-      ' **Requires a one-time setup step**: your API key needs a webhook secret generated before this action will work — go to lenz.io → API key settings → "Generate webhook secret" once, then come back and try again.' +
-      ' **Testing shows example output**: clicking Test returns a fixed sample verdict so you can map the output fields — a turned-on Zap verifies the claim you actually enter.',
+      'Runs the full fact-checking pipeline on one claim — research, debate, and panel review — and returns a sourced verdict with score and citations. Takes about 90 seconds.',
   },
   operation: {
     inputFields: [
@@ -160,7 +163,7 @@ module.exports = {
         type: 'text',
         required: true,
         helpText:
-          'The claim to investigate in depth. Clicking Test shows an example verdict so you can map the output fields — a turned-on Zap verifies this claim and returns the real result.',
+          'The claim to investigate in depth. This action needs a webhook secret on your Lenz API key — generate it once under API key settings → Webhooks. Clicking Test shows an example verdict so you can map the output fields; a turned-on Zap verifies this claim and returns the real result.',
       },
       {
         key: 'sourceUrl',

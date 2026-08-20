@@ -40,7 +40,7 @@ module.exports = {
   noun: 'Extraction',
   display: {
     label: 'Extract Claims',
-    description: 'Pulls verifiable factual claims out of text (free) — checks nothing yet.',
+    description: 'Pulls the verifiable factual claims out of a block of text without checking them.',
   },
   operation: {
     inputFields: [

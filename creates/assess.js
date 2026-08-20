@@ -66,7 +66,7 @@ module.exports = {
   display: {
     label: 'Assess (Fast)',
     description:
-      'Fast 3-model panel verdict (~5-10s), one entry per claim identified in the text. Good default for lower-stakes checks — escalate to Verify a Claim for citations and a full audit trail.',
+      'Checks every claim in a block of text and returns a verdict for each, in about 5-10 seconds.',
   },
   operation: {
     inputFields: [
