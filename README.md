@@ -65,6 +65,40 @@ A simple "fact-check gate" pattern — verify a claim before acting on it:
 
 For a lighter check on lower-stakes content, swap the action to **Assess (Fast)** instead — same wiring, ~5-10s instead of ~90s.
 
+## Building and pushing
+
+**Do not run `zapier push` from Windows.** `zapier-platform-cli` 19.1.0 copies the
+project into `%TEMP%\zapier-<hash>` and archives it with that path embedded, so the
+uploaded package carries every source file under
+`AppData/Local/Temp/zapier-<hash>/` and a root `index.js` that is a 43-byte symlink
+rather than the app. The CLI reports success either way, which is how this shipped
+unnoticed in both 1.0.0 and 1.2.0 before app review caught it (2026-08-20).
+
+Build and push from Linux instead. With Docker, from the project root:
+
+```bash
+MSYS_NO_PATHCONV=1 docker run --rm   -v "$(pwd):/src:ro" -v "$HOME/.zapierrc:/root/.zapierrc:ro" node:22-slim sh -c '
+    mkdir -p /work &&
+    tar -C /src --exclude=node_modules --exclude=build --exclude=.git -cf - . | tar -C /work -xf - &&
+    cd /work && npm ci --omit=dev && npx --yes "zapier-platform-cli@^19" push'
+```
+
+Two things that bite:
+
+* The CLI requires Node >= 22. `node:20` is rejected outright.
+* Never mount the host `node_modules`: it holds `@esbuild/win32-x64` and Linux needs
+  `@esbuild/linux-x64`. Copying the source without it and running `npm ci` inside the
+  container also leaves the host tree — and `npm test` — untouched.
+
+Confirm the layout before trusting any build, because a bad one looks identical from
+the CLI's output:
+
+```bash
+unzip -l build/build.zip | head
+# expect: index.js, definition.json, creates/, triggers/, node_modules/
+# and NO AppData/ prefix anywhere
+```
+
 ## Resources
 
 * [Lenz API documentation](https://lenz.io/developers)
@@ -73,6 +107,7 @@ For a lighter check on lower-stakes content, swap the action to **Assess (Fast)*
 
 ## Version history
 
+* **1.2.1** — App review fixes (2026-08-20). Removed the connection label, which showed the account's plan tier: Zapier renders that label unredacted and asks for an account name, email, or name instead (publishing requirement 5.6), so it is now unset and Zapier numbers the connections. Rewrote all five trigger/action descriptions to the build guidelines — concise, opening with a third-person verb, no platform name, no Markdown — and moved the webhook-secret requirement and the "Test returns a sample" note into help text, which is where Zapier asks for that detail. No functional change: no `perform` body, input key, or output field was touched. Also the first release packaged from Linux — see [Building and pushing](#building-and-pushing).
 * **1.2.0** — Mapped Lenz failures onto Zapier's error taxonomy (`lib/errors.js`), which previously went unused. **Running out of Lenz credits no longer counts against the Zap.** It used to raise a plain error, so a spent balance accumulated hard errors and could get a customer's automation turned off — for a billing state that resolves the moment they top up. It is now a `HaltedError`, which stops the run without penalising the Zap. A rate limit becomes a `ThrottledError` carrying the wait, so Zapier replays instead of burning the run; a rejected key becomes an `ExpiredAuthError`, which prompts a reconnect. Every action and the polling trigger now handle errors — three actions and the trigger previously had no `.catch` at all. Requires `lenz-io` ≥ 2.7.0.
 * **1.1.0** — Added the `key_finding` output field (one declarative sentence stating the finding) to Verify a Claim and New Verification Completed. Additive: existing Zaps keep working, and the new field is available to map.
 * **1.0.0** — Initial implementation. Verify a Claim (callback-based), Assess (Fast), Extract Claims, and Ask Follow-Up actions; New Verification Completed polling trigger; API-key credential with a live test against `/me/usage`.

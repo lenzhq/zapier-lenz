@@ -45,9 +45,7 @@ module.exports = {
   noun: 'Answer',
   display: {
     label: 'Ask Follow-Up',
-    description:
-      'Asks a grounded follow-up question about a completed Verify a Claim result.' +
-      ' **Testing shows example output**: clicking Test returns an example answer so you can map the output fields — a turned-on Zap returns the real answer for your question.',
+    description: 'Asks a follow-up question about a completed verification and returns the answer.',
   },
   operation: {
     inputFields: [

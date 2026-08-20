@@ -29,7 +29,12 @@ module.exports = {
 
   test,
 
-  // `test` resolves with the Usage shape ({plan, quota_resets_at, verify, ...}),
-  // so `plan` is available here as `bundle.inputData.plan`.
-  connectionLabel: '{{bundle.inputData.plan}} plan',
+  // No connectionLabel on purpose. Zapier renders it unredacted wherever
+  // connections are listed, so it must not carry account state — app review
+  // (2026-08-20) rejected `{{bundle.inputData.plan}} plan` on that ground. The
+  // sanctioned alternatives are an account name or email, and the auth test's
+  // payload (/me/usage) carries neither today; unset means Zapier numbers the
+  // connections itself. If we want a real label later, `APIKey.name` is the
+  // candidate — it also distinguishes two keys on one account, which `plan`
+  // never did.
 };

@@ -32,7 +32,7 @@ module.exports = {
   noun: 'Verification',
   display: {
     label: 'New Verification Completed',
-    description: 'Triggers when a claim submitted with this API key finishes fact-checking.',
+    description: 'Triggers when a fact-check finishes.',
   },
   operation: {
     type: 'polling',
