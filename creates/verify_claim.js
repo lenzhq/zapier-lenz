@@ -34,6 +34,12 @@ const SAMPLE = {
   executive_summary:
     'Sample summary shown while testing in the Zap editor — a live, turned-on Zap returns the real analysis for your claim.',
   sources: [{ title: 'Official Eiffel Tower site', url: 'https://www.toureiffel.paris' }],
+  // Failure fields — empty on this happy-path sample; populated when a live
+  // verification ends in status: 'failed'.
+  error: '',
+  failure_reason: '',
+  failure_class: '',
+  retryable: null,
 };
 
 // Kicks off the full pipeline and hands Lenz a Zapier-managed callback URL as
@@ -135,10 +141,17 @@ const performResume = async (z, bundle) => {
   }
 
   // 'failed', or a non-terminal status if the webhook somehow fired early.
+  // failure_class is a closed set (upstream_unavailable | insufficient_evidence
+  // | invalid_input | cancelled | internal); retryable is true only for
+  // upstream_unavailable. Both are absent on verifications older than 2026-08 —
+  // explicit fields so a Filter/Paths step can branch on WHY, not parse prose.
   return {
     task_id: bundle.outputData.task_id,
     status: 'failed',
     error: status.error || status.failure_detail || status.failure_reason || 'Pipeline failed.',
+    failure_reason: status.failure_reason || '',
+    failure_class: status.failure_class || '',
+    retryable: status.retryable ?? null,
   };
 };
 
@@ -197,6 +210,29 @@ module.exports = {
       // claims that pre-date the field.
       { key: 'key_finding', label: 'Key Finding' },
       { key: 'executive_summary', label: 'Executive Summary' },
+      // Failure fields — populated only when Status is 'failed', so a
+      // Filter/Paths step can branch on WHY instead of parsing prose.
+      { key: 'error', label: 'Error', helpText: 'Human-readable failure message. Empty on success.' },
+      {
+        key: 'failure_reason',
+        label: 'Failure Reason',
+        helpText: 'Where the pipeline stopped (e.g. "research_empty"). Empty on success.',
+      },
+      {
+        key: 'failure_class',
+        label: 'Failure Class',
+        helpText:
+          'Why it failed, from a closed set: upstream_unavailable, insufficient_evidence, ' +
+          'invalid_input, cancelled, internal. Empty on success and on verifications older than 2026-08.',
+      },
+      {
+        key: 'retryable',
+        label: 'Retryable',
+        type: 'boolean',
+        helpText:
+          'True only for upstream_unavailable — re-running the same claim later can succeed. ' +
+          'For every other failure class, retrying the same input will not help.',
+      },
     ],
   },
 };

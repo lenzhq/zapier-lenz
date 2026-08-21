@@ -214,7 +214,31 @@ describe('creates.verify_claim', () => {
     expect(result).toMatchObject({ status: 'needs_input', reason: 'multi_claim' });
   });
 
-  it('performResume surfaces a failed pipeline', async () => {
+  it('performResume surfaces a failed pipeline with the branchable failure fields', async () => {
+    const client = mockClient({
+      getStatus: jest.fn().mockResolvedValue({
+        status: 'failed',
+        error: 'Pipeline stopped at: research_empty',
+        failure_reason: 'research_empty',
+        failure_class: 'upstream_unavailable',
+        retryable: true,
+      }),
+    });
+    LenzClient.mockImplementation(() => client);
+
+    const bundle = { authData: { apiKey: 'lenz_good' }, outputData: { task_id: 'task_123' } };
+    const result = await appTester(App.creates.verify_claim.operation.performResume, bundle);
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      error: 'Pipeline stopped at: research_empty',
+      failure_reason: 'research_empty',
+      failure_class: 'upstream_unavailable',
+      retryable: true,
+    });
+  });
+
+  it('performResume tolerates a legacy failed body without the 2026-08 fields', async () => {
     const client = mockClient({
       getStatus: jest.fn().mockResolvedValue({ status: 'failed', error: 'boom' }),
     });
@@ -223,7 +247,13 @@ describe('creates.verify_claim', () => {
     const bundle = { authData: { apiKey: 'lenz_good' }, outputData: { task_id: 'task_123' } };
     const result = await appTester(App.creates.verify_claim.operation.performResume, bundle);
 
-    expect(result).toMatchObject({ status: 'failed', error: 'boom' });
+    expect(result).toMatchObject({
+      status: 'failed',
+      error: 'boom',
+      failure_reason: '',
+      failure_class: '',
+      retryable: null,
+    });
   });
 });
 
