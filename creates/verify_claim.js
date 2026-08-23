@@ -42,6 +42,14 @@ const SAMPLE = {
   retryable: null,
 };
 
+// The failure fields as they read when nothing failed. Spread into EVERY
+// non-failed branch, because Zapier's Filter treats a MISSING field and an
+// EMPTY one as different conditions ("does not exist" vs "is empty") — and the
+// Zap editor builds those filters from SAMPLE, which promises all four. Omit
+// them on the success path and a filter the user tested against the sample
+// behaves differently on a live run.
+const NO_FAILURE = { error: '', failure_reason: '', failure_class: '', retryable: null };
+
 // Kicks off the full pipeline and hands Lenz a Zapier-managed callback URL as
 // the per-call webhook_url. Zapier parks the Task as "waiting" until Lenz
 // posts back to that URL (see performResume) or ~90s median passes.
@@ -127,6 +135,7 @@ const performResume = async (z, bundle) => {
       key_finding: result.key_finding || '',
       executive_summary: result.executive_summary || '',
       sources: (result.sources || []).map((s) => ({ title: s.title || '', url: s.url || '' })),
+      ...NO_FAILURE,
     };
   }
 
@@ -137,21 +146,40 @@ const performResume = async (z, bundle) => {
       reason: status.reason || '',
       message:
         'This claim is ambiguous or contains multiple sub-claims. Rephrase it to be more specific and re-run.',
+      ...NO_FAILURE,
     };
   }
 
-  // 'failed', or a non-terminal status if the webhook somehow fired early.
-  // failure_class is a closed set (upstream_unavailable | insufficient_evidence
-  // | invalid_input | cancelled | internal); retryable is true only for
-  // upstream_unavailable. Both are absent on verifications older than 2026-08 —
-  // explicit fields so a Filter/Paths step can branch on WHY, not parse prose.
+  // A terminal failure. failure_class is a closed set (upstream_unavailable |
+  // insufficient_evidence | invalid_input | cancelled | internal); retryable is
+  // true only for upstream_unavailable. Both are absent on verifications older
+  // than 2026-08 — explicit fields so a Filter/Paths step can branch on WHY,
+  // not parse prose.
+  if (status.status === 'failed') {
+    return {
+      task_id: bundle.outputData.task_id,
+      status: 'failed',
+      error: status.error || status.failure_detail || status.failure_reason || 'Pipeline failed.',
+      failure_reason: status.failure_reason || '',
+      failure_class: status.failure_class || '',
+      retryable: status.retryable ?? null,
+    };
+  }
+
+  // Anything else: Lenz's callback fired before the pipeline reached a terminal
+  // state. This is NOT a failure — the task is still running and will most
+  // likely complete. Reporting it as 'failed' would send retryable: null, which
+  // asserts "re-running this will not help" about a live task, so a Zap
+  // branching on that field raises a false alarm on a verification that is
+  // about to succeed. Surface the real status and leave the failure fields
+  // empty; a Zap gating on `status is completed` still correctly skips it.
   return {
     task_id: bundle.outputData.task_id,
-    status: 'failed',
-    error: status.error || status.failure_detail || status.failure_reason || 'Pipeline failed.',
-    failure_reason: status.failure_reason || '',
-    failure_class: status.failure_class || '',
-    retryable: status.retryable ?? null,
+    status: status.status || 'processing',
+    message:
+      'Lenz signalled before this verification reached a terminal state — it is still ' +
+      'running. Look it up by Task ID in Lenz, or re-run this Zap.',
+    ...NO_FAILURE,
   };
 };
 
