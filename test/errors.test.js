@@ -155,6 +155,73 @@ describe('quota (402) → HaltedError', () => {
   });
 });
 
+describe('capacity / provider outage (503) → ThrottledError', () => {
+  // Admission control and provider-exhaustion 503s carry a typed body code
+  // and a stated wait. Like 402, the condition resolves itself — it must not
+  // count against the Zap's error budget.
+  function capacityError({ code = 'capacity', body } = {}) {
+    return new LenzError({
+      message: 'Server error',
+      statusCode: 503,
+      code,
+      body,
+    });
+  }
+
+  async function capture503(err503) {
+    LenzClient.mockImplementation(() =>
+      mockClient({ assess: jest.fn().mockRejectedValue(err503) }),
+    );
+    return captureError(App.creates.assess.operation.perform, {
+      ...AUTH,
+      inputData: { claim: 'x' },
+    });
+  }
+
+  it('replays a capacity 503 after the stated body retry_after', async () => {
+    const err = await capture503(capacityError({ body: { retry_after: 100 } }));
+    expect(err.name).toBe('ThrottledError');
+    expect(JSON.parse(err.message).delay).toBe(100);
+    expect(JSON.parse(err.message).message).toContain('at capacity');
+  });
+
+  it('handles upstream_unavailable the same way', async () => {
+    const err = await capture503(
+      capacityError({ code: 'upstream_unavailable', body: { retry_after: 90 } }),
+    );
+    expect(err.name).toBe('ThrottledError');
+    expect(JSON.parse(err.message).delay).toBe(90);
+    expect(JSON.parse(err.message).message).toContain('providers');
+  });
+
+  it('defaults the wait when the body states none', async () => {
+    const err = await capture503(capacityError({ body: {} }));
+    expect(err.name).toBe('ThrottledError');
+    expect(JSON.parse(err.message).delay).toBe(60);
+  });
+
+  it('clamps an implausibly long stated wait', async () => {
+    const err = await capture503(capacityError({ body: { retry_after: 86400 } }));
+    expect(JSON.parse(err.message).delay).toBe(3600);
+  });
+
+  it('floors malformed waits instead of hot-looping', async () => {
+    for (const bad of [-5, 0, NaN, 'abc']) {
+      const err = await capture503(capacityError({ body: { retry_after: bad } }));
+      expect(err.name).toBe('ThrottledError');
+      expect(JSON.parse(err.message).delay).toBe(60);
+    }
+  });
+
+  it('leaves a plain 503 without a typed code on the hard-error path', async () => {
+    // Regression pin: only the two typed codes throttle. An untyped 503 keeps
+    // today's behaviour (rethrown unchanged, surfaces as a real failure).
+    const err = await capture503(new LenzError({ message: 'Server error', statusCode: 503 }));
+    expect(err.name).not.toBe('ThrottledError');
+    expect(err.message).toContain('Server error');
+  });
+});
+
 describe('rate limit (429) → ThrottledError', () => {
   it('hands Zapier the wait so it replays instead of burning the run', async () => {
     const err429 = new LenzRateLimitError({

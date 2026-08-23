@@ -214,7 +214,31 @@ describe('creates.verify_claim', () => {
     expect(result).toMatchObject({ status: 'needs_input', reason: 'multi_claim' });
   });
 
-  it('performResume surfaces a failed pipeline', async () => {
+  it('performResume surfaces a failed pipeline with the branchable failure fields', async () => {
+    const client = mockClient({
+      getStatus: jest.fn().mockResolvedValue({
+        status: 'failed',
+        error: 'Pipeline stopped at: research_empty',
+        failure_reason: 'research_empty',
+        failure_class: 'upstream_unavailable',
+        retryable: true,
+      }),
+    });
+    LenzClient.mockImplementation(() => client);
+
+    const bundle = { authData: { apiKey: 'lenz_good' }, outputData: { task_id: 'task_123' } };
+    const result = await appTester(App.creates.verify_claim.operation.performResume, bundle);
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      error: 'Pipeline stopped at: research_empty',
+      failure_reason: 'research_empty',
+      failure_class: 'upstream_unavailable',
+      retryable: true,
+    });
+  });
+
+  it('performResume tolerates a legacy failed body without the 2026-08 fields', async () => {
     const client = mockClient({
       getStatus: jest.fn().mockResolvedValue({ status: 'failed', error: 'boom' }),
     });
@@ -223,7 +247,53 @@ describe('creates.verify_claim', () => {
     const bundle = { authData: { apiKey: 'lenz_good' }, outputData: { task_id: 'task_123' } };
     const result = await appTester(App.creates.verify_claim.operation.performResume, bundle);
 
-    expect(result).toMatchObject({ status: 'failed', error: 'boom' });
+    expect(result).toMatchObject({
+      status: 'failed',
+      error: 'boom',
+      failure_reason: '',
+      failure_class: '',
+      retryable: null,
+    });
+  });
+
+  // Zapier's Filter distinguishes "does not exist" from "is empty", and the Zap
+  // editor builds those filters from SAMPLE. Any key SAMPLE promises must
+  // therefore be PRESENT (empty, not missing) on every branch, or a filter the
+  // user tested against the sample behaves differently on a live run.
+  it.each([
+    ['completed', { status: 'completed', result: { verdict: 'True', sources: [] } }],
+    ['needs_input', { status: 'needs_input', reason: 'multi_claim' }],
+  ])('performResume returns the failure fields EMPTY, not missing, on %s', async (_label, body) => {
+    LenzClient.mockImplementation(() => mockClient({ getStatus: jest.fn().mockResolvedValue(body) }));
+
+    const bundle = { authData: { apiKey: 'lenz_good' }, outputData: { task_id: 'task_123' } };
+    const result = await appTester(App.creates.verify_claim.operation.performResume, bundle);
+
+    for (const key of ['error', 'failure_reason', 'failure_class', 'retryable']) {
+      expect(result).toHaveProperty(key);
+    }
+    expect(result.error).toBe('');
+    expect(result.failure_reason).toBe('');
+    expect(result.failure_class).toBe('');
+    expect(result.retryable).toBeNull();
+  });
+
+  it('performResume does not report a still-running verification as failed', async () => {
+    // The callback firing before the pipeline settles is not a failure. Calling
+    // it one would send retryable: null — "re-running will not help" — about a
+    // task that is about to succeed, and a Zap branching on that field would
+    // raise a false alarm.
+    LenzClient.mockImplementation(() =>
+      mockClient({ getStatus: jest.fn().mockResolvedValue({ status: 'processing' }) }),
+    );
+
+    const bundle = { authData: { apiKey: 'lenz_good' }, outputData: { task_id: 'task_123' } };
+    const result = await appTester(App.creates.verify_claim.operation.performResume, bundle);
+
+    expect(result.status).toBe('processing');
+    expect(result.failure_class).toBe('');
+    expect(result.retryable).toBeNull();
+    expect(result.error).toBe('');
   });
 });
 
