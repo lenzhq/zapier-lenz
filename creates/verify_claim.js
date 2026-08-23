@@ -240,27 +240,26 @@ module.exports = {
       { key: 'executive_summary', label: 'Executive Summary' },
       // Failure fields — populated only when Status is 'failed', so a
       // Filter/Paths step can branch on WHY instead of parsing prose.
-      { key: 'error', label: 'Error', helpText: 'Human-readable failure message. Empty on success.' },
-      {
-        key: 'failure_reason',
-        label: 'Failure Reason',
-        helpText: 'Where the pipeline stopped (e.g. "research_empty"). Empty on success.',
-      },
-      {
-        key: 'failure_class',
-        label: 'Failure Class',
-        helpText:
-          'Why it failed, from a closed set: upstream_unavailable, insufficient_evidence, ' +
-          'invalid_input, cancelled, internal. Empty on success and on verifications older than 2026-08.',
-      },
-      {
-        key: 'retryable',
-        label: 'Retryable',
-        type: 'boolean',
-        helpText:
-          'True only for upstream_unavailable — re-running the same claim later can succeed. ' +
-          'For every other failure class, retrying the same input will not help.',
-      },
+      //
+      // No `helpText` on any of these: it is an INPUT-field property, and
+      // PlainOutputFieldSchema rejects it outright ("is not allowed to have the
+      // additional property"), which fails `zapier validate` and blocks the
+      // push. Zapier gives output fields no per-field help affordance at all —
+      // the editor renders them as bare labels — so what each one means is
+      // documented here and in the action description instead.
+      //
+      //   error           Human-readable failure message. Empty on success.
+      //   failure_reason  Where the pipeline stopped, e.g. 'research_empty'.
+      //   failure_class   Why, from a closed set: upstream_unavailable |
+      //                   insufficient_evidence | invalid_input | cancelled |
+      //                   internal. Empty on verifications older than 2026-08.
+      //   retryable       True only for upstream_unavailable — re-running that
+      //                   same claim later can succeed. Every other class means
+      //                   retrying the same input will not help.
+      { key: 'error', label: 'Error' },
+      { key: 'failure_reason', label: 'Failure Reason' },
+      { key: 'failure_class', label: 'Failure Class' },
+      { key: 'retryable', label: 'Retryable', type: 'boolean' },
     ],
   },
 };
