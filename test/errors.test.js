@@ -55,7 +55,12 @@ function quotaError() {
   // 'https://lenz.io/plans', deleting the `err.upgradeUrl` read entirely
   // would leave every assertion below green.
   err.upgradeUrl = 'https://example.test/upgrade-sentinel';
+  // `remaining` is in the CAPABILITY's unit (verifications); `creditBalance`
+  // and `cost` are in credits. The three are deliberately different numbers
+  // here so a test cannot pass by reading the wrong one.
   err.remaining = 0;
+  err.creditBalance = 4;
+  err.cost = 10;
   err.resetsAt = '2026-09-01T00:00:00+00:00';
   return err;
 }
@@ -86,6 +91,62 @@ describe('quota (402) → HaltedError', () => {
     expect(err.message).toContain('https://example.test/upgrade-sentinel');
     // Must not invite a retry — a 402 never clears on retry.
     expect(err.message).toContain("Retrying won't help");
+  });
+
+  it('sizes the shortfall in credits, not in capability units', async () => {
+    // "4 credits, this needs 10" is one top-up away; "0 verifications" reads
+    // as a plan problem. The user sees this message in the Zap history with
+    // no other context, so it has to carry the distinction itself.
+    LenzClient.mockImplementation(() =>
+      mockClient({ assess: jest.fn().mockRejectedValue(quotaError()) }),
+    );
+
+    const err = await captureError(App.creates.assess.operation.perform, {
+      ...AUTH,
+      inputData: { text: 'The Great Wall is visible from space.' },
+    });
+
+    expect(err.message).toContain('costs 10 credits');
+    expect(err.message).toContain('you have 4 left');
+  });
+
+  it('omits the balance line rather than printing undefined', async () => {
+    // The API omits `cost` / `credits_remaining` when it cannot resolve them,
+    // so the SDK leaves them null — the message must degrade to the plain
+    // wording rather than saying "costs undefined credits".
+    const bare = quotaError();
+    bare.creditBalance = null;
+    bare.cost = null;
+    LenzClient.mockImplementation(() => mockClient({ assess: jest.fn().mockRejectedValue(bare) }));
+
+    const err = await captureError(App.creates.assess.operation.perform, {
+      ...AUTH,
+      inputData: { text: 'anything' },
+    });
+
+    expect(err.name).toBe('HaltedError');
+    expect(err.message).not.toContain('undefined');
+    expect(err.message).not.toContain('costs');
+    expect(err.message).toContain("Retrying won't help");
+  });
+
+  it('does not read the deprecated creditsRemaining alias', async () => {
+    // `creditsRemaining` aliases `remaining` (a verification count) and warns
+    // on access. Reading it here would print the wrong unit AND emit a
+    // deprecation warning on every out-of-credits run.
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    LenzClient.mockImplementation(() =>
+      mockClient({ assess: jest.fn().mockRejectedValue(quotaError()) }),
+    );
+
+    await captureError(App.creates.assess.operation.perform, {
+      ...AUTH,
+      inputData: { text: 'anything' },
+    });
+
+    const said = warn.mock.calls.flat().join(' ');
+    expect(said).not.toContain('creditsRemaining is deprecated');
+    warn.mockRestore();
   });
 
   it('surfaces the reset time when the server states one', async () => {
