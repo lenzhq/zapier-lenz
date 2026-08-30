@@ -20,7 +20,7 @@ const SAMPLE = {
   ],
 };
 
-// Fast 3-model panel verdict (~5-10s) — one entry per claim found in the
+// Fast 3-model panel verdict (~10s) — one entry per claim found in the
 // text. Well under Zapier's 30s action timeout, so a live run is a plain
 // sync call. Editor testing (isLoadingSample) returns stubbed sample data
 // and makes NO real call, so a user never spends an assess credit just for
@@ -66,7 +66,7 @@ module.exports = {
   display: {
     label: 'Assess (Fast)',
     description:
-      'Checks every claim in a block of text and returns a verdict for each, in about 5-10 seconds.',
+      'Checks every claim in a block of text and returns a verdict for each, in about 10 seconds.',
   },
   operation: {
     inputFields: [
