@@ -57,9 +57,9 @@ const perform = async (z, bundle) => {
   const client = lenzClient(bundle);
 
   // Editor testing (isLoadingSample) never runs the real ~90s pipeline and
-  // never spends a verify credit — Zapier's recommended handling for a
+  // never spends verify credits — Zapier's recommended handling for a
   // callback action. But rather than stubbing blindly, we make the ONE free
-  // call that costs nothing (GET /me/usage — no credit) to answer the only
+  // call that costs nothing (GET /me/usage — no credits) to answer the only
   // question the stub otherwise can't: does this key have a webhook secret?
   // Verify a Claim REQUIRES one (it always sends a callback webhook_url, which
   // Lenz refuses on a secret-less key). If it's missing, warn NOW at test time
