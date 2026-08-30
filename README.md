@@ -22,7 +22,7 @@ This integration is not yet in Zapier's public App Directory. While private, it'
 | Action | What it does |
 |---|---|
 | **Verify a Claim** *(default)* | Full pipeline (research → debate → adjudication), ~90 seconds. Returns a verdict, confidence, `lenz_score` (1-10), sourced citations, and an executive summary. Reserve for high-stakes claims that need a thorough, cited answer. Runs asynchronously via Zapier's callback mechanism — the Zap step shows as "waiting," not stuck. |
-| **Assess (Fast)** | A quick 3-model panel verdict, ~5-10 seconds, one entry per claim identified in the input text. Good default for lower-stakes checks. |
+| **Assess (Fast)** | A quick 3-model panel verdict, ~10 seconds, one entry per claim identified in the input text. Good default for lower-stakes checks. |
 | **Extract Claims** | Free — pulls the verifiable factual claims out of a block of text without checking them. Useful as a first step before running Assess or Verify a Claim on each claim individually. |
 | **Ask Follow-Up** | Asks a question grounded in the full research behind a completed **Verify a Claim** result. Requires the `verification_id` that action returns — not usable standalone. |
 
@@ -63,7 +63,7 @@ A simple "fact-check gate" pattern — verify a claim before acting on it:
 3. Add a **Filter by Zapier** step after it with the condition `passed` **is true**.
 4. Continue the Zap normally after the filter — claims that failed are simply filtered out (add a separate branch/Zap if you want to route them somewhere, e.g. a Slack alert).
 
-For a lighter check on lower-stakes content, swap the action to **Assess (Fast)** instead — same wiring, ~5-10s instead of ~90s.
+For a lighter check on lower-stakes content, swap the action to **Assess (Fast)** instead — same wiring, ~10s instead of ~90s.
 
 ## Building and pushing
 
