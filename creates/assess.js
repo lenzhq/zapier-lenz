@@ -22,10 +22,10 @@ const SAMPLE = {
 
 // Fast 3-model panel verdict (~10s) — one entry per claim found in the
 // text. Well under Zapier's 30s action timeout, so a live run is a plain
-// sync call. Editor testing (isLoadingSample) returns stubbed sample data
-// and makes NO real call, so a user never spends credits just for
-// clicking "Test step" while building their Zap. Auth is already validated
-// at connection time.
+// sync call. Editor testing (isLoadingSample) returns stubbed sample data and
+// makes NO real call, so a user never spends credits just for clicking "Test
+// step" while building their Zap. Auth is already validated at connection
+// time.
 const perform = async (z, bundle) => {
   if (bundle.meta && bundle.meta.isLoadingSample) {
     return SAMPLE;

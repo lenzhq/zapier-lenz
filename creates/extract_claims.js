@@ -16,11 +16,10 @@ const SAMPLE = {
 
 // Free — pulls the verifiable factual claims out of a block of text without
 // checking them. Useful as a first step before running Assess or Verify on
-// each claim individually. Extract itself costs no credits (daily fair-use limit
-// only), but editor testing (isLoadingSample) still returns stubbed sample
+// each claim individually. Extract itself costs no credits (a daily fair-use
+// cap only), but editor testing (isLoadingSample) still returns stubbed sample
 // data and makes no real call — consistent with the other creates, and it
-// keeps test clicks off the daily rate limit. Auth is validated at connect
-// time.
+// keeps test clicks off that cap. Auth is validated at connect time.
 const perform = (z, bundle) => {
   if (bundle.meta && bundle.meta.isLoadingSample) {
     return Promise.resolve(SAMPLE);
