@@ -130,23 +130,125 @@ describe('quota (402) → HaltedError', () => {
     expect(err.message).toContain("Retrying won't help");
   });
 
-  it('does not read the deprecated creditsRemaining alias', async () => {
-    // `creditsRemaining` aliases `remaining` (a verification count) and warns
-    // on access. Reading it here would print the wrong unit AND emit a
-    // deprecation warning on every out-of-credits run.
-    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-    LenzClient.mockImplementation(() =>
-      mockClient({ assess: jest.fn().mockRejectedValue(quotaError()) }),
-    );
+  it('degrades the same way when the fields are absent, not null', async () => {
+    // `null` is what a CURRENT SDK reports for a field the server omitted.
+    // An SDK too old to know the field at all leaves it `undefined` — a
+    // different shape, and the one that ships if the dependency floor slips.
+    const bare = quotaError();
+    delete bare.creditBalance;
+    delete bare.cost;
+    LenzClient.mockImplementation(() => mockClient({ assess: jest.fn().mockRejectedValue(bare) }));
 
-    await captureError(App.creates.assess.operation.perform, {
+    const err = await captureError(App.creates.assess.operation.perform, {
       ...AUTH,
       inputData: { text: 'anything' },
     });
 
-    const said = warn.mock.calls.flat().join(' ');
-    expect(said).not.toContain('creditsRemaining is deprecated');
-    warn.mockRestore();
+    expect(err.name).toBe('HaltedError');
+    expect(err.message).not.toContain('undefined');
+    expect(err.message).not.toContain('costs');
+  });
+
+  it('still names the cost when only the balance is unreported', async () => {
+    // The server resolves `credits_remaining` ONLY when the caller supplied
+    // neither `remaining` nor `resets_at`, while `cost` is emitted
+    // unconditionally from the weight table — so a real 402 can carry the cost
+    // alone. An all-or-nothing guard would throw away the half we do have.
+    const partial = quotaError();
+    partial.creditBalance = null;
+    LenzClient.mockImplementation(() =>
+      mockClient({ assess: jest.fn().mockRejectedValue(partial) }),
+    );
+
+    const err = await captureError(App.creates.assess.operation.perform, {
+      ...AUTH,
+      inputData: { text: 'anything' },
+    });
+
+    expect(err.message).toContain('costs 10 credits');
+    expect(err.message).not.toContain('left');
+  });
+
+  it('says nothing about size when the refused call costs no credits', async () => {
+    // /extract is weight 0, so a 402 on it is the plan not covering the call,
+    // not a shortfall. "Costs 0 credits and you have 0 left" would send the
+    // user to a top-up that cannot fix it.
+    const free = quotaError();
+    free.cost = 0;
+    free.creditBalance = 0;
+    LenzClient.mockImplementation(() => mockClient({ extract: jest.fn().mockRejectedValue(free) }));
+
+    const err = await captureError(App.creates.extract_claims.operation.perform, {
+      ...AUTH,
+      inputData: { text: 'some text' },
+    });
+
+    expect(err.name).toBe('HaltedError');
+    expect(err.message).not.toContain('costs 0 credits');
+    expect(err.message).not.toContain('0 left');
+  });
+
+  it('states the reset once, not twice', async () => {
+    // The advice used to appear as "wait for the monthly reset." immediately
+    // followed by "Credits reset <timestamp>." — the same sentence twice.
+    LenzClient.mockImplementation(() =>
+      mockClient({ assess: jest.fn().mockRejectedValue(quotaError()) }),
+    );
+
+    const err = await captureError(App.creates.assess.operation.perform, {
+      ...AUTH,
+      inputData: { text: 'anything' },
+    });
+
+    expect(err.message).toContain('2026-09-01');
+    expect(err.message).not.toContain('monthly reset');
+    // Counting occurrences would be unreliable: Zapier's app tester appends a
+    // diagnostic envelope that repeats the thrown message. Assert on the two
+    // wordings that used to sit side by side instead.
+    expect(err.message).not.toContain('monthly reset');
+    expect(err.message).not.toContain('Credits reset');
+  });
+
+  it('does not read the deprecated creditsRemaining alias', async () => {
+    // `creditsRemaining` aliases `remaining` (a verification count, 0 here)
+    // while `creditBalance` is the pool (4). Reading the alias would print the
+    // wrong unit AND touch a deprecated accessor.
+    //
+    // The VALUE assertions are the load-bearing ones. The warning check is
+    // secondary on purpose: the SDK gates it behind a process-wide one-shot
+    // latch, so any earlier read anywhere in the worker makes it vacuous.
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      LenzClient.mockImplementation(() =>
+        mockClient({ assess: jest.fn().mockRejectedValue(quotaError()) }),
+      );
+
+      const err = await captureError(App.creates.assess.operation.perform, {
+        ...AUTH,
+        inputData: { text: 'anything' },
+      });
+
+      expect(err.message).toContain('you have 4 left');
+      expect(err.message).not.toContain('you have 0 left');
+
+      const said = warn.mock.calls.flat().join(' ');
+      expect(said).not.toContain('creditsRemaining is deprecated');
+    } finally {
+      // NOT after the assertions: a failing expect throws, and an unrestored
+      // spy would silence console.warn for every test after this one.
+      warn.mockRestore();
+    }
+  });
+
+  it('is built against an SDK that actually reports the credit pool', () => {
+    // The ratchet for the defect this feature shipped with: every other test
+    // here ASSIGNS creditBalance/cost onto the error by hand, so they pass
+    // against an SDK that never populates them. lenz-io declares both as
+    // class fields (null when unreported) from 2.9.0; on 2.7.0 and 2.8.0 they
+    // are absent entirely and the whole feature is a silent no-op.
+    const err = new LenzQuotaExceededError({ message: 'x', statusCode: 402 });
+    expect(err).toHaveProperty('creditBalance');
+    expect(err).toHaveProperty('cost');
   });
 
   it('surfaces the reset time when the server states one', async () => {
