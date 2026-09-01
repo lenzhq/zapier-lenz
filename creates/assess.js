@@ -66,16 +66,19 @@ module.exports = {
   display: {
     label: 'Assess (Fast)',
     description:
-      'Checks every claim in a block of text and returns a verdict for each, in about 10 seconds.',
+      'Checks a claim and returns a verdict for it, in about 10 seconds. Several claims in one input are each assessed separately.',
   },
   operation: {
     inputFields: [
       {
+        // Labelled "Claim" — a document is text, a claim is a claim. The KEY
+        // stays `text`: it is what saved Zaps persist, so renaming it would
+        // break every existing Assess step.
         key: 'text',
-        label: 'Text',
+        label: 'Claim',
         type: 'text',
         required: true,
-        helpText: 'The text to check. If it contains several claims, each is assessed separately.',
+        helpText: 'The claim to check. If it contains several claims, each is assessed separately.',
       },
       {
         key: 'language',
