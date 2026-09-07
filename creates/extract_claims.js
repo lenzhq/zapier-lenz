@@ -3,12 +3,23 @@
 const { mapLenzError } = require('../lib/errors');
 const { lenzClient } = require('../client');
 
+// `perform` returns the API's response untouched, so every value here has to
+// be one the API actually sends — the editor builds Filter and Paths steps
+// from this sample, and it is the ONLY value a user is ever shown. A sample
+// that says `ok` teaches a filter on "Status = ok" which then matches nothing
+// on a live run, dropping every extraction with nothing to indicate why.
+//
+//   status  `ready` (claims found) | `not_a_claim` (none). A third value,
+//           `no_match`, exists server-side but is reachable only through the
+//           `focus` parameter, which this integration does not offer yet.
+//   domain  One of the eight canonical capitalised values: Health, Science,
+//           Politics, Finance, Tech, History, Legal, General.
 const SAMPLE = {
-  status: 'ok',
+  status: 'ready',
   claim: 'The Eiffel Tower is 330 metres tall.',
   identified_claims: ['The Eiffel Tower is 330 metres tall.'],
   candidate_claims: [],
-  domain: 'science',
+  domain: 'Science',
   key_entities: [{ name: 'Eiffel Tower', type: 'place' }],
   presumed_intent: 'informational',
   original_input: 'Did you know the Eiffel Tower is 330 metres tall?',
@@ -39,7 +50,13 @@ module.exports = {
   noun: 'Extraction',
   display: {
     label: 'Extract Claims',
-    description: 'Pulls the verifiable factual claims out of a block of text without checking them.',
+    // The Status vocabulary belongs here because output fields cannot carry
+    // helpText — PlainOutputFieldSchema rejects the property outright and
+    // fails `zapier validate` (see #8) — and the editor renders them as bare
+    // labels. This description is the only place a user building a Filter on
+    // Status can learn what to compare against.
+    description:
+      'Pulls the verifiable factual claims out of a block of text without checking them. Status is "ready" when claims were found, or "not_a_claim" when none were.',
   },
   operation: {
     inputFields: [

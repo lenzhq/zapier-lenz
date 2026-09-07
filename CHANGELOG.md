@@ -3,6 +3,25 @@
 User-facing changes to the Lenz integration for Zapier. Build and release
 mechanics live in [README.md](README.md#building-and-pushing).
 
+## 1.3.2
+
+Fix extract_claims/create: the sample Status now reads `ready`, the value the
+API actually sends.
+
+**Extract Claims** showed `Status: ok` in the Zap editor, and the API never
+sends `ok` — it sends `ready` when it found claims and `not_a_claim` when it
+did not. The editor builds Filter and Paths steps from that sample, so a
+filter on "Status is ok" matched nothing on a live run and every extraction
+was dropped with nothing to say why. The sample `Domain` was lowercase for the
+same reason, on **Extract Claims** and on **New Verification Completed**; the
+API capitalises it.
+
+**If you built a Filter or Paths step on Extract's Status before this
+release, change `ok` to `ready`.** A lowercase Domain needs capitalising. No
+other change: the request the integration sends is untouched, and no field was
+renamed or removed. The Status and Domain vocabularies are now written down in
+[README.md](README.md#values-to-filter-on).
+
 ## 1.3.1
 
 The input on **Assess (Fast)** is labelled **Claim** instead of **Text**,

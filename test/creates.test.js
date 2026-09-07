@@ -346,14 +346,14 @@ describe('creates.assess', () => {
 describe('creates.extract_claims', () => {
   it('passes the raw extraction result through', async () => {
     const client = mockClient({
-      extract: jest.fn().mockResolvedValue({ status: 'ok', claim: 'A', identified_claims: ['A'] }),
+      extract: jest.fn().mockResolvedValue({ status: 'ready', claim: 'A', identified_claims: ['A'] }),
     });
     LenzClient.mockImplementation(() => client);
 
     const bundle = { authData: { apiKey: 'lenz_good' }, inputData: { text: 'A' } };
     const result = await appTester(App.creates.extract_claims.operation.perform, bundle);
 
-    expect(result).toMatchObject({ status: 'ok', claim: 'A' });
+    expect(result).toMatchObject({ status: 'ready', claim: 'A' });
   });
 
   it('stubs sample data and makes NO real call while loading a sample (consistent with the other creates)', async () => {
@@ -363,9 +363,38 @@ describe('creates.extract_claims', () => {
     const bundle = { authData: { apiKey: 'lenz_good' }, inputData: { text: 'A' }, meta: { isLoadingSample: true } };
     const result = await appTester(App.creates.extract_claims.operation.perform, bundle);
 
-    expect(result.status).toBe('ok');
+    expect(result.status).toBe('ready');
     expect(Array.isArray(result.identified_claims)).toBe(true);
     expect(client.extract).not.toHaveBeenCalled();
+  });
+
+  // The sample IS the contract for filter-building: `perform` passes the API
+  // response through untouched, so a sample value the API never sends teaches
+  // a filter that silently matches nothing. Shipped as `status: 'ok'` and
+  // `domain: 'science'` until 1.3.2. Asserted against the API's vocabulary
+  // rather than against one blessed string, so widening the enum server-side
+  // does not fail here for the wrong reason.
+  it('samples only status values the API actually sends', () => {
+    // `no_match` is server-side reachable only through `focus`, which this
+    // integration does not offer — include it so exposing focus needs no
+    // change here.
+    const API_STATUSES = ['ready', 'not_a_claim', 'no_match'];
+    expect(API_STATUSES).toContain(App.creates.extract_claims.operation.sample.status);
+  });
+
+  it('samples the domain in the canonical capitalised form', () => {
+    const API_DOMAINS = [
+      'Health',
+      'Science',
+      'Politics',
+      'Finance',
+      'Tech',
+      'History',
+      'Legal',
+      'General',
+    ];
+    expect(API_DOMAINS).toContain(App.creates.extract_claims.operation.sample.domain);
+    expect(API_DOMAINS).toContain(App.triggers.new_verification.operation.sample.domain);
   });
 });
 

@@ -41,7 +41,10 @@ module.exports = {
       id: 'ab12cd34',
       verification_id: 'ab12cd34',
       claim: 'The Eiffel Tower is 330 metres tall.',
-      domain: 'science',
+      // Capitalised, as the API emits it: Health, Science, Politics, Finance,
+      // Tech, History, Legal, General. A lowercase sample teaches a filter on
+      // "Domain = science" that never matches a live row.
+      domain: 'Science',
       verdict: 'True',
       confidence: 'high',
       lenz_score: 9,

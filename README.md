@@ -28,6 +28,21 @@ This integration is not yet in Zapier's public App Directory. While private, it'
 
 Every claim-checking action returns a `passed` boolean (derived from the verdict) alongside the raw verdict/confidence/citations, so you can wire a **Filter** step directly off the result — e.g. only continue the Zap when a claim passed.
 
+### Values to filter on
+
+A **Filter** or **Paths** step compares against exact strings, and the Zap editor offers
+only what the sample shows. These are the values the API actually sends:
+
+| Field | Where | Values |
+|---|---|---|
+| `status` | Extract Claims | `ready` when claims were found, `not_a_claim` when none were. (`no_match` exists server-side but is reachable only via a `focus` hint, which this integration does not offer yet.) |
+| `status` | Assess (Fast) | `ok`, `no_claim`, or `ambiguous`. Built by the integration, not the API. |
+| `domain` | Extract Claims, New Verification Completed | Capitalised: `Health`, `Science`, `Politics`, `Finance`, `Tech`, `History`, `Legal`, `General`. |
+
+Extract's `status` read `ok` in the sample until 1.3.2 — a value the API never sends — so
+a filter built on it matched nothing on a live run. If you built one before 1.3.2, change
+it to `ready`. Same for a lowercase `domain`.
+
 ## Trigger
 
 | Trigger | What it does |
