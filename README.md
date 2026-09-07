@@ -67,6 +67,13 @@ For a lighter check on lower-stakes content, swap the action to **Assess (Fast)*
 
 ## Building and pushing
 
+**Push a version only from a commit whose CI run is green.** Nothing enforces this
+technically: the release runs from a developer's machine, so there is no workflow to
+gate, and `zapier push` will package a tree whose tests fail without complaint. A
+pushed version is then one `promote` away from every user. `npm test` locally runs
+exactly what CI runs, coverage floor included, so a clean local run is the minimum
+before building.
+
 **Do not run `zapier push` from Windows.** `zapier-platform-cli` 19.1.0 copies the
 project into `%TEMP%\zapier-<hash>` and archives it with that path embedded, so the
 uploaded package carries every source file under

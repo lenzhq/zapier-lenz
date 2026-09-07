@@ -1,0 +1,41 @@
+# Runs the Jest suite on every pull request and on every push to main.
+#
+# Until this existed, nothing ran the tests outside a developer's own machine,
+# so a change that broke every test looked exactly like one that broke none.
+#
+# Node 22 because zapier-platform-core 19 targets it and the Zapier CLI
+# refuses to run on anything older — see README.md § Building and pushing.
+#
+# `npm ci` and not `npm install`: it installs package-lock.json exactly. That
+# matters more here than in most repos, because `zapier push` also builds with
+# `npm ci`, so this job installs the same tree the released package carries.
+# A range bump that was never written to the lockfile shipped a broken 1.3.0
+# release once (PR #11) precisely because the two can disagree.
+#
+# The coverage floor is enforced by Jest itself (coverageThreshold in
+# package.json), not by a step here, so `npm test` fails the same way locally
+# as it does in CI.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm test

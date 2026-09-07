@@ -18,6 +18,28 @@
   "devDependencies": {
     "jest": "^29.6.0"
   },
+  "jest": {
+    "collectCoverage": true,
+    "collectCoverageFrom": [
+      "creates/**/*.js",
+      "triggers/**/*.js",
+      "lib/**/*.js",
+      "authentication.js",
+      "client.js"
+    ],
+    "coverageReporters": [
+      "text",
+      "lcov"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "statements": 95,
+        "branches": 85,
+        "functions": 93,
+        "lines": 95
+      }
+    }
+  },
   "private": true,
   "main": "index.js"
 }
