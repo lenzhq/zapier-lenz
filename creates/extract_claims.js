@@ -9,20 +9,40 @@ const { lenzClient } = require('../client');
 // that says `ok` teaches a filter on "Status = ok" which then matches nothing
 // on a live run, dropping every extraction with nothing to indicate why.
 //
-//   status  `ready` (claims found) | `not_a_claim` (none). A third value,
-//           `no_match`, exists server-side but is reachable only through the
-//           `focus` parameter, which this integration does not offer yet.
-//   domain  One of the eight canonical capitalised values: Health, Science,
-//           Politics, Finance, Tech, History, Legal, General.
+// The contract is `ExtractOut` in lenz/api/public_authed.py. Field by field,
+// because three of these shipped as values the API cannot produce:
+//
+//   status             `ready` (claims found) | `not_a_claim` (none). The
+//                      schema also allows `no_match`, but it is reachable
+//                      ONLY with a `focus` hint, which this integration does
+//                      not offer yet.
+//   claim              The single most check-worthy claim.
+//   identified_claims  The COMPLETE ordered list when more than one claim was
+//                      found, `[]` when only one was. A ONE-ELEMENT list is
+//                      unreachable — `texts if len(texts) > 1 else []`. This
+//                      sample is therefore deliberately a two-claim
+//                      extraction, so the field shows the only shape in which
+//                      it is ever populated and stays mappable in the editor.
+//   domain             One of eight capitalised values (Health, Science,
+//                      Politics, Finance, Tech, History, Legal, General) or
+//                      `''` when the extractor produced none.
+//   key_entities       `{name, type}` here. The trigger's `entities` are
+//                      `{name, qid}` — different surfaces, different shape.
+//   presumed_intent    FREE TEXT, one sentence. Not an enum, so it must not
+//                      look like one: a filter cannot be built on it.
 const SAMPLE = {
   status: 'ready',
   claim: 'The Eiffel Tower is 330 metres tall.',
-  identified_claims: ['The Eiffel Tower is 330 metres tall.'],
+  identified_claims: [
+    'The Eiffel Tower is 330 metres tall.',
+    'The Eiffel Tower was completed in 1889.',
+  ],
   candidate_claims: [],
   domain: 'Science',
   key_entities: [{ name: 'Eiffel Tower', type: 'place' }],
-  presumed_intent: 'informational',
-  original_input: 'Did you know the Eiffel Tower is 330 metres tall?',
+  presumed_intent: 'Sharing factual details about a landmark.',
+  original_input:
+    'Did you know the Eiffel Tower is 330 metres tall? It was completed in 1889.',
 };
 
 // Free — pulls the verifiable factual claims out of a block of text without
@@ -33,7 +53,9 @@ const SAMPLE = {
 // keeps test clicks off that cap. Auth is validated at connect time.
 const perform = (z, bundle) => {
   if (bundle.meta && bundle.meta.isLoadingSample) {
-    return Promise.resolve(SAMPLE);
+    // Copied, not returned by reference — see the same note in
+    // creates/assess.js and creates/verify_claim.js.
+    return Promise.resolve({ ...SAMPLE });
   }
 
   const client = lenzClient(bundle);

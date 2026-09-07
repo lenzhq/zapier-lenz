@@ -5,22 +5,33 @@ mechanics live in [README.md](README.md#building-and-pushing).
 
 ## 1.3.2
 
-Fix extract_claims/create: the sample Status now reads `ready`, the value the
-API actually sends.
+- Fix create/extract_claims and create/assess: the example data shown while
+  building a Zap now matches what the API really returns.
 
-**Extract Claims** showed `Status: ok` in the Zap editor, and the API never
-sends `ok` — it sends `ready` when it found claims and `not_a_claim` when it
-did not. The editor builds Filter and Paths steps from that sample, so a
-filter on "Status is ok" matched nothing on a live run and every extraction
-was dropped with nothing to say why. The sample `Domain` was lowercase for the
-same reason, on **Extract Claims** and on **New Verification Completed**; the
-API capitalises it.
+The Zap editor builds Filter and Paths steps from the example each action
+shows, so an example value the API never sends teaches a filter that matches
+nothing on a live run — and says nothing about why.
 
-**If you built a Filter or Paths step on Extract's Status before this
-release, change `ok` to `ready`.** A lowercase Domain needs capitalising. No
-other change: the request the integration sends is untouched, and no field was
-renamed or removed. The Status and Domain vocabularies are now written down in
-[README.md](README.md#values-to-filter-on).
+**Extract Claims** showed `Status: ok`, and the API sends `ready` when it
+found claims or `not_a_claim` when it did not. `Domain` was lowercase where
+the API capitalises it, on Extract Claims and on **New Verification
+Completed**. `Identified Claims` showed a single entry, a shape the API never
+produces: it carries the complete list when more than one claim was found and
+is empty when only one was. `Presumed Intent` showed `informational`, which
+reads like a fixed set of options but is a free-text sentence.
+
+**Assess (Fast)** declared a `Message` output but left it out of its example,
+so a filter on it tested clean in the editor and behaved differently live.
+Message and Candidate Claims are now present on every result, empty when
+there is nothing to report.
+
+**What to check in your Zaps.** A Filter or Paths step built on Extract's
+Status before this release needs `ok` changed to `ready`, and a lowercase
+Domain capitalising. Anything branching on Presumed Intent, or on Identified
+Claims having exactly one entry, was never going to hold — use the Claim
+field for the single-claim case. Nothing was renamed or removed, and the
+request each action sends is unchanged. The values worth filtering on are now
+listed in [README.md](README.md#values-to-filter-on).
 
 ## 1.3.1
 

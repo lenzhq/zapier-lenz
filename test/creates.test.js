@@ -370,16 +370,36 @@ describe('creates.extract_claims', () => {
 
   // The sample IS the contract for filter-building: `perform` passes the API
   // response through untouched, so a sample value the API never sends teaches
-  // a filter that silently matches nothing. Shipped as `status: 'ok'` and
-  // `domain: 'science'` until 1.3.2. Asserted against the API's vocabulary
-  // rather than against one blessed string, so widening the enum server-side
-  // does not fail here for the wrong reason.
-  it('samples only status values the API actually sends', () => {
-    // `no_match` is server-side reachable only through `focus`, which this
-    // integration does not offer — include it so exposing focus needs no
-    // change here.
-    const API_STATUSES = ['ready', 'not_a_claim', 'no_match'];
-    expect(API_STATUSES).toContain(App.creates.extract_claims.operation.sample.status);
+  // a filter that silently matches nothing. Three fields shipped that way
+  // until 1.3.2 — `status: 'ok'`, `domain: 'science'` and a one-element
+  // `identified_claims` — so each gets a ratchet.
+  it('samples only status values this integration can receive', () => {
+    // Deliberately NOT including `no_match`. The API schema allows it, but it
+    // is reachable only with a `focus` hint that this integration does not
+    // send, so accepting it here would let the sample carry a value no user
+    // can ever see — the exact defect these tests exist to prevent. Widen
+    // this list in the PR that adds a Focus input field.
+    const RECEIVABLE = ['ready', 'not_a_claim'];
+    expect(RECEIVABLE).toContain(App.creates.extract_claims.operation.sample.status);
+  });
+
+  // `identified_claims` is the COMPLETE ordered list when more than one claim
+  // was found and `[]` when only one was: `texts if len(texts) > 1 else []`
+  // in lenz/extraction.py. A one-element list is unreachable, so a sample
+  // carrying one teaches a shape no live run produces.
+  it('never samples an unreachable one-element identified_claims', () => {
+    const { identified_claims: list } = App.creates.extract_claims.operation.sample;
+    expect(Array.isArray(list)).toBe(true);
+    expect(list).not.toHaveLength(1);
+  });
+
+  // `presumed_intent` is free text, one sentence — not an enum. A sample of
+  // 'informational' looks enumerable and invites an exact-string filter that
+  // can never match reliably.
+  it('samples presumed_intent as a sentence, not an enum token', () => {
+    const intent = App.creates.extract_claims.operation.sample.presumed_intent;
+    expect(intent).toMatch(/\s/);
+    expect(intent.trim()).toMatch(/\.$/);
   });
 
   it('samples the domain in the canonical capitalised form', () => {

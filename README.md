@@ -37,11 +37,17 @@ only what the sample shows. These are the values the API actually sends:
 |---|---|---|
 | `status` | Extract Claims | `ready` when claims were found, `not_a_claim` when none were. (`no_match` exists server-side but is reachable only via a `focus` hint, which this integration does not offer yet.) |
 | `status` | Assess (Fast) | `ok`, `no_claim`, or `ambiguous`. Built by the integration, not the API. |
-| `domain` | Extract Claims, New Verification Completed | Capitalised: `Health`, `Science`, `Politics`, `Finance`, `Tech`, `History`, `Legal`, `General`. |
+| `domain` | Extract Claims, New Verification Completed | Capitalised: `Health`, `Science`, `Politics`, `Finance`, `Tech`, `History`, `Legal`, `General` — **or empty**, when the extractor produced no usable domain. A Paths step covering all eight still needs a branch for the empty case. |
+| `passed` | Verify a Claim, Assess (Fast) | Boolean, derived from the verdict. The reliable thing to branch on. |
+
+Two fields on Extract Claims look filterable and are not:
+
+- **`presumed_intent`** is free text, one sentence per document. It is not an enumeration, so an exact-string filter on it cannot hold.
+- **`identified_claims`** is the complete ordered list when more than one claim was found, and `[]` when only one was. It is never a one-element list, so branch on `claim` for the single-claim case rather than on this field's length.
 
 Extract's `status` read `ok` in the sample until 1.3.2 — a value the API never sends — so
 a filter built on it matched nothing on a live run. If you built one before 1.3.2, change
-it to `ready`. Same for a lowercase `domain`.
+it to `ready`. A lowercase `domain` needs capitalising the same way.
 
 ## Trigger
 
