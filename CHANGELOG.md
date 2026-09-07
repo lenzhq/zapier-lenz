@@ -3,6 +3,13 @@
 User-facing changes to the Lenz integration for Zapier. Build and release
 mechanics live in [README.md](README.md#building-and-pushing).
 
+## 1.3.1
+
+The input on **Assess (Fast)** is labelled **Claim** instead of **Text**,
+matching the API's vocabulary: a document is `text` (**Extract Claims** keeps
+that label), a claim is `claim`. Label and help text only: the field key saved
+in existing Zaps is unchanged, and so is every request the integration sends.
+
 ## 1.3.0
 
 Lenz replaced its six per-endpoint quotas with one credit pool per account.
