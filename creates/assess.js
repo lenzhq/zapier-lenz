@@ -7,8 +7,22 @@ function isPassingVerdict(verdict) {
   return verdict === 'True' || verdict === 'Mostly True';
 }
 
+// `status` here is BUILT by this action, not passed through from the API:
+// `ok` on the happy path, `no_claim` or `ambiguous` when nothing checkable was
+// found. Those three are the real vocabulary.
+//
+// `message` and `candidate_claims` are spread into EVERY branch, and declared
+// here, because Zapier's Filter treats a MISSING field and an EMPTY one as
+// different conditions ("does not exist" vs "is empty") — and the editor
+// builds those filters from this sample while `outputFields` promises Message
+// exists. Omit them on the happy path and a filter the user tested against
+// the sample behaves differently on a live run. Same reasoning as NO_FAILURE
+// in creates/verify_claim.js.
+const NO_ERROR = { message: '', candidate_claims: [] };
+
 const SAMPLE = {
   status: 'ok',
+  ...NO_ERROR,
   claims: [
     {
       claim: 'The Eiffel Tower is 330 metres tall.',
@@ -28,7 +42,10 @@ const SAMPLE = {
 // time.
 const perform = async (z, bundle) => {
   if (bundle.meta && bundle.meta.isLoadingSample) {
-    return SAMPLE;
+    // Copied, not returned by reference: on a warm container the platform
+    // could mutate the module-level object and every later user of that
+    // container would see it. creates/verify_claim.js already does this.
+    return { ...SAMPLE };
   }
 
   const client = lenzClient(bundle);
@@ -50,6 +67,7 @@ const perform = async (z, bundle) => {
 
   return {
     status: 'ok',
+    ...NO_ERROR,
     claims: result.claims.map((c) => ({
       claim: c.claim || '',
       verdict: c.verdict || null,

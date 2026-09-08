@@ -346,14 +346,14 @@ describe('creates.assess', () => {
 describe('creates.extract_claims', () => {
   it('passes the raw extraction result through', async () => {
     const client = mockClient({
-      extract: jest.fn().mockResolvedValue({ status: 'ok', claim: 'A', identified_claims: ['A'] }),
+      extract: jest.fn().mockResolvedValue({ status: 'ready', claim: 'A', identified_claims: ['A'] }),
     });
     LenzClient.mockImplementation(() => client);
 
     const bundle = { authData: { apiKey: 'lenz_good' }, inputData: { text: 'A' } };
     const result = await appTester(App.creates.extract_claims.operation.perform, bundle);
 
-    expect(result).toMatchObject({ status: 'ok', claim: 'A' });
+    expect(result).toMatchObject({ status: 'ready', claim: 'A' });
   });
 
   it('stubs sample data and makes NO real call while loading a sample (consistent with the other creates)', async () => {
@@ -363,9 +363,58 @@ describe('creates.extract_claims', () => {
     const bundle = { authData: { apiKey: 'lenz_good' }, inputData: { text: 'A' }, meta: { isLoadingSample: true } };
     const result = await appTester(App.creates.extract_claims.operation.perform, bundle);
 
-    expect(result.status).toBe('ok');
+    expect(result.status).toBe('ready');
     expect(Array.isArray(result.identified_claims)).toBe(true);
     expect(client.extract).not.toHaveBeenCalled();
+  });
+
+  // The sample IS the contract for filter-building: `perform` passes the API
+  // response through untouched, so a sample value the API never sends teaches
+  // a filter that silently matches nothing. Three fields shipped that way
+  // until 1.3.2 — `status: 'ok'`, `domain: 'science'` and a one-element
+  // `identified_claims` — so each gets a ratchet.
+  it('samples only status values this integration can receive', () => {
+    // Deliberately NOT including `no_match`. The API schema allows it, but it
+    // is reachable only with a `focus` hint that this integration does not
+    // send, so accepting it here would let the sample carry a value no user
+    // can ever see — the exact defect these tests exist to prevent. Widen
+    // this list in the PR that adds a Focus input field.
+    const RECEIVABLE = ['ready', 'not_a_claim'];
+    expect(RECEIVABLE).toContain(App.creates.extract_claims.operation.sample.status);
+  });
+
+  // `identified_claims` is the COMPLETE ordered list when more than one claim
+  // was found and `[]` when only one was: `texts if len(texts) > 1 else []`
+  // in lenz/extraction.py. A one-element list is unreachable, so a sample
+  // carrying one teaches a shape no live run produces.
+  it('never samples an unreachable one-element identified_claims', () => {
+    const { identified_claims: list } = App.creates.extract_claims.operation.sample;
+    expect(Array.isArray(list)).toBe(true);
+    expect(list).not.toHaveLength(1);
+  });
+
+  // `presumed_intent` is free text, one sentence — not an enum. A sample of
+  // 'informational' looks enumerable and invites an exact-string filter that
+  // can never match reliably.
+  it('samples presumed_intent as a sentence, not an enum token', () => {
+    const intent = App.creates.extract_claims.operation.sample.presumed_intent;
+    expect(intent).toMatch(/\s/);
+    expect(intent.trim()).toMatch(/\.$/);
+  });
+
+  it('samples the domain in the canonical capitalised form', () => {
+    const API_DOMAINS = [
+      'Health',
+      'Science',
+      'Politics',
+      'Finance',
+      'Tech',
+      'History',
+      'Legal',
+      'General',
+    ];
+    expect(API_DOMAINS).toContain(App.creates.extract_claims.operation.sample.domain);
+    expect(API_DOMAINS).toContain(App.triggers.new_verification.operation.sample.domain);
   });
 });
 
