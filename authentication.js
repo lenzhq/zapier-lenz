@@ -1,13 +1,20 @@
 'use strict';
 
 const { lenzClient } = require('./client');
+const { mapLenzError } = require('./lib/errors');
 
 // Zapier calls this once when a user connects (or reconnects) their account.
-// Throwing here — lenz-io throws a typed LenzAuthError on a 401 — surfaces
-// as a failed connection with the error's message shown to the user.
+// Throwing here surfaces as a failed connection with the error's message shown
+// to the user.
+//
+// Mapped like every other call. This is the FIRST place a bad or revoked key
+// shows up, so it is the last place that should surface a raw SDK message
+// instead of the reconnect prompt an ExpiredAuthError produces — and a
+// connect-time network blip should read as "could not reach Lenz", not as a
+// rejected key.
 const test = async (z, bundle) => {
   const client = lenzClient(bundle);
-  return client.usage();
+  return client.usage().catch((err) => mapLenzError(z, err));
 };
 
 module.exports = {

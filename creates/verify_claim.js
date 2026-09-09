@@ -100,12 +100,25 @@ const perform = async (z, bundle) => {
       // Lenz rejects webhook_url on a key with no signing secret yet, tagged
       // with this machine-readable code (public_authed.py) — turn it into a
       // precise, actionable message instead of the raw API error text.
+      //
+      // HaltedError, not Error. This is a permanent CONFIGURATION state for
+      // this action, not a failed execution: the key has no webhook secret, so
+      // Verify cannot get its callback, and retrying cannot change that. As a
+      // hard error every scheduled run counted toward the error rate that
+      // turns a Zap off — the same auto-disable pressure the 402 branch was
+      // moved to HaltedError to avoid. The isLoadingSample pre-check above
+      // catches most of this at test time, but a secret removed after the Zap
+      // is on, or a Zap built by mapping without testing, lands here on every
+      // single run.
+      //
+      // HaltedError takes only a message — no code or status argument — so the
+      // 'WebhookSecretMissing'/422 pair the old throw carried is gone; it never
+      // reached the user anyway.
       if (err instanceof LenzError && err.body && err.body.code === 'webhook_secret_missing') {
-        throw new z.errors.Error(
+        throw new z.errors.HaltedError(
           'This API key doesn\'t have a webhook secret yet. Go to lenz.io → API key ' +
-            'settings → "Generate webhook secret" (Webhooks panel) once, then try this step again.',
-          'WebhookSecretMissing',
-          422,
+            'settings → "Generate webhook secret" (Webhooks panel) once, then turn this Zap ' +
+            'back on.',
         );
       }
       return mapLenzError(z, err);
