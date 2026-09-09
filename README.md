@@ -67,6 +67,35 @@ You'll need a Lenz API key:
 - **Verify a Claim takes ~90 seconds.** The Zap step will show as "waiting" while the pipeline runs — this is expected, not a stuck Zap.
 - **Verify a Claim** requires the connected API key to have webhook delivery enabled (an HMAC secret provisioned) — see the Lenz dashboard's API key settings if a submission fails immediately with a webhook-related error.
 - For **Ask Follow-Up**, chain it directly after **Verify a Claim** in the same Zap, mapping its `verification_id` output into the Ask step's Verification ID field.
+
+### What happens when something goes wrong
+
+Zapier turns a Zap off after enough failed runs, so which failures *count* matters
+more than it looks. Since 1.4.0:
+
+| Condition | What Zapier does | Counts as an error? |
+|---|---|---|
+| Out of credits (402) | Halts the run with a top-up link | No |
+| Daily `/extract` cap (429) | Waits the stated time and replays | No |
+| Lenz at capacity, or providers down (503) | Waits the stated time and replays | No |
+| Network drop, or a 5xx naming no reason | Waits 60s and replays | No |
+| No webhook secret on the key (Verify a Claim) | Halts with instructions | No |
+| Key rejected (401) | Prompts you to reconnect | No |
+| Claim could not be framed, text unreadable (typed 502) | Fails the run | Yes |
+| Private verification or blocked IP (403) | Fails the run | Yes |
+
+The last two are deliberate: they are answers about the input, so replaying them
+spends the run again for the same result.
+
+A call makes **one attempt** and lets Zapier do any waiting. The SDK used to retry
+up to four times inside one run and could sleep a stated wait of up to a minute —
+past the ~30s Zapier allows a step, so the run was killed and counted as a failure
+before the wait it was asked to honour had elapsed.
+
+Every error message ends with the Lenz request id (`(Lenz request abc123)`). Quote it
+when asking for help: this integration calls the API through the Lenz SDK rather than
+Zapier's HTTP client, so Zapier's per-request log tab is empty and that id is the only
+way to find the specific run.
 - Use **Extract Claims** first when the input text might contain more than one claim, then fan out to **Assess (Fast)** or **Verify a Claim** per extracted claim.
 
 ## Example Zap

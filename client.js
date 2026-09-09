@@ -29,10 +29,41 @@ const fetchAsZapier = (url, init = {}) => {
   return fetch(url, { ...init, headers });
 };
 
+// Zapier kills a `perform` at about 30 seconds. Left on its defaults the SDK
+// budgets far more than that for ONE call: `timeoutMs` (30s) applies per
+// ATTEMPT, `maxRetries: 3` means four attempts, the backoff ladder adds
+// 1+2+4s, and a stated `Retry-After` up to the SDK's 60s ceiling is slept
+// through IN-PROCESS. Worst case is over two minutes inside a call the
+// platform abandoned long before.
+//
+// When the two budgets collide the user gets ZAPIER's timeout — a hard error
+// counting toward auto-disabling their Zap — instead of whatever
+// lib/errors.js would have mapped. A `429 Retry-After: 45` is the clearest
+// case: 45 is under the SDK's sleep ceiling, so it sleeps, is killed at 30s,
+// and the ThrottledError branch written for exactly that case never runs.
+//
+// `maxRetries: 0` is the lever, not merely a smaller timeout: both the
+// backoff and the Retry-After sleep are gated on `attempt < maxRetries`, and
+// that sleep sits OUTSIDE the AbortController `timeoutMs` drives, so capping
+// the timeout alone would not bound it.
+//
+// Retrying is the platform's job. With one attempt every failure reaches
+// lib/errors.js, which decides whether Zapier should replay
+// (ThrottledError), halt, or fail — and a Zapier replay does not spend our
+// 30 seconds. This only works alongside the transient-failure mapping in
+// lib/errors.js: on its own it would convert failures the SDK used to hide
+// by retrying into hard errors, which is the opposite of the goal.
+const CALL_TIMEOUT_MS = 25000;
+
 // Single construction point for the SDK client. Every action and trigger goes
 // through this so a new one can't silently ship without the Zapier
 // User-Agent — the attribution above only holds if it's applied everywhere.
 const lenzClient = (bundle) =>
-  new Lenz({ apiKey: bundle.authData.apiKey, fetch: fetchAsZapier });
+  new Lenz({
+    apiKey: bundle.authData.apiKey,
+    fetch: fetchAsZapier,
+    maxRetries: 0,
+    timeoutMs: CALL_TIMEOUT_MS,
+  });
 
-module.exports = { lenzClient, fetchAsZapier, USER_AGENT };
+module.exports = { lenzClient, fetchAsZapier, USER_AGENT, CALL_TIMEOUT_MS };

@@ -5,7 +5,8 @@
 // survives all the way to the network layer.
 const { Lenz, VERSION: SDK_VERSION } = require('lenz-io');
 
-const { lenzClient, fetchAsZapier, USER_AGENT } = require('../client');
+const { lenzClient, fetchAsZapier, USER_AGENT, CALL_TIMEOUT_MS } = require('../client');
+const { mapLenzError } = require('../lib/errors');
 
 const APP_VERSION = require('../package.json').version;
 
@@ -123,5 +124,112 @@ describe('lenzClient', () => {
 
   it('returns a real Lenz instance', () => {
     expect(lenzClient({ authData: { apiKey: 'lenz_test' } })).toBeInstanceOf(Lenz);
+  });
+});
+
+// Zapier kills a `perform` at ~30s. On the SDK's defaults (timeoutMs 30s PER
+// ATTEMPT, maxRetries 3, backoff 1+2+4s, and a stated Retry-After up to 60s
+// slept through in-process) one call could occupy over two minutes — so the
+// user got Zapier's own timeout, a hard error counting toward auto-disable,
+// instead of anything lib/errors.js would have mapped.
+//
+// These run the REAL SDK against a stubbed fetch, so they measure the retry
+// loop itself rather than our belief about it.
+describe('retry budget fits inside Zapier’s run budget', () => {
+  let originalFetch;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  // A minimal stand-in for Zapier's `z.errors`. Deliberately not appTester:
+  // what is under test is the SDK's timing plus our mapping, not the
+  // platform's error serialisation (covered in test/errors.test.js).
+  const zStub = {
+    errors: {
+      Error: class ZError extends Error {},
+      HaltedError: class HaltedError extends Error {},
+      ExpiredAuthError: class ExpiredAuthError extends Error {},
+      ThrottledError: class ThrottledError extends Error {
+        constructor(message, delay) {
+          super(message);
+          this.name = 'ThrottledError';
+          this.delay = delay;
+        }
+      },
+    },
+  };
+
+  it('surfaces a 429 with a stated 45s wait immediately, instead of sleeping it', async () => {
+    const spy = jest.fn().mockResolvedValue(
+      new Response(JSON.stringify({ detail: 'Rate limited' }), {
+        status: 429,
+        headers: { 'content-type': 'application/json', 'Retry-After': '45' },
+      }),
+    );
+    globalThis.fetch = spy;
+
+    const client = lenzClient({ authData: { apiKey: 'lenz_test' } });
+    const startedAt = Date.now();
+    const err = await client.usage().then(
+      () => null,
+      (e) => e,
+    );
+    const elapsedMs = Date.now() - startedAt;
+
+    // 45 is under the SDK's 60s sleep ceiling, so on the old defaults this
+    // slept 45s in-process and Zapier killed the run first.
+    expect(elapsedMs).toBeLessThan(5000);
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    // And the wait survives to Zapier, which does the waiting for us.
+    const mapped = (() => {
+      try {
+        return mapLenzError(zStub, err);
+      } catch (thrown) {
+        return thrown;
+      }
+    })();
+    expect(mapped.name).toBe('ThrottledError');
+    expect(mapped.delay).toBe(45);
+  });
+
+  it('makes exactly one attempt on a transport failure', async () => {
+    // Four attempts plus 1+2+4s of backoff before this change.
+    const spy = jest.fn().mockRejectedValue(new Error('ECONNRESET'));
+    globalThis.fetch = spy;
+
+    const client = lenzClient({ authData: { apiKey: 'lenz_test' } });
+    const startedAt = Date.now();
+    await client.usage().catch(() => {});
+
+    expect(Date.now() - startedAt).toBeLessThan(5000);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('makes exactly one attempt on a 5xx', async () => {
+    const spy = jest.fn().mockResolvedValue(
+      new Response(JSON.stringify({ detail: 'Bad gateway' }), {
+        status: 502,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    globalThis.fetch = spy;
+
+    const client = lenzClient({ authData: { apiKey: 'lenz_test' } });
+    await client.usage().catch(() => {});
+
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the per-call timeout under Zapier’s limit', () => {
+    // The whole budget now, since there is only one attempt. Headroom is for
+    // Zapier's own overhead plus our error mapping.
+    expect(CALL_TIMEOUT_MS).toBeLessThan(30000);
+    expect(CALL_TIMEOUT_MS).toBeGreaterThanOrEqual(15000);
   });
 });

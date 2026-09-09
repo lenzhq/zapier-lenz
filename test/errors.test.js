@@ -301,7 +301,12 @@ describe('quota (402) → HaltedError', () => {
     expect(err.name).toBe('HaltedError');
   });
 
-  it('still maps webhook_secret_missing to its own precise error', async () => {
+  // Was pinned as `not.toBe('HaltedError')` until 1.4.0. That was wrong: a key
+  // with no webhook secret is a permanent CONFIGURATION state for this action,
+  // not a failed execution. Retrying cannot fix it, so as a hard error every
+  // scheduled run counted toward the error rate that turns the Zap off — the
+  // same auto-disable pressure 402 was moved off for.
+  it('halts on webhook_secret_missing instead of counting an error every run', async () => {
     const err422 = new LenzError({ message: 'Webhook secret missing', statusCode: 422 });
     err422.body = { code: 'webhook_secret_missing' };
     LenzClient.mockImplementation(() =>
@@ -313,8 +318,10 @@ describe('quota (402) → HaltedError', () => {
       inputData: { claim: 'x' },
     });
 
-    expect(err.name).not.toBe('HaltedError');
+    expect(err.name).toBe('HaltedError');
     expect(err.message).toContain('webhook secret');
+    // Still actionable, not just silent: it names where to go.
+    expect(err.message).toContain('API key');
   });
 });
 
@@ -376,12 +383,30 @@ describe('capacity / provider outage (503) → ThrottledError', () => {
     }
   });
 
-  it('leaves a plain 503 without a typed code on the hard-error path', async () => {
-    // Regression pin: only the two typed codes throttle. An untyped 503 keeps
-    // today's behaviour (rethrown unchanged, surfaces as a real failure).
-    const err = await capture503(new LenzError({ message: 'Server error', statusCode: 503 }));
-    expect(err.name).not.toBe('ThrottledError');
-    expect(err.message).toContain('Server error');
+  // Was pinned to the hard-error path until 1.4.0. An untyped 5xx is a load
+  // balancer, CDN or gateway having a moment — transient infrastructure, not a
+  // verdict on the request — so it now throttles like the typed ones. The
+  // difference is the wait: these carry no stated one, so they get the default.
+  it('throttles an untyped 5xx rather than counting it as a hard error', async () => {
+    for (const status of [500, 502, 503, 504]) {
+      const err = await capture503(new LenzError({ message: 'Server error', statusCode: status }));
+      expect(err.name).toBe('ThrottledError');
+      expect(JSON.parse(err.message).delay).toBe(60);
+    }
+  });
+
+  // The distinction that matters, and the reason the check is on the ABSENCE
+  // of a code rather than on the status number: these two 502s are
+  // deterministic answers about THIS input. Replaying them spends the run
+  // again for the same result, so they must stay hard errors.
+  it('keeps the typed, deterministic 502s on the hard-error path', async () => {
+    for (const code of ['framing_failed', 'extraction_failed']) {
+      const typed = new LenzError({ message: 'Could not process the claim', statusCode: 502 });
+      typed.code = code;
+      const err = await capture503(typed);
+      expect(err.name).not.toBe('ThrottledError');
+      expect(err.message).toContain('Could not process the claim');
+    }
   });
 });
 
