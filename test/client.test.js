@@ -226,10 +226,14 @@ describe('retry budget fits inside Zapier’s run budget', () => {
     expect(spy).toHaveBeenCalledTimes(1);
   });
 
-  it('leaves the per-call timeout under Zapier’s limit', () => {
-    // The whole budget now, since there is only one attempt. Headroom is for
-    // Zapier's own overhead plus our error mapping.
+  it('leaves the per-call timeout just under Zapier’s limit, not well under it', () => {
+    // With one attempt this is the WHOLE budget, so the floor matters as much
+    // as the ceiling. /extract takes up to 50,000 characters with no
+    // server-side wall-clock deadline, so a large document can legitimately
+    // land in the 25-30s band; cutting the timeout to "be safe" fails calls
+    // that succeed today. Everything after the abort is synchronous, so 2s of
+    // headroom is plenty.
     expect(CALL_TIMEOUT_MS).toBeLessThan(30000);
-    expect(CALL_TIMEOUT_MS).toBeGreaterThanOrEqual(15000);
+    expect(CALL_TIMEOUT_MS).toBeGreaterThanOrEqual(28000);
   });
 });

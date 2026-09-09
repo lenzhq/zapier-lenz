@@ -395,6 +395,33 @@ describe('capacity / provider outage (503) → ThrottledError', () => {
     }
   });
 
+  // A transport failure or an abort at our own timeout. Both arrive as
+  // statusCode 0, and both must replay rather than count as a failed run.
+  it('replays when the request never got a response', async () => {
+    const err = await capture503(new LenzError({ message: 'fetch failed' }));
+    expect(err.name).toBe('ThrottledError');
+    expect(JSON.parse(err.message).delay).toBe(60);
+  });
+
+  // Honesty ratchet. The typed-503 branch CAN say "nothing was charged"
+  // because admission control sheds before doing any work. These two cannot:
+  // statusCode 0 covers our own AbortController firing on a request the server
+  // may already be running, and a gateway 502 can come back after the app
+  // charged. A ThrottledError makes Zapier replay, so the one message the user
+  // reads about it must not promise something we cannot know. Shipped saying
+  // "nothing was charged" in the first draft of 1.4.0.
+  it('never claims nothing was charged when it cannot know', async () => {
+    const cases = [
+      new LenzError({ message: 'fetch failed' }),
+      new LenzError({ message: 'Bad gateway', statusCode: 502 }),
+    ];
+    for (const input of cases) {
+      const err = await capture503(input);
+      expect(err.name).toBe('ThrottledError');
+      expect(JSON.parse(err.message).message).not.toContain('nothing was charged');
+    }
+  });
+
   // The distinction that matters, and the reason the check is on the ABSENCE
   // of a code rather than on the status number: these two 502s are
   // deterministic answers about THIS input. Replaying them spends the run

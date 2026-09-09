@@ -53,7 +53,24 @@ const fetchAsZapier = (url, init = {}) => {
 // 30 seconds. This only works alongside the transient-failure mapping in
 // lib/errors.js: on its own it would convert failures the SDK used to hide
 // by retrying into hard errors, which is the opposite of the goal.
-const CALL_TIMEOUT_MS = 25000;
+//
+// 28s, and deliberately not less. With a single attempt this is the WHOLE
+// budget, so every second cut here is a second taken off calls that would
+// otherwise have succeeded. `/extract` is the exposed one: it accepts 50,000
+// characters, has no wall-clock deadline of its own server-side, and is
+// bounded only by the provider timeouts in lenz/constants.py
+// (ANTHROPIC_TIMEOUT 45, OPENAI_TIMEOUT 60) — so a large document really can
+// land in the 25-30s band. An earlier draft used 25s and would have failed
+// exactly those calls, which succeed today.
+//
+// 2s of headroom is enough because everything after the abort is synchronous:
+// mapLenzError does no I/O, so it costs microseconds. Going nearer 30s buys
+// nothing and risks Zapier ending the step before our error is recorded.
+//
+// Past ~29s no value helps — the platform ceiling ends the step regardless, so
+// an extraction slower than that cannot run synchronously in a Zap at all.
+// That is a limit of the surface, not a number to tune.
+const CALL_TIMEOUT_MS = 28000;
 
 // Single construction point for the SDK client. Every action and trigger goes
 // through this so a new one can't silently ship without the Zapier

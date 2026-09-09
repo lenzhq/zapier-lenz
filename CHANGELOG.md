@@ -17,10 +17,14 @@ moment at Lenz or a brief network drop were counting toward that.
   as a failure before the wait it was told to honour had passed.
 - Update create/verify_claim, create/assess, create/extract_claims,
   create/ask and trigger/new_verification: a network drop, or a temporary
-  error from Lenz that names no reason, now waits and replays. Nothing is
-  charged for either. Errors that ARE about your input — a claim that could
-  not be framed, text that could not be read — still fail the run, because
-  replaying them would spend it again for the same answer.
+  error from Lenz that names no reason, now waits and replays instead of
+  failing. Errors that ARE about your input — a claim that could not be
+  framed, text that could not be read — still fail the run, because replaying
+  them would spend it again for the same answer.
+- Note on replays: if a request timed out after Lenz had already received it,
+  the replay can run that check a second time and charge for it. Being out of
+  credits or hitting a cap is refused before any work, so those replays cost
+  nothing; a timeout is the case we cannot tell apart from here.
 - Fix create/verify_claim: a key with no webhook secret now halts the Zap with
   instructions instead of failing on every scheduled run. It cannot be fixed
   by retrying, so it was quietly using up the error budget that turns a Zap
