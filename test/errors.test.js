@@ -41,6 +41,7 @@ function mockClient(overrides = {}) {
     extract: jest.fn(),
     ask: { send: jest.fn() },
     usage: jest.fn(),
+    request: jest.fn(),
     verifications: { list: jest.fn() },
     ...overrides,
   };
@@ -278,9 +279,12 @@ describe('quota (402) → HaltedError', () => {
     expect(err.name).toBe('HaltedError');
   });
 
+  // Rejects through `request`, not `verifications.list`: the trigger calls the
+  // client directly so it can ask for a page size the SDK's list signature
+  // cannot express.
   it('applies on the polling trigger, which fires on every Zap', async () => {
     LenzClient.mockImplementation(() =>
-      mockClient({ verifications: { list: jest.fn().mockRejectedValue(quotaError()) } }),
+      mockClient({ request: jest.fn().mockRejectedValue(quotaError()) }),
     );
 
     const err = await captureError(App.triggers.new_verification.operation.perform, AUTH);
