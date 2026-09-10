@@ -3,6 +3,25 @@
 User-facing changes to the Lenz integration for Zapier. Build and release
 mechanics live in [README.md](README.md#building-and-pushing).
 
+## 1.3.3
+
+- Fix trigger/new_verification: the trigger reads up to 100 finished checks per
+  poll instead of 20, so a busy account stops losing the oldest ones.
+
+Zapier polls every 1-15 minutes and only ever reads the first page. At the old
+page size of 20, an account that finished more than 20 checks between two polls
+never saw the oldest of them — they had already scrolled off the first page by
+the time the next poll ran. Nothing failed and nothing was logged; the rows
+simply never reached the Zap. 100 is the largest page the API will return, so a
+run of more than 100 between polls can still outrun it.
+
+**The trigger is account-wide, and always was.** It fires for every completed
+verification the account owns, whichever surface produced it — a check run on
+the website, through the MCP server, or with a different API key starts this Zap
+too. The docs said "under the connected API key", which was wrong. Nothing
+changed here except the wording; if that is not what you want, filter on
+something the Zap can see, such as Domain or Verdict.
+
 ## 1.3.2
 
 - Fix create/extract_claims and create/assess: the example data shown while

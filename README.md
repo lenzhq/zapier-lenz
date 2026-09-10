@@ -53,7 +53,16 @@ it to `ready`. A lowercase `domain` needs capitalising the same way.
 
 | Trigger | What it does |
 |---|---|
-| **New Verification Completed** | Polls for claims that finish fact-checking under the connected API key. Runs on Zapier's standard polling interval (not instant) — for a claim you're actively submitting in the same Zap, use the **Verify a Claim** action instead, which waits and returns the result inline. |
+| **New Verification Completed** | Polls for claims that finish fact-checking on the connected **account**. Runs on Zapier's standard polling interval (not instant) — for a claim you're actively submitting in the same Zap, use the **Verify a Claim** action instead, which waits and returns the result inline. |
+
+**The trigger is account-wide, not key-wide.** It fires for every completed verification
+the account owns, whichever surface produced it — a check you ran on the website, through
+the MCP server, or with a different API key will start this Zap. Filter on something the
+Zap can see (`domain`, `verdict`, `passed`) if you only want a subset.
+
+It reads up to 100 completions per poll. Zapier polls every 1-15 minutes, so an account
+finishing more than 100 verifications between two polls can still outrun it; that is the
+server's maximum page size, not a setting.
 
 ## Credentials
 
