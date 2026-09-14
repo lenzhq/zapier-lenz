@@ -5,6 +5,35 @@ mechanics live in [README.md](README.md#building-and-pushing).
 
 ## 1.3.4
 
+Problems that pass on their own now pause your Zap instead of failing it.
+Zapier turns a Zap off after enough failed runs, and conditions like a busy
+moment at Lenz or a brief network drop were counting toward that.
+
+- Update create/verify_claim, create/assess, create/extract_claims,
+  create/ask and trigger/new_verification: a call makes one attempt and hands
+  the waiting to Zapier, which replays the run. It used to retry up to four
+  times inside a single run, sleeping a stated wait of as much as a minute —
+  longer than Zapier allows a step to take, so the run was killed and counted
+  as a failure before the wait it was told to honour had passed.
+- Update create/verify_claim, create/assess, create/extract_claims,
+  create/ask and trigger/new_verification: a network drop, or a temporary
+  error from Lenz that names no reason, now waits and replays instead of
+  failing. Errors that ARE about your input — a claim that could not be
+  framed, text that could not be read — still fail the run, because replaying
+  them would spend it again for the same answer.
+- Note on replays: if a request timed out after Lenz had already received it,
+  the replay can run that check a second time and charge for it. Being out of
+  credits or hitting a cap is refused before any work, so those replays cost
+  nothing; a timeout is the case we cannot tell apart from here.
+- Fix create/verify_claim: a key with no webhook secret now halts the Zap with
+  instructions instead of failing on every scheduled run. It cannot be fixed
+  by retrying, so it was quietly using up the error budget that turns a Zap
+  off.
+- Update: connecting an account reports a rejected key as a reconnect prompt,
+  and a network problem as a network problem, rather than showing the raw
+  error text.
+- Update: every error message ends with the Lenz request id, so support can
+  trace one specific run.
 - Fix create/verify_claim: when Lenz stops to ask for input, the action now says
   which of three things happened and hands over what Lenz found, instead of one
   fixed "rephrase and re-run" message for all of them.
@@ -24,9 +53,9 @@ and each one needs a different response:
   lifted out as Duplicate Verification ID and Duplicate URL so they map
   straight into Ask Follow-Up.
 
-That last one is the reason for this release. The old message told the user to
-rephrase and re-run, which spends a full check to reproduce an answer that
-already exists. Reusing it costs nothing.
+That last one matters most. The old message told the user to rephrase and
+re-run, which spends a full check to reproduce an answer that already exists.
+Reusing it costs nothing.
 
 All the new fields are present on every result and empty when they do not
 apply, so a Filter or Paths step can rely on them. Nothing was renamed or
