@@ -3,8 +3,11 @@
 User-facing changes to the Lenz integration for Zapier. Build and release
 mechanics live in [README.md](README.md#building-and-pushing).
 
-## 1.3.3
+## 1.3.4
 
+- Fix create/verify_claim: when Lenz stops to ask for input, the action now says
+  which of three things happened and hands over what Lenz found, instead of one
+  fixed "rephrase and re-run" message for all of them.
 - Fix trigger/new_verification: the trigger reads up to 100 finished checks per
   poll instead of 20, so a busy account stops losing the oldest ones.
 
@@ -21,6 +24,27 @@ the website, through the MCP server, or with a different API key starts this Zap
 too. The docs said "under the connected API key", which was wrong. Nothing
 changed here except the wording; if that is not what you want, filter on
 something the Zap can see, such as Domain or Verdict.
+
+Lenz pauses a verification for three different reasons, and each one needs a
+different response:
+
+- **Several claims in one input** (`multi_claim`) — each is returned as a line
+  item under Claims Found, so a Zap can fan them out into a check per claim.
+- **One claim that reads several ways** (`clarification_required`) — the
+  possible readings are returned under Candidate Readings; pick one and re-run
+  with that wording.
+- **This claim was already verified** (`duplicate_found`) — the existing
+  result is returned under Similar Claims, with the first one's ID and URL
+  lifted out as Duplicate Verification ID and Duplicate URL so they map
+  straight into Ask Follow-Up.
+
+That last one is the reason for this release. The old message told the user to
+rephrase and re-run, which spends a full check to reproduce an answer that
+already exists. Reusing it costs nothing.
+
+All the new fields are present on every result and empty when they do not
+apply, so a Filter or Paths step can rely on them. Nothing was renamed or
+removed, and the request the action sends is unchanged.
 
 ## 1.3.2
 
