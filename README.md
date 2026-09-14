@@ -39,6 +39,23 @@ only what the sample shows. These are the values the API actually sends:
 | `status` | Assess (Fast) | `ok`, `no_claim`, or `ambiguous`. Built by the integration, not the API. |
 | `domain` | Extract Claims, New Verification Completed | Capitalised: `Health`, `Science`, `Politics`, `Finance`, `Tech`, `History`, `Legal`, `General` — **or empty**, when the extractor produced no usable domain. A Paths step covering all eight still needs a branch for the empty case. |
 | `passed` | Verify a Claim, Assess (Fast) | Boolean, derived from the verdict. The reliable thing to branch on. |
+| `status` | Verify a Claim | `completed`, `needs_input`, `failed`, or `processing`. Built by the integration. |
+| `reason` | Verify a Claim, when `status` is `needs_input` | `multi_claim`, `clarification_required`, or `duplicate_found`. Empty otherwise. |
+
+### When Lenz asks for input instead of answering
+
+**Verify a Claim** can stop before running the pipeline and hand back `status: needs_input`.
+It does that for three different reasons, and each carries data you can act on — so branch
+on `reason` rather than treating them as one case:
+
+| `reason` | What Lenz found | What to map | What to do |
+|---|---|---|---|
+| `multi_claim` | Several separate claims in one input | **Claims Found** (line items: `text`, `domain`) | Fan out — a Verify step per item, or send them one at a time |
+| `clarification_required` | One claim that can be read several ways | **Candidate Readings** (line items: `text`) | Pick one and re-run with that exact wording |
+| `duplicate_found` | A verification of this claim **already exists** | **Duplicate Verification ID** and **Duplicate URL**; the full list in **Similar Claims** | Reuse it — map the ID into **Ask Follow-Up**. Do **not** re-run: that spends a full check to reproduce an answer you already have |
+
+Before 1.3.4 all three produced the same "rephrase and re-run" message and the data was
+dropped. For `duplicate_found` that advice was wrong and cost money.
 
 Two fields on Extract Claims look filterable and are not:
 

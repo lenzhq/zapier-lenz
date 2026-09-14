@@ -214,6 +214,148 @@ describe('creates.verify_claim', () => {
     expect(result).toMatchObject({ status: 'needs_input', reason: 'multi_claim' });
   });
 
+  // Lenz stops for input for THREE reasons, each carrying data the user needs
+  // to act. Until 1.3.4 every one of them got the same "rephrase and re-run"
+  // message and the data was dropped. Shapes here mirror the server
+  // (lenz/api/public_authed.py, /verify/status) exactly.
+  describe('needs_input, keyed on reason', () => {
+    const RESUME = { authData: { apiKey: 'lenz_good' }, outputData: { task_id: 'task_123' } };
+    const NEEDS_INPUT_KEYS = [
+      'reason',
+      'message',
+      'claims',
+      'candidates',
+      'similar_claims',
+      'duplicate_verification_id',
+      'duplicate_url',
+    ];
+
+    async function resumeWith(status) {
+      LenzClient.mockImplementation(() => mockClient({ getStatus: jest.fn().mockResolvedValue(status) }));
+      return appTester(App.creates.verify_claim.operation.performResume, RESUME);
+    }
+
+    it('multi_claim: exposes each claim as a line item and says to fan out, not rephrase', async () => {
+      const result = await resumeWith({
+        status: 'needs_input',
+        reason: 'multi_claim',
+        claims: [
+          { text: 'The Eiffel Tower is 330 metres tall.', domain: 'Science' },
+          { text: 'The Eiffel Tower was completed in 1889.', domain: 'History' },
+        ],
+      });
+
+      expect(result.claims).toEqual([
+        { text: 'The Eiffel Tower is 330 metres tall.', domain: 'Science' },
+        { text: 'The Eiffel Tower was completed in 1889.', domain: 'History' },
+      ]);
+      expect(result.message).toContain('2 separate claims');
+      expect(result.message).not.toMatch(/rephrase/i);
+      expect(result.candidates).toEqual([]);
+      expect(result.similar_claims).toEqual([]);
+    });
+
+    it('clarification_required: normalises the string candidates to line items', async () => {
+      // The API sends candidates as bare strings; a string array is not
+      // mappable per-item in the editor, so they become { text } rows.
+      const result = await resumeWith({
+        status: 'needs_input',
+        reason: 'clarification_required',
+        candidates: ['Joe Biden won the 2020 US election.', 'Donald Trump won the 2020 US election.'],
+      });
+
+      expect(result.candidates).toEqual([
+        { text: 'Joe Biden won the 2020 US election.' },
+        { text: 'Donald Trump won the 2020 US election.' },
+      ]);
+      expect(result.message).toContain('2 ways');
+      expect(result.claims).toEqual([]);
+    });
+
+    it('duplicate_found: points at the existing verification instead of telling the user to re-run', async () => {
+      // The old advice — rephrase and re-run — spent a fresh 10-credit
+      // pipeline to reproduce a result that already existed.
+      const result = await resumeWith({
+        status: 'needs_input',
+        reason: 'duplicate_found',
+        similar_claims: [
+          {
+            verification_id: 'dup12345',
+            claim: 'The Eiffel Tower is 330 metres tall.',
+            verdict: 'True',
+            confidence: 'high',
+            lenz_score: 9,
+            url: 'https://lenz.io/c/eiffel-tower-height-dup12345',
+            distance: 0.02,
+          },
+          { verification_id: 'dup67890', claim: 'A second match.', verdict: 'Mostly True', url: '' },
+        ],
+      });
+
+      expect(result.duplicate_verification_id).toBe('dup12345');
+      expect(result.duplicate_url).toBe('https://lenz.io/c/eiffel-tower-height-dup12345');
+      expect(result.similar_claims).toHaveLength(2);
+      expect(result.similar_claims[0]).toMatchObject({
+        verification_id: 'dup12345',
+        verdict: 'True',
+        lenz_score: 9,
+      });
+      // `distance` is internal ranking noise and is deliberately not passed on.
+      expect(result.similar_claims[0]).not.toHaveProperty('distance');
+      expect(result.message).toContain('dup12345');
+      expect(result.message).toMatch(/already been verified/i);
+      expect(result.message).not.toMatch(/rephrase/i);
+    });
+
+    it('duplicate_found with nothing similar still degrades without throwing', async () => {
+      const result = await resumeWith({ status: 'needs_input', reason: 'duplicate_found' });
+
+      expect(result.duplicate_verification_id).toBe('');
+      expect(result.duplicate_url).toBe('');
+      expect(result.similar_claims).toEqual([]);
+      expect(result.message).toMatch(/already been verified/i);
+    });
+
+    it('an unknown reason gets a generic message rather than wrong advice', async () => {
+      const result = await resumeWith({ status: 'needs_input', reason: 'something_new' });
+
+      expect(result.reason).toBe('something_new');
+      expect(result.message).toContain('something_new');
+      expect(result.message).not.toMatch(/rephrase/i);
+    });
+
+    // Same rule as the failure fields: every branch carries every key, empty
+    // when not applicable, because a Filter treats missing and empty as
+    // different conditions and the editor builds filters from the sample.
+    it.each([
+      ['completed', { status: 'completed', result: { verdict: 'True', sources: [] } }],
+      ['failed', { status: 'failed', error: 'boom' }],
+      ['processing', { status: 'processing' }],
+    ])('carries the needs_input keys EMPTY, not missing, on %s', async (_label, body) => {
+      const result = await resumeWith(body);
+      for (const key of NEEDS_INPUT_KEYS) {
+        expect(result).toHaveProperty(key);
+      }
+      expect(result.claims).toEqual([]);
+      expect(result.candidates).toEqual([]);
+      expect(result.similar_claims).toEqual([]);
+      expect(result.duplicate_verification_id).toBe('');
+    });
+
+    it('the kickoff output carries them too, since that is what a Zap sees if the callback never comes', async () => {
+      LenzClient.mockImplementation(() =>
+        mockClient({ verify: jest.fn().mockResolvedValue({ task_id: 'task_123' }) }),
+      );
+      const result = await appTester(App.creates.verify_claim.operation.perform, {
+        authData: { apiKey: 'lenz_good' },
+        inputData: { claim: 'The Eiffel Tower is 330 metres tall.' },
+      });
+      for (const key of [...NEEDS_INPUT_KEYS, 'error', 'failure_reason', 'failure_class', 'retryable']) {
+        expect(result).toHaveProperty(key);
+      }
+    });
+  });
+
   it('performResume surfaces a failed pipeline with the branchable failure fields', async () => {
     const client = mockClient({
       getStatus: jest.fn().mockResolvedValue({
