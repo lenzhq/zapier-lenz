@@ -3,7 +3,7 @@
 User-facing changes to the Lenz integration for Zapier. Build and release
 mechanics live in [README.md](README.md#building-and-pushing).
 
-## 1.4.0
+## 1.3.4
 
 Problems that pass on their own now pause your Zap instead of failing it.
 Zapier turns a Zap off after enough failed runs, and conditions like a busy
@@ -34,6 +34,30 @@ moment at Lenz or a brief network drop were counting toward that.
   error text.
 - Update: every error message ends with the Lenz request id, so support can
   trace one specific run.
+- Fix create/verify_claim: when Lenz stops to ask for input, the action now says
+  which of three things happened and hands over what Lenz found, instead of one
+  fixed "rephrase and re-run" message for all of them.
+
+**Asking for input.** Lenz pauses a verification for three different reasons,
+and each one needs a different response:
+
+- **Several claims in one input** (`multi_claim`) — each is returned as a line
+  item under Claims Found, so a Zap can fan them out into a check per claim.
+- **One claim that reads several ways** (`clarification_required`) — the
+  possible readings are returned under Candidate Readings; pick one and re-run
+  with that wording.
+- **This claim was already verified** (`duplicate_found`) — the existing
+  result is returned under Similar Claims, with the first one's ID and URL
+  lifted out as Duplicate Verification ID and Duplicate URL so they map
+  straight into Ask Follow-Up.
+
+That last one matters most. The old message told the user to rephrase and
+re-run, which spends a full check to reproduce an answer that already exists.
+Reusing it costs nothing.
+
+All the new fields are present on every result and empty when they do not
+apply, so a Filter or Paths step can rely on them. Nothing was renamed or
+removed, and the request the action sends is unchanged.
 
 ## 1.3.2
 
