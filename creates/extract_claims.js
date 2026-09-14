@@ -78,7 +78,7 @@ module.exports = {
     // labels. This description is the only place a user building a Filter on
     // Status can learn what to compare against.
     description:
-      'Pulls the verifiable factual claims out of a block of text without checking them. Status is "ready" when claims were found, or "not_a_claim" when none were.',
+      'Pulls the verifiable factual claims out of a block of text, or out of a public web page given its URL, without checking them. Status is "ready" when claims were found, or "not_a_claim" when none were.',
   },
   operation: {
     inputFields: [
@@ -87,7 +87,8 @@ module.exports = {
         label: 'Text',
         type: 'text',
         required: true,
-        helpText: 'The text to pull claims from.',
+        helpText:
+          "The text to pull claims from, or a single public web page URL. Lenz reads the page, or a YouTube video's transcript, and extracts the claims from its first 15,000 characters; pages behind a login can't be read. A Zap step has 30 seconds and a page read can take longer, so for a long page send its text instead.",
       },
       {
         key: 'language',
