@@ -40,6 +40,15 @@ const SAMPLE = {
   failure_reason: '',
   failure_class: '',
   retryable: null,
+  // needs_input fields — empty here; populated when Lenz stops to ask for
+  // input instead of running the pipeline. See NO_INPUT_NEEDED.
+  reason: '',
+  message: '',
+  claims: [],
+  candidates: [],
+  similar_claims: [],
+  duplicate_verification_id: '',
+  duplicate_url: '',
 };
 
 // The failure fields as they read when nothing failed. Spread into EVERY
@@ -49,6 +58,80 @@ const SAMPLE = {
 // them on the success path and a filter the user tested against the sample
 // behaves differently on a live run.
 const NO_FAILURE = { error: '', failure_reason: '', failure_class: '', retryable: null };
+
+// The needs_input fields as they read when Lenz did NOT stop for input. Same
+// rule as NO_FAILURE, same reason: every branch carries every key.
+const NO_INPUT_NEEDED = {
+  reason: '',
+  message: '',
+  claims: [],
+  candidates: [],
+  similar_claims: [],
+  duplicate_verification_id: '',
+  duplicate_url: '',
+};
+
+// Lenz can stop a verification to ask for input rather than run the pipeline,
+// and it does so for THREE different reasons that need three different
+// responses. Until 1.3.4 all three collapsed into one "rephrase and re-run"
+// message and the data Lenz offered was thrown away. For duplicate_found that
+// advice was actively wrong: a verification of the claim already EXISTS, and
+// re-running spends a full 10-credit pipeline to reproduce it.
+//
+// The server shapes (lenz/api/public_authed.py, /verify/status):
+//   multi_claim             claims:         [{ text, domain }]
+//   clarification_required  candidates:     [string]
+//   duplicate_found         similar_claims: [{ verification_id, claim, verdict,
+//                                              confidence, lenz_score, url,
+//                                              distance }]
+//
+// `candidates` is normalised to `[{ text }]` so all three lists share the
+// line-item shape a Zap can iterate; a bare string array is not mappable
+// per-item in the editor.
+function shapeNeedsInput(status) {
+  const reason = status.reason || '';
+  const claims = (status.claims || []).map((c) => ({ text: c.text || '', domain: c.domain || '' }));
+  const candidates = (status.candidates || []).map((text) => ({ text: String(text || '') }));
+  const similar = (status.similar_claims || []).map((s) => ({
+    verification_id: s.verification_id || '',
+    claim: s.claim || '',
+    verdict: s.verdict || '',
+    confidence: s.confidence || '',
+    lenz_score: s.lenz_score ?? null,
+    url: s.url || '',
+  }));
+  const first = similar[0] || {};
+
+  let message;
+  if (reason === 'multi_claim') {
+    message =
+      `Lenz found ${claims.length} separate claims in this input. Each needs its own check — ` +
+      'send them one at a time, or map the Claims Found list into a Verify a Claim step per item.';
+  } else if (reason === 'clarification_required') {
+    message =
+      `This claim can be read ${candidates.length} ways. Pick one of the Candidate Readings and ` +
+      're-run with that exact wording.';
+  } else if (reason === 'duplicate_found') {
+    // NOT "rephrase and re-run". The check already exists; reusing it costs
+    // nothing, and it feeds straight into Ask Follow-Up.
+    message =
+      `This claim has already been verified (${first.verification_id || 'see Similar Claims'}). ` +
+      'Reusing it costs nothing: map Duplicate Verification ID into Ask Follow-Up, or open ' +
+      'Duplicate URL. Re-running would spend a full check for the same answer.';
+  } else {
+    message = `Lenz needs more input before it can verify this claim (reason: ${reason || 'unknown'}).`;
+  }
+
+  return {
+    reason,
+    message,
+    claims,
+    candidates,
+    similar_claims: similar,
+    duplicate_verification_id: first.verification_id || '',
+    duplicate_url: first.url || '',
+  };
+}
 
 // Kicks off the full pipeline and hands Lenz a Zapier-managed callback URL as
 // the per-call webhook_url. Zapier parks the Task as "waiting" until Lenz
@@ -95,7 +178,14 @@ const perform = async (z, bundle) => {
       language: bundle.inputData.language || undefined,
       webhookUrl: callbackUrl,
     })
-    .then((accepted) => ({ task_id: accepted.task_id, status: 'processing' }))
+    // Every key on every branch (see NO_FAILURE). This is what Zapier parks
+    // as outputData and, if the callback never arrives, what the user sees.
+    .then((accepted) => ({
+      task_id: accepted.task_id,
+      status: 'processing',
+      ...NO_FAILURE,
+      ...NO_INPUT_NEEDED,
+    }))
     .catch((err) => {
       // Lenz rejects webhook_url on a key with no signing secret yet, tagged
       // with this machine-readable code (public_authed.py) — turn it into a
@@ -136,6 +226,7 @@ const performResume = async (z, bundle) => {
       executive_summary: result.executive_summary || '',
       sources: (result.sources || []).map((s) => ({ title: s.title || '', url: s.url || '' })),
       ...NO_FAILURE,
+      ...NO_INPUT_NEEDED,
     };
   }
 
@@ -143,10 +234,8 @@ const performResume = async (z, bundle) => {
     return {
       task_id: bundle.outputData.task_id,
       status: 'needs_input',
-      reason: status.reason || '',
-      message:
-        'This claim is ambiguous or contains multiple sub-claims. Rephrase it to be more specific and re-run.',
       ...NO_FAILURE,
+      ...shapeNeedsInput(status),
     };
   }
 
@@ -163,6 +252,7 @@ const performResume = async (z, bundle) => {
       failure_reason: status.failure_reason || '',
       failure_class: status.failure_class || '',
       retryable: status.retryable ?? null,
+      ...NO_INPUT_NEEDED,
     };
   }
 
@@ -173,13 +263,16 @@ const performResume = async (z, bundle) => {
   // branching on that field raises a false alarm on a verification that is
   // about to succeed. Surface the real status and leave the failure fields
   // empty; a Zap gating on `status is completed` still correctly skips it.
+  // `message` is set AFTER the NO_INPUT_NEEDED spread so it wins: the spread
+  // carries an empty message, and this branch has something to say.
   return {
     task_id: bundle.outputData.task_id,
     status: status.status || 'processing',
+    ...NO_FAILURE,
+    ...NO_INPUT_NEEDED,
     message:
       'Lenz signalled before this verification reached a terminal state — it is still ' +
       'running. Look it up by Task ID in Lenz, or re-run this Zap.',
-    ...NO_FAILURE,
   };
 };
 
@@ -260,6 +353,53 @@ module.exports = {
       { key: 'failure_reason', label: 'Failure Reason' },
       { key: 'failure_class', label: 'Failure Class' },
       { key: 'retryable', label: 'Retryable', type: 'boolean' },
+      // needs_input fields — populated only when Status is 'needs_input',
+      // empty otherwise. Which of the three lists is filled depends on Reason:
+      //
+      //   reason           multi_claim | clarification_required |
+      //                    duplicate_found
+      //   message          What to do about it, in a sentence.
+      //   claims           multi_claim: the separate claims Lenz found, one
+      //                    line item each — fan out into a Verify step per item.
+      //   candidates       clarification_required: the possible readings, one
+      //                    line item each — pick one and re-run with it.
+      //   similar_claims   duplicate_found: verifications that already exist
+      //                    for this claim.
+      //   duplicate_verification_id / duplicate_url
+      //                    The first of those, lifted out so it maps straight
+      //                    into Ask Follow-Up without a line-item step.
+      { key: 'reason', label: 'Input Needed Reason' },
+      { key: 'message', label: 'Message' },
+      {
+        key: 'claims',
+        label: 'Claims Found',
+        list: true,
+        children: [
+          { key: 'text', label: 'Claim' },
+          { key: 'domain', label: 'Domain' },
+        ],
+      },
+      {
+        key: 'candidates',
+        label: 'Candidate Readings',
+        list: true,
+        children: [{ key: 'text', label: 'Reading' }],
+      },
+      {
+        key: 'similar_claims',
+        label: 'Similar Claims',
+        list: true,
+        children: [
+          { key: 'verification_id', label: 'Verification ID' },
+          { key: 'claim', label: 'Claim' },
+          { key: 'verdict', label: 'Verdict' },
+          { key: 'confidence', label: 'Confidence' },
+          { key: 'lenz_score', label: 'Lenz Score', type: 'integer' },
+          { key: 'url', label: 'URL' },
+        ],
+      },
+      { key: 'duplicate_verification_id', label: 'Duplicate Verification ID' },
+      { key: 'duplicate_url', label: 'Duplicate URL' },
     ],
   },
 };
