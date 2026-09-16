@@ -34,6 +34,11 @@ const SAMPLE = {
   executive_summary:
     'Sample summary shown while testing in the Zap editor — a live, turned-on Zap returns the real analysis for your claim.',
   sources: [{ title: 'Official Eiffel Tower site', url: 'https://www.toureiffel.paris' }],
+  // Read-backs from the completed verdict. `depth` is what the verdict was
+  // PRODUCED with, which can differ from what was requested — see the
+  // completed branch in performResume. Empty on every non-completed branch.
+  depth: 'standard',
+  visibility: 'private',
   // Failure fields — empty on this happy-path sample; populated when a live
   // verification ends in status: 'failed'.
   error: '',
@@ -58,6 +63,11 @@ const SAMPLE = {
 // them on the success path and a filter the user tested against the sample
 // behaves differently on a live run.
 const NO_FAILURE = { error: '', failure_reason: '', failure_class: '', retryable: null };
+
+// The verdict read-backs as they read when there is no verdict yet (or never
+// will be). Same rule again: every branch carries every key, so a Filter
+// tested against the sample behaves the same on a live run.
+const NO_VERDICT = { depth: '', visibility: '' };
 
 // The needs_input fields as they read when Lenz did NOT stop for input. Same
 // rule as NO_FAILURE, same reason: every branch carries every key.
@@ -176,6 +186,11 @@ const perform = async (z, bundle) => {
       claim: bundle.inputData.claim,
       sourceUrl: bundle.inputData.sourceUrl || undefined,
       language: bundle.inputData.language || undefined,
+      // `|| undefined` so a blank field is omitted from the request body
+      // entirely and the server applies its own default, rather than us
+      // sending an empty string it would have to interpret.
+      depth: bundle.inputData.depth || undefined,
+      visibility: bundle.inputData.visibility || undefined,
       webhookUrl: callbackUrl,
     })
     // Every key on every branch (see NO_FAILURE). This is what Zapier parks
@@ -185,6 +200,7 @@ const perform = async (z, bundle) => {
       status: 'processing',
       ...NO_FAILURE,
       ...NO_INPUT_NEEDED,
+      ...NO_VERDICT,
     }))
     .catch((err) => {
       // Lenz rejects webhook_url on a key with no signing secret yet, tagged
@@ -238,6 +254,13 @@ const performResume = async (z, bundle) => {
       key_finding: result.key_finding || '',
       executive_summary: result.executive_summary || '',
       sources: (result.sources || []).map((s) => ({ title: s.title || '', url: s.url || '' })),
+      // The depth the verdict was actually PRODUCED with, which is not always
+      // the one requested: a `low` request Lenz can answer from an existing
+      // `standard` verdict reads back `standard`. The echo describes the
+      // evidence; the charge follows the request. Without this field there is
+      // no way to tell the two apart. Empty on verdicts from before the field.
+      depth: result.depth || '',
+      visibility: result.visibility || '',
       ...NO_FAILURE,
       ...NO_INPUT_NEEDED,
     };
@@ -248,6 +271,7 @@ const performResume = async (z, bundle) => {
       task_id: bundle.outputData.task_id,
       status: 'needs_input',
       ...NO_FAILURE,
+      ...NO_VERDICT,
       ...shapeNeedsInput(status),
     };
   }
@@ -266,6 +290,7 @@ const performResume = async (z, bundle) => {
       failure_class: status.failure_class || '',
       retryable: status.retryable ?? null,
       ...NO_INPUT_NEEDED,
+      ...NO_VERDICT,
     };
   }
 
@@ -283,6 +308,7 @@ const performResume = async (z, bundle) => {
     status: status.status || 'processing',
     ...NO_FAILURE,
     ...NO_INPUT_NEEDED,
+    ...NO_VERDICT,
     message:
       'Lenz signalled before this verification reached a terminal state — it is still ' +
       'running. Look it up by Task ID in Lenz, or re-run this Zap.',
@@ -325,6 +351,61 @@ module.exports = {
         type: 'string',
         required: false,
         helpText: 'Optional ISO 639-1 response language code (e.g. "es"). Defaults to English.',
+      },
+      {
+        // Half price, and that is the reason to offer it at all:
+        // VERIFY_DEPTH_COSTS in lenz/billing.py is {standard: 10, low: 5}.
+        //
+        // What `low` actually cuts, from the server's own tables — do not
+        // describe it as "same reasoning, less evidence", which is the phrase
+        // lenz/constants.py uses and then immediately qualifies:
+        //   RESEARCH_DEPTH_PROFILES[low] = max_queries 3 (vs unbounded),
+        //     extraction_ceiling 12 (vs 48), grounded_discovery False.
+        //   DEBATE_DEPTH_PROFILES[low]   = rebuttals False — the debate stops
+        //     after the openings. That is a REASONING step, not an evidence
+        //     one, and it is the contract's one stated exception, so the help
+        //     text names it rather than promising identical reasoning.
+        // Framing, the panel and the conclusion are depth-blind, and no step
+        // swaps models.
+        //
+        // NOTE the installed SDK's own docstring for this field says "same
+        // quota cost" (lenz-io 2.9.0, types.ts:578) — that is stale, and the
+        // same file contradicts it at :414 with "5 — half price". The server
+        // is authoritative. Do not "correct" this help text from the SDK
+        // comment.
+        //
+        // The charge/echo split needs saying, because it reads as a billing
+        // bug otherwise: you are charged for the depth you REQUESTED, but the
+        // Depth OUTPUT echoes the depth the verdict was actually produced
+        // with. A Low request Lenz answers from an existing standard verdict
+        // therefore costs 5 and reads back "standard".
+        key: 'depth',
+        label: 'Depth',
+        type: 'string',
+        required: false,
+        // `sample` duplicates `value` on every choice because
+        // FieldChoiceWithLabelSchema REQUIRES it and says it "should match the
+        // value" — it is a legacy key the editor no longer reads, but omitting
+        // it fails `zapier validate` and blocks the push. Not a copy-paste slip.
+        choices: [
+          { value: 'standard', sample: 'standard', label: 'Standard — full research (10 credits)' },
+          { value: 'low', sample: 'low', label: 'Low — fewer sources, half the credits (5)' },
+        ],
+        helpText:
+          'How much work the check does. Leave blank for Standard. **Low costs 5 credits instead of 10**: it runs at most 3 searches against a 12-page reading limit instead of searching until it has enough, and its debate stops after the opening arguments from both sides rather than letting them answer each other. Same models at every step, and the panel and conclusion are identical. You are charged for the depth you request: a Low request that Lenz can answer from an existing Standard verdict still costs 5, and the Depth output then reads "standard" because it describes the evidence behind the verdict, not the request.',
+      },
+      {
+        key: 'visibility',
+        label: 'Visibility',
+        type: 'string',
+        required: false,
+        // See the note on Depth's choices: `sample` is a required legacy key.
+        choices: [
+          { value: 'private', sample: 'private', label: 'Private — only you can see it' },
+          { value: 'unlisted', sample: 'unlisted', label: 'Unlisted — anyone with the link' },
+        ],
+        helpText:
+          'Leave blank for Private, which is the default and means only your account can read the result. Unlisted makes it readable by anyone holding its Verification ID or its lenz.io link, but it is never listed in the public Library or search.',
       },
     ],
     perform,
@@ -413,6 +494,14 @@ module.exports = {
       },
       { key: 'duplicate_verification_id', label: 'Duplicate Verification ID' },
       { key: 'duplicate_url', label: 'Duplicate URL' },
+      // Read-backs, populated only on a completed verdict.
+      //
+      //   depth       The depth the verdict was PRODUCED with — not always
+      //               the one requested. A Low request served from an existing
+      //               Standard verdict is charged 5 and reads "standard".
+      //   visibility  "private" or "unlisted", echoing what was submitted.
+      { key: 'depth', label: 'Depth' },
+      { key: 'visibility', label: 'Visibility' },
     ],
   },
 };

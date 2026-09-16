@@ -39,6 +39,11 @@ moment at Lenz or a brief network drop were counting toward that.
   fixed "rephrase and re-run" message for all of them.
 - Fix trigger/new_verification: the trigger reads up to 100 finished checks per
   poll instead of 20, so a busy account stops losing the oldest ones.
+- New create/verify_claim: **Depth**, to run a check at half the credit cost.
+- New create/verify_claim: **Visibility**, to make a result readable by anyone
+  holding its link.
+- New create/extract_claims: **Focus**, to narrow the extraction to the claims
+  you care about.
 
 **Asking for input.** Lenz pauses a verification for three different reasons,
 and each one needs a different response:
@@ -68,6 +73,45 @@ scrolled off the first page by the time the next poll ran. Nothing failed and
 nothing was logged; the rows simply never reached the Zap. 100 is the largest
 page the API will return, so a run of more than 100 between polls can still
 outrun it.
+
+**Three new fields, all optional.** Each is blank by default; a blank field is
+left out of the request entirely, so a Zap built before this release sends
+exactly what it sent before and gets exactly what it got before.
+
+- **Depth** on Verify a Claim — Standard or Low. Low costs 5 credits instead of
+  10. It runs at most 3 searches against a 12-page reading limit, where Standard
+  keeps searching until it has enough and reads up to 48, and its debate stops
+  after both sides' opening arguments rather than letting them answer each
+  other. The panel still sees both cases in full. Every step runs the same
+  models, and framing, the panel and the conclusion are identical at both
+  depths.
+- **Visibility** on Verify a Claim — Private or Unlisted. Private is the default
+  and means only your account can read the result. Unlisted makes it readable by
+  anyone holding its Verification ID or its lenz.io link, which is what you want
+  when the Zap posts that link to people without Lenz accounts. Unlisted results
+  are never listed in the public Library and never appear in search.
+- **Focus** on Extract Claims — a hint of up to 300 characters, e.g. "pricing and
+  headcount", that costs nothing extra. It only selects from the claims Lenz
+  already found; it cannot add a claim, reword one, or change what counts as a
+  claim. Over 300 characters the step fails with the actual count instead of
+  being shortened without saying so, which would return a subset of the claims
+  with nothing to indicate it happened.
+
+**Two things to know before branching on them.**
+
+Verify a Claim now also returns **Depth** and **Visibility** as outputs, and the
+Depth output is not always the Depth you asked for. You are charged for the depth
+you REQUEST; the output echoes the depth the verdict was PRODUCED with. Lenz can
+answer a Low request from a Standard verdict it already holds — that run costs 5
+and reads back "standard". The two are meant to differ, so a Zap comparing them
+will see mismatches that are not errors.
+
+Extract Claims gains a third Status value, `no_match`, which means claims WERE
+found and the Focus excluded all of them. It is only reachable when a Focus is
+set, so nothing that ran before this release can start returning it. It arrives
+with a **Message** saying why the list is empty, because an empty list from a
+Focus looks identical to "nothing here" otherwise. The unfocused claims are
+deliberately never substituted.
 
 **The trigger is account-wide, and always was.** It fires for every completed
 verification the account owns, whichever surface produced it — a check run on
