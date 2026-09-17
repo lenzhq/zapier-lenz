@@ -46,6 +46,14 @@ moment at Lenz or a brief network drop were counting toward that.
   you care about.
 - Fix: **Language** is a dropdown of the twelve codes the API accepts, on all
   four actions. It was free text, and anything else failed every run.
+- Fix create/verify_claim: the verdict fields are present-but-empty on every
+  result, instead of missing on the ones that carry no verdict.
+- Fix create/assess: the per-claim verdict fields are declared, so they can be
+  mapped in the editor.
+- New create/verify_claim: Sources carry the quote and the publication date,
+  not just a title and a link; and the verdict carries Language, Domain,
+  Warnings and Created At.
+- New create/assess: each claim carries the Language its verdict is written in.
 
 **Asking for input.** Lenz pauses a verification for three different reasons,
 and each one needs a different response:
@@ -107,6 +115,37 @@ you REQUEST; the output echoes the depth the verdict was PRODUCED with. Lenz can
 answer a Low request from a Standard verdict it already holds — that run costs 5
 and reads back "standard". The two are meant to differ, so a Zap comparing them
 will see mismatches that are not errors.
+
+**The verdict fields are on every result now.** Verify a Claim promised
+`Passed`, `Verdict`, `Confidence`, `Lenz Score`, `Verification ID`, `Claim`,
+`Key Finding`, `Executive Summary` and `Sources` in its sample, and then left
+all nine OUT of any result that was not a finished verdict — a run that ended
+in needs_input, failed, or was still processing. Zapier treats a missing field
+and an empty one as different conditions, and the Zap editor builds filters
+from the sample, so a filter like "Verdict is empty" tested clean while you were
+building and then matched nothing on a live run. Nothing failed and nothing was
+logged. They are now present and empty on those results, the same way the
+failure fields already were.
+
+`Passed` is empty rather than false on a result with no verdict: false would say
+this claim did not pass, and nothing was checked.
+
+**Sources are whole citations now.** Verify a Claim returned only a title and a
+URL per source. The API sends five fields, always: the publication name, the
+title, the URL, the **quoted passage** the verdict rests on, and the source's
+publication date. A Zap could link a source but not quote it. All five are
+returned and mappable, and Sources itself is now declared — it was being
+returned without being declared, so it showed up in a test result and could not
+be mapped into the next step.
+
+The verdict also carries four fields it used to drop: **Language**, **Domain**,
+**Warnings** (caveats the conclusion attached to this verdict, one line item
+each) and **Created At**.
+
+**Assess's per-claim fields can be mapped.** The action returns a claim, verdict,
+confidence, passed and verification URL for each claim it assessed, but declared
+only Status and Message — so the verdicts showed up in a test result and could
+not be mapped into the next step. All five are declared now.
 
 **Language is now a dropdown.** It was a free-text box described as "ISO 639-1",
 but the API accepts exactly twelve codes — `en es de fr it pt nl sv da no fi bg` —

@@ -906,3 +906,149 @@ describe('language is a closed set on every action', () => {
     expect(languageFieldOf(action).helpText).toMatch(/does not describe your/i);
   });
 });
+
+// #22 — the every-branch rule, enforced at RUNTIME.
+//
+// test/schema.test.js already checks `outputFields` against `sample`, but that
+// is a static check on two declarations: both can agree while the code returns
+// something else entirely. That is exactly what happened here. `sample` and
+// `outputFields` promised the full verdict, and the non-completed branches of
+// performResume returned nine fewer keys than that — `passed`, `verdict`,
+// `confidence`, `lenz_score`, `key_finding`, `executive_summary`, `sources`,
+// `verification_id` and `claim` were simply absent.
+//
+// Zapier's Filter treats a MISSING field and an EMPTY one as different
+// conditions, and the editor builds filters from `sample`. So a filter like
+// "Verdict is empty" tested clean against the sample and then never matched on
+// a live run that ended in needs_input or failed — silently, with nothing to
+// indicate why. The file argued this rule for the failure fields and then did
+// not apply it to the verdict ones.
+describe('every performResume branch emits every key the sample promises', () => {
+  const SAMPLE_KEYS = Object.keys(App.creates.verify_claim.operation.sample);
+
+  const resumeWith = async (status) => {
+    LenzClient.mockImplementation(() => mockClient({ getStatus: jest.fn().mockResolvedValue(status) }));
+    return appTester(App.creates.verify_claim.operation.performResume, {
+      authData: { apiKey: 'lenz_good' },
+      outputData: { task_id: 'task_123' },
+    });
+  };
+
+  it.each([
+    ['completed', { status: 'completed', result: { verdict: 'True', sources: [] } }],
+    ['needs_input', { status: 'needs_input', reason: 'multi_claim', claims: [] }],
+    ['needs_input/duplicate', { status: 'needs_input', reason: 'duplicate_found', similar_claims: [] }],
+    ['failed', { status: 'failed', error: 'boom' }],
+    ['processing', { status: 'processing' }],
+    ['unknown status', { status: 'something_new' }],
+  ])('%s', async (_label, status) => {
+    const result = await resumeWith(status);
+    const missing = SAMPLE_KEYS.filter((k) => !(k in result));
+    expect(missing).toEqual([]);
+  });
+
+  // The kickoff return is what Zapier parks as outputData and shows the user
+  // if the callback never arrives, so it is bound by the same rule.
+  it('perform (kickoff)', async () => {
+    LenzClient.mockImplementation(() =>
+      mockClient({ verify: jest.fn().mockResolvedValue({ task_id: 'task_123' }) }),
+    );
+    const result = await appTester(App.creates.verify_claim.operation.perform, {
+      authData: { apiKey: 'lenz_good' },
+      inputData: { claim: 'The Eiffel Tower is 330 metres tall.' },
+    });
+    expect(SAMPLE_KEYS.filter((k) => !(k in result))).toEqual([]);
+  });
+});
+
+// #22 — fields the API always sends that this action used to drop on the
+// floor. Every one of these is unconditionally present in
+// build_verification_detail (lenz/api/verification_payload.py:163-207), so
+// there is no branch where asking for them is speculative.
+describe('the completed verdict carries what the API actually sends', () => {
+  const COMPLETED = {
+    status: 'completed',
+    result: {
+      verdict: 'True',
+      language: 'es',
+      domain: 'Science',
+      warnings: ['Sources disagree on the exact figure.'],
+      created_at: '2026-07-14T12:00:00Z',
+      sources: [
+        {
+          source_name: 'Tour Eiffel',
+          title: 'Official site',
+          url: 'https://www.toureiffel.paris',
+          snippet: 'The tower stands 330 metres tall.',
+          date: '2026-01-15',
+        },
+      ],
+    },
+  };
+
+  const resume = async (status) => {
+    LenzClient.mockImplementation(() =>
+      mockClient({ getStatus: jest.fn().mockResolvedValue(status) }),
+    );
+    return appTester(App.creates.verify_claim.operation.performResume, {
+      authData: { apiKey: 'lenz_good' },
+      outputData: { task_id: 'task_123' },
+    });
+  };
+
+  // snippet is the quotable half of a citation; dropping it meant a Zap could
+  // link a source but never quote it.
+  it('keeps all five source fields, not just title and url', async () => {
+    const result = await resume(COMPLETED);
+    expect(result.sources[0]).toEqual({
+      source_name: 'Tour Eiffel',
+      title: 'Official site',
+      url: 'https://www.toureiffel.paris',
+      snippet: 'The tower stands 330 metres tall.',
+      date: '2026-01-15',
+    });
+  });
+
+  it('passes through language, domain and created_at', async () => {
+    const result = await resume(COMPLETED);
+    expect(result.language).toBe('es');
+    expect(result.domain).toBe('Science');
+    expect(result.created_at).toBe('2026-07-14T12:00:00Z');
+  });
+
+  // Bare strings on the wire, wrapped as line items so a Zap can iterate them
+  // — the same treatment Candidate Readings gets, and for the same reason.
+  it('wraps warnings as line items rather than bare strings', async () => {
+    const result = await resume(COMPLETED);
+    expect(result.warnings).toEqual([{ text: 'Sources disagree on the exact figure.' }]);
+  });
+
+  // An older server, or a claim stored before a field existed, must not
+  // produce `undefined` — that is the missing-vs-empty trap again.
+  it('falls back to empty rather than undefined when the server omits them', async () => {
+    const result = await resume({ status: 'completed', result: { verdict: 'True' } });
+    expect(result.language).toBe('');
+    expect(result.domain).toBe('');
+    expect(result.warnings).toEqual([]);
+    expect(result.created_at).toBe('');
+    expect(result.sources).toEqual([]);
+  });
+});
+
+// #22 — assess echoes the language per claim and dropped it.
+describe('assess carries the per-claim language echo', () => {
+  it('passes language through on each claim', async () => {
+    LenzClient.mockImplementation(() =>
+      mockClient({
+        assess: jest.fn().mockResolvedValue({
+          claims: [{ claim: 'x', verdict: 'True', confidence: 'high', language: 'de' }],
+        }),
+      }),
+    );
+    const result = await appTester(App.creates.assess.operation.perform, {
+      authData: { apiKey: 'lenz_good' },
+      inputData: { text: 'x' },
+    });
+    expect(result.claims[0].language).toBe('de');
+  });
+});
