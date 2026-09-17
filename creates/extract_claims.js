@@ -2,6 +2,7 @@
 
 const { mapLenzError } = require('../lib/errors');
 const { lenzClient } = require('../client');
+const { languageField } = require('../lib/languages');
 
 // `perform` returns the API's response untouched, so every value here has to
 // be one the API actually sends — the editor builds Filter and Paths steps
@@ -136,13 +137,7 @@ module.exports = {
         helpText:
           "The text to pull claims from, or a single public web page URL. Lenz reads the page, or a YouTube video's transcript, and extracts the claims from its first 50,000 characters; pages behind a login can't be read. A Zap step has 30 seconds and a page read can take longer, so for a long page send its text instead.",
       },
-      {
-        key: 'language',
-        label: 'Language',
-        type: 'string',
-        required: false,
-        helpText: 'Optional ISO 639-1 response language code (e.g. "es"). Defaults to English.',
-      },
+      languageField(),
       {
         key: 'focus',
         label: 'Focus',

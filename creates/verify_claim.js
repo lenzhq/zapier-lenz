@@ -3,6 +3,7 @@
 const { LenzError } = require('lenz-io');
 const { mapLenzError } = require('../lib/errors');
 const { lenzClient } = require('../client');
+const { languageField } = require('../lib/languages');
 
 function isPassingVerdict(verdict) {
   return verdict === 'True' || verdict === 'Mostly True';
@@ -345,13 +346,7 @@ module.exports = {
         required: false,
         helpText: 'Optional URL the claim was found on.',
       },
-      {
-        key: 'language',
-        label: 'Language',
-        type: 'string',
-        required: false,
-        helpText: 'Optional ISO 639-1 response language code (e.g. "es"). Defaults to English.',
-      },
+      languageField(),
       {
         // Half price, and that is the reason to offer it at all:
         // VERIFY_DEPTH_COSTS in lenz/billing.py is {standard: 10, low: 5}.

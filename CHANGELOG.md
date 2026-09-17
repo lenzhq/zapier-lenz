@@ -44,6 +44,8 @@ moment at Lenz or a brief network drop were counting toward that.
   holding its link.
 - New create/extract_claims: **Focus**, to narrow the extraction to the claims
   you care about.
+- Fix: **Language** is a dropdown of the twelve codes the API accepts, on all
+  four actions. It was free text, and anything else failed every run.
 
 **Asking for input.** Lenz pauses a verification for three different reasons,
 and each one needs a different response:
@@ -105,6 +107,23 @@ you REQUEST; the output echoes the depth the verdict was PRODUCED with. Lenz can
 answer a Low request from a Standard verdict it already holds — that run costs 5
 and reads back "standard". The two are meant to differ, so a Zap comparing them
 will see mismatches that are not errors.
+
+**Language is now a dropdown.** It was a free-text box described as "ISO 639-1",
+but the API accepts exactly twelve codes — `en es de fr it pt nl sv da no fi bg` —
+and refuses anything else with a 422. A 422 fails the run, so a Zap with
+`English`, `en-US` or an unsupported code in that box failed EVERY time it ran,
+and nothing in the editor said why. The dropdown can only offer values the
+server accepts. If you have a Zap with a hand-typed value, re-pick it from the
+list.
+
+Two things about that field that were never written down:
+
+- **It sets the language of the ANSWER, not of your input.** Lenz never inspects
+  what language your text is in — this field alone decides what comes back.
+- **Blank means something different on Ask Follow-Up.** On Verify a Claim,
+  Assess and Extract Claims a blank field means English. On Ask Follow-Up it
+  means the language the verification is stored in, so you can ask in English
+  about a Spanish verification by leaving it blank.
 
 Extract Claims gains a third Status value, `no_match`, which means claims WERE
 found and the Focus excluded all of them. It is only reachable when a Focus is

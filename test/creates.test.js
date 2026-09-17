@@ -835,3 +835,74 @@ describe('creates.ask', () => {
     expect(client.ask.send).not.toHaveBeenCalled();
   });
 });
+
+// #17 — `language` was free text described as "ISO 639-1", but the API
+// accepts exactly twelve codes and 422s everything else. A 422 becomes a
+// plain z.errors.Error, which counts toward the error rate that turns a Zap
+// off, so `English` or `en-US` in that box failed EVERY run with nothing in
+// the editor to explain it.
+describe('language is a closed set on every action', () => {
+  const ACTIONS = ['verify_claim', 'assess', 'extract_claims', 'ask'];
+
+  // Copied from SUPPORTED_LANGUAGES in lenz/languages.py, which that module
+  // names as its source of truth — `en` first, then roughly descending
+  // expected API demand. Spelled out here rather than imported from
+  // lib/languages.js, because a test that reads the same constant it is
+  // checking would pass no matter what either one said. If the server ever
+  // adds a language, this list and lib/languages.js both move.
+  const SERVER_CODES = [
+    'en',
+    'es',
+    'de',
+    'fr',
+    'it',
+    'pt',
+    'nl',
+    'sv',
+    'da',
+    'no',
+    'fi',
+    'bg',
+  ];
+
+  const languageFieldOf = (action) =>
+    App.creates[action].operation.inputFields.find((f) => f.key === 'language');
+
+  it.each(ACTIONS)('%s offers exactly the codes the server accepts, in order', (action) => {
+    expect(languageFieldOf(action).choices.map((c) => c.value)).toEqual(SERVER_CODES);
+  });
+
+  it.each(ACTIONS)('%s leaves language optional, because blank is meaningful', (action) => {
+    expect(languageFieldOf(action).required).toBe(false);
+  });
+
+  it('labels each code with its language name rather than repeating the code', () => {
+    const choices = languageFieldOf('verify_claim').choices;
+    expect(choices[0]).toEqual({ value: 'en', sample: 'en', label: 'English' });
+    expect(choices[11]).toEqual({ value: 'bg', sample: 'bg', label: 'Bulgarian' });
+    for (const choice of choices) {
+      expect(choice.label).not.toBe(choice.value);
+    }
+  });
+
+  // The two meanings of blank really do differ, so the help text must too.
+  // On ask the server falls back to the CLAIM's stored language
+  // (lenz/api/public_authed.py:2996), not English.
+  it('tells ask users that blank is not English there', () => {
+    const helpText = languageFieldOf('ask').helpText;
+    expect(helpText).toMatch(/does NOT mean English/);
+    expect(helpText).toMatch(/stored in/i);
+  });
+
+  it.each(['verify_claim', 'assess', 'extract_claims'])('%s says blank means English', (action) => {
+    expect(languageFieldOf(action).helpText).toMatch(/Leave blank for English/i);
+  });
+
+  // The point of the field is the OUTPUT language; reading it as a
+  // description of the input is the obvious misreading, and picking it that
+  // way silently changes the answer's language. lenz/languages.py principle 1:
+  // "We never detect, validate, or warn about the input language."
+  it.each(ACTIONS)('%s says the field sets the response, not the input', (action) => {
+    expect(languageFieldOf(action).helpText).toMatch(/does not describe your/i);
+  });
+});

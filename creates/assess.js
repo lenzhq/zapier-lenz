@@ -2,6 +2,7 @@
 
 const { mapLenzError } = require('../lib/errors');
 const { lenzClient } = require('../client');
+const { languageField } = require('../lib/languages');
 
 function isPassingVerdict(verdict) {
   return verdict === 'True' || verdict === 'Mostly True';
@@ -98,13 +99,7 @@ module.exports = {
         required: true,
         helpText: 'The claim to check. If it contains several claims, each is assessed separately.',
       },
-      {
-        key: 'language',
-        label: 'Language',
-        type: 'string',
-        required: false,
-        helpText: 'Optional ISO 639-1 response language code (e.g. "es"). Defaults to English.',
-      },
+      languageField(),
     ],
     perform,
     sample: SAMPLE,
