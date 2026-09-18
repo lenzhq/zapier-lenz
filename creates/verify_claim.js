@@ -3,6 +3,7 @@
 const { LenzError } = require('lenz-io');
 const { mapLenzError } = require('../lib/errors');
 const { lenzClient } = require('../client');
+const { languageField } = require('../lib/languages');
 
 function isPassingVerdict(verdict) {
   return verdict === 'True' || verdict === 'Mostly True';
@@ -33,7 +34,26 @@ const SAMPLE = {
     'Sample finding shown while testing in the Zap editor — a live, turned-on Zap returns the real finding for your claim.',
   executive_summary:
     'Sample summary shown while testing in the Zap editor — a live, turned-on Zap returns the real analysis for your claim.',
-  sources: [{ title: 'Official Eiffel Tower site', url: 'https://www.toureiffel.paris' }],
+  sources: [
+    {
+      source_name: 'Tour Eiffel',
+      title: 'Official Eiffel Tower site',
+      url: 'https://www.toureiffel.paris',
+      snippet: 'The tower stands 330 metres tall including its antennas.',
+      // Publication date of the source article, not of the check. '' when the
+      // research step could not determine one — the API normalises its
+      // 'unknown' sentinel to '' (lenz/api/verification_payload.py:119), so
+      // this is never null and never the literal "unknown".
+      date: '2026-01-15',
+    },
+  ],
+  language: 'en',
+  domain: 'Science',
+  // Caveats the conclusion attached to this verdict; [] on most claims. Wrapped
+  // as line items rather than left as bare strings for the same reason as
+  // Candidate Readings below: a string array is not mappable per-item.
+  warnings: [],
+  created_at: '2026-07-14T12:00:00Z',
   // Read-backs from the completed verdict. `depth` is what the verdict was
   // PRODUCED with, which can differ from what was requested — see the
   // completed branch in performResume. Empty on every non-completed branch.
@@ -64,10 +84,39 @@ const SAMPLE = {
 // behaves differently on a live run.
 const NO_FAILURE = { error: '', failure_reason: '', failure_class: '', retryable: null };
 
-// The verdict read-backs as they read when there is no verdict yet (or never
-// will be). Same rule again: every branch carries every key, so a Filter
-// tested against the sample behaves the same on a live run.
-const NO_VERDICT = { depth: '', visibility: '' };
+// The verdict fields as they read when there is no verdict yet, or never will
+// be. Spread into EVERY branch that is not `completed`, for the same reason as
+// NO_FAILURE and NO_INPUT_NEEDED: Zapier's Filter treats a MISSING field and an
+// EMPTY one as different conditions, and the editor builds filters from SAMPLE,
+// which promises all eleven.
+//
+// This file argued that rule for the failure fields from the start and then did
+// not apply it to the verdict ones — so a Zap filtering on "Verdict is empty"
+// tested clean against the sample and then matched nothing on a live run that
+// ended in needs_input or failed. No error, nothing to notice (#22).
+//
+// The empty VALUE per field mirrors what the completed branch itself falls back
+// to (`|| null` vs `|| ''` vs `?? null` below), so a given field has the same
+// type on every branch rather than being a string here and null there.
+// `passed` is null, not false: there is no verdict, and false would assert this
+// claim did NOT pass — the same reason `retryable` is null when nothing failed.
+const NO_VERDICT = {
+  passed: null,
+  verification_id: null,
+  claim: '',
+  verdict: null,
+  confidence: null,
+  lenz_score: null,
+  key_finding: '',
+  executive_summary: '',
+  sources: [],
+  language: '',
+  domain: '',
+  warnings: [],
+  created_at: '',
+  depth: '',
+  visibility: '',
+};
 
 // The needs_input fields as they read when Lenz did NOT stop for input. Same
 // rule as NO_FAILURE, same reason: every branch carries every key.
@@ -253,7 +302,24 @@ const performResume = async (z, bundle) => {
       lenz_score: result.lenz_score ?? null,
       key_finding: result.key_finding || '',
       executive_summary: result.executive_summary || '',
-      sources: (result.sources || []).map((s) => ({ title: s.title || '', url: s.url || '' })),
+      // All five keys, not just title and url. The API always sends all five
+      // (lenz/api/verification_payload.py:124-133) and uses '' rather than
+      // null for a missing one, so the `|| ''` here is belt-and-braces for an
+      // older server. snippet is the quotable half of a citation — dropping it
+      // meant a Zap could link a source but never quote it.
+      sources: (result.sources || []).map((s) => ({
+        source_name: s.source_name || '',
+        title: s.title || '',
+        url: s.url || '',
+        snippet: s.snippet || '',
+        date: s.date || '',
+      })),
+      language: result.language || '',
+      domain: result.domain || '',
+      // Bare strings on the wire; wrapped as line items so a Zap can iterate
+      // them, matching how Candidate Readings is handled.
+      warnings: (result.warnings || []).map((text) => ({ text: String(text || '') })),
+      created_at: result.created_at || '',
       // The depth the verdict was actually PRODUCED with, which is not always
       // the one requested: a `low` request Lenz can answer from an existing
       // `standard` verdict reads back `standard`. The echo describes the
@@ -345,13 +411,7 @@ module.exports = {
         required: false,
         helpText: 'Optional URL the claim was found on.',
       },
-      {
-        key: 'language',
-        label: 'Language',
-        type: 'string',
-        required: false,
-        helpText: 'Optional ISO 639-1 response language code (e.g. "es"). Defaults to English.',
-      },
+      languageField(),
       {
         // Half price, and that is the reason to offer it at all:
         // VERIFY_DEPTH_COSTS in lenz/billing.py is {standard: 10, low: 5}.
@@ -494,6 +554,40 @@ module.exports = {
       },
       { key: 'duplicate_verification_id', label: 'Duplicate Verification ID' },
       { key: 'duplicate_url', label: 'Duplicate URL' },
+      // Sources were returned but never DECLARED, so the citations behind a
+      // verdict could be seen in a test result and not mapped into the next
+      // step (#22). Declared as line items with all five keys the API sends.
+      {
+        key: 'sources',
+        label: 'Sources',
+        list: true,
+        children: [
+          { key: 'source_name', label: 'Source Name' },
+          { key: 'title', label: 'Title' },
+          { key: 'url', label: 'URL' },
+          // The quotable half of a citation.
+          { key: 'snippet', label: 'Snippet' },
+          // Publication date of the source, not of this check.
+          { key: 'date', label: 'Published' },
+        ],
+      },
+      // Passthroughs the API always sends and this action used to drop.
+      //
+      //   language    The language the verdict is written in.
+      //   domain      Capitalised, or '' when the extractor produced none —
+      //               the same vocabulary the trigger and Extract emit.
+      //   warnings    Caveats the conclusion attached to this verdict, one
+      //               line item each. [] on most claims.
+      //   created_at  When the verification was created.
+      { key: 'language', label: 'Language' },
+      { key: 'domain', label: 'Domain' },
+      {
+        key: 'warnings',
+        label: 'Warnings',
+        list: true,
+        children: [{ key: 'text', label: 'Warning' }],
+      },
+      { key: 'created_at', label: 'Created At', type: 'datetime' },
       // Read-backs, populated only on a completed verdict.
       //
       //   depth       The depth the verdict was PRODUCED with — not always

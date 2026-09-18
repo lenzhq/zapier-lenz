@@ -2,6 +2,7 @@
 
 const { mapLenzError } = require('../lib/errors');
 const { lenzClient } = require('../client');
+const { languageField } = require('../lib/languages');
 
 function isPassingVerdict(verdict) {
   return verdict === 'True' || verdict === 'Mostly True';
@@ -30,6 +31,7 @@ const SAMPLE = {
       confidence: 'high',
       passed: true,
       verification_url: 'https://lenz.io/c/eiffel-tower-height-ab12cd34',
+      language: 'en',
     },
   ],
 };
@@ -73,7 +75,14 @@ const perform = async (z, bundle) => {
       verdict: c.verdict || null,
       confidence: c.confidence || null,
       passed: isPassingVerdict(c.verdict),
+      // Null on all but one path. The API only fills this when the verdict
+      // came from an existing full verification it can serve to this caller
+      // (lenz/api/public_authed.py:1559) — a fresh panel result has no page to
+      // link. So a Zap must handle it being empty; it is not a bug.
       verification_url: c.verification_url || null,
+      // The language this verdict is written in, echoed per claim. Dropped
+      // until now (#22).
+      language: c.language || '',
     })),
   };
 };
@@ -98,19 +107,37 @@ module.exports = {
         required: true,
         helpText: 'The claim to check. If it contains several claims, each is assessed separately.',
       },
-      {
-        key: 'language',
-        label: 'Language',
-        type: 'string',
-        required: false,
-        helpText: 'Optional ISO 639-1 response language code (e.g. "es"). Defaults to English.',
-      },
+      languageField(),
     ],
     perform,
     sample: SAMPLE,
     outputFields: [
       { key: 'status', label: 'Status' },
       { key: 'message', label: 'Message' },
+      // Declared as a line-item list with children, the same shape the
+      // needs_input lists use in creates/verify_claim.js. Until now
+      // `outputFields` named only Status and Message, so every per-claim
+      // value the action actually returns — the verdicts themselves — was
+      // undiscoverable in the editor: a user could see them in a test result
+      // but had nothing to map into the next step (#22).
+      //
+      // `passed` is the field to branch on. `verdict` is prose from a closed
+      // set and `confidence` is low/medium/high, but `passed` is already
+      // derived from the verdict by this action, so a Filter does not have to
+      // enumerate the verdict vocabulary.
+      {
+        key: 'claims',
+        label: 'Claims',
+        list: true,
+        children: [
+          { key: 'claim', label: 'Claim' },
+          { key: 'verdict', label: 'Verdict' },
+          { key: 'confidence', label: 'Confidence' },
+          { key: 'passed', label: 'Passed', type: 'boolean' },
+          { key: 'verification_url', label: 'Verification URL' },
+          { key: 'language', label: 'Language' },
+        ],
+      },
     ],
   },
 };

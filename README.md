@@ -39,10 +39,18 @@ only what the sample shows. These are the values the API actually sends:
 | `status` | Assess (Fast) | `ok`, `no_claim`, or `ambiguous`. Built by the integration, not the API. |
 | `domain` | Extract Claims, New Verification Completed | Capitalised: `Health`, `Science`, `Politics`, `Finance`, `Tech`, `History`, `Legal`, `General` — **or empty**, when the extractor produced no usable domain. A Paths step covering all eight still needs a branch for the empty case. |
 | `passed` | Verify a Claim, Assess (Fast) | Boolean, derived from the verdict. The reliable thing to branch on. |
+| `domain` | Verify a Claim | Same eight capitalised values as above, or empty. |
 | `status` | Verify a Claim | `completed`, `needs_input`, `failed`, or `processing`. Built by the integration. |
 | `reason` | Verify a Claim, when `status` is `needs_input` | `multi_claim`, `clarification_required`, or `duplicate_found`. Empty otherwise. |
 | `depth` | Verify a Claim, when `status` is `completed` | `standard` or `low` — the depth the verdict was **produced** with, which is not always the one you asked for. Empty on every other status, and on verdicts from before Lenz recorded it. |
 | `visibility` | Verify a Claim, when `status` is `completed` | `private` or `unlisted`. Empty on every other status. |
+| `language` | all four actions (input) | `en` `es` `de` `fr` `it` `pt` `nl` `sv` `da` `no` `fi` `bg`. A dropdown since 1.3.4 — it was free text, and anything outside this set fails the run. |
+
+Every field in the table above, and every other field Verify a Claim declares, is
+**present on every result** — empty when it does not apply, never missing. Zapier treats
+"does not exist" and "is empty" as different conditions, so this is what lets a Filter you
+built against the sample behave the same on a live run. `Passed` and `Lenz Score` are
+empty rather than `false`/`0` on a result with no verdict, since nothing was checked.
 
 ### When Lenz asks for input instead of answering
 
@@ -67,6 +75,24 @@ Two fields on Extract Claims look filterable and are not:
 Extract's `status` read `ok` in the sample until 1.3.2 — a value the API never sends — so
 a filter built on it matched nothing on a live run. If you built one before 1.3.2, change
 it to `ready`. A lowercase `domain` needs capitalising the same way.
+
+### Language
+
+All four actions take an optional **Language**, and it is a dropdown of the twelve codes
+the API accepts: `en` `es` `de` `fr` `it` `pt` `nl` `sv` `da` `no` `fi` `bg`. Anything
+outside that set is refused with a 422, which counts as a failed run — so until 1.3.4,
+when this was a free-text box described only as "ISO 639-1", typing `English`, `en-US` or
+any unsupported code failed **every** run of that Zap with nothing in the editor to say
+why. If you have an existing Zap with a hand-typed value, re-pick it from the dropdown.
+
+**It sets the language of the answer, not of your input.** Lenz never inspects what
+language your text is in; this field alone decides what comes back. Reading it the other
+way round is the easy mistake, and it quietly changes the output.
+
+**Blank means two different things.** On Verify a Claim, Assess and Extract Claims a blank
+field means English. On **Ask Follow-Up** it means *the language the verification is stored
+in*, which is usually what you want — you can ask in English about a Spanish verification
+by leaving it blank, or set it explicitly to override.
 
 ### Depth, Visibility and Focus
 
