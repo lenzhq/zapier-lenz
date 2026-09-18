@@ -729,6 +729,65 @@ describe('creates.extract_claims', () => {
       expect(client.extract).not.toHaveBeenCalled();
     });
 
+    // Focus is a static field value, so an over-long one is wrong on every
+    // run, for good. A HaltedError stops the run without counting toward the
+    // error rate that turns the Zap off; a plain Error would retire the Zap
+    // for a typo that retrying can never fix. Same call lib/errors.js makes
+    // for a spent balance and verify_claim.js for a missing webhook secret.
+    it('halts rather than hard-failing on a live run, so the Zap is not auto-disabled', async () => {
+      const client = mockClient({ extract: jest.fn() });
+      LenzClient.mockImplementation(() => client);
+
+      const err = await captureCreateError(App.creates.extract_claims.operation.perform, {
+        ...AUTH_X,
+        inputData: { text: 'some text', focus: 'x'.repeat(301) },
+      });
+
+      expect(err.name).toBe('HaltedError');
+    });
+
+    // The editor is the one place the hard class is right: it makes Test fail
+    // visibly. Checking AFTER the sample return — as this did originally —
+    // meant Test passed green and every live run failed instead.
+    it('fails the editor test too, instead of returning a green sample', async () => {
+      const client = mockClient({ extract: jest.fn() });
+      LenzClient.mockImplementation(() => client);
+
+      const err = await captureCreateError(App.creates.extract_claims.operation.perform, {
+        ...AUTH_X,
+        inputData: { text: 'some text', focus: 'x'.repeat(301) },
+        meta: { isLoadingSample: true },
+      });
+
+      expect(err).toBeTruthy();
+      expect(err.name).not.toBe('HaltedError');
+      expect(err.message).toContain('301');
+      expect(client.extract).not.toHaveBeenCalled();
+    });
+
+    // `.length` counts UTF-16 code units, so 200 emoji measure 400 and would
+    // be refused with a number the user cannot reconcile with what they
+    // typed — while the server, counting characters, would have accepted it.
+    it('counts characters, not UTF-16 code units, so emoji are not double-counted', async () => {
+      const client = mockClient({
+        extract: jest.fn().mockResolvedValue({ status: 'ready', claim: 'A', identified_claims: [] }),
+      });
+      LenzClient.mockImplementation(() => client);
+
+      // 200 characters, 400 code units — over the 300 cap by one measure and
+      // comfortably under it by the one the server uses.
+      const emoji = '🙂'.repeat(200);
+      expect(emoji.length).toBeGreaterThan(300);
+      expect([...emoji].length).toBeLessThanOrEqual(300);
+
+      await appTester(App.creates.extract_claims.operation.perform, {
+        ...AUTH_X,
+        inputData: { text: 'some text', focus: emoji },
+      });
+
+      expect(client.extract).toHaveBeenCalledWith(expect.objectContaining({ focus: emoji }));
+    });
+
     // no_match is a real answer, not a failure: claims were found and the
     // focus excluded all of them. It became reachable only with Focus.
     it('names no_match instead of leaving an unexplained empty list', async () => {

@@ -150,6 +150,7 @@ more than it looks. Since 1.3.4:
 | Lenz at capacity, or providers down (503) | Waits the stated time and replays | No |
 | Network drop, or a 5xx naming no reason | Waits 60s and replays | No |
 | No webhook secret on the key (Verify a Claim) | Halts with instructions | No |
+| Focus over 300 characters (Extract Claims) | Halts with instructions | No |
 | Key rejected (401) | Prompts you to reconnect | No |
 | Claim could not be framed, text unreadable (typed 502) | Fails the run | Yes |
 | Private verification or blocked IP (403) | Fails the run | Yes |

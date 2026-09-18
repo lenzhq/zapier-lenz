@@ -65,25 +65,51 @@ const MAX_FOCUS_CHARS = 300;
 // focus are one string.
 const normaliseFocus = (raw) => String(raw || '').replace(/\s+/g, ' ').trim();
 
+// CHARACTERS, not UTF-16 code units. `'🙂'.length` is 2, so `.length` would
+// refuse a 200-emoji focus the server accepts, and quote a number the user
+// cannot reconcile with what they typed — the opposite of the whitespace
+// rule above, which exists precisely so we refuse nothing the server takes.
+const focusLength = (focus) => [...focus].length;
+
 const perform = (z, bundle) => {
-  if (bundle.meta && bundle.meta.isLoadingSample) {
+  const isSample = Boolean(bundle.meta && bundle.meta.isLoadingSample);
+
+  // Measured BEFORE the sample return, not after. Focus is a static field
+  // typed once into the Zap, so a check that runs only on live runs lets the
+  // editor's Test pass green and then fails every scheduled run afterwards —
+  // the same reason creates/verify_claim.js pre-checks its webhook secret
+  // inside the isLoadingSample branch instead of waiting for the first run.
+  //
+  // Refused HERE rather than left to 422: the server never truncates, and a
+  // silently shortened focus would return a subset of the claims with nothing
+  // to indicate it happened — so the failure has to be loud and say the real
+  // number.
+  // `|| {}` because this now runs BEFORE the sample return, and a bundle
+  // loading a sample is not guaranteed to carry inputData at all.
+  const focus = normaliseFocus((bundle.inputData || {}).focus);
+  const length = focusLength(focus);
+  if (length > MAX_FOCUS_CHARS) {
+    const tooLong =
+      `Focus is ${length} characters and the limit is ${MAX_FOCUS_CHARS}. ` +
+      'Shorten it — it is a hint about which claims you want, not a description of the text.';
+    // Two classes for one condition, on purpose. In the editor a hard Error
+    // is what makes Test fail visibly, which is the whole point of checking
+    // this early. On a live run it is a permanent CONFIGURATION state — the
+    // value is fixed in the Zap and retrying cannot change it — so a hard
+    // error would count toward the error rate that auto-disables the Zap on
+    // every scheduled run. That is the distinction lib/errors.js draws, and
+    // the one creates/verify_claim.js already makes for a missing webhook
+    // secret.
+    if (isSample) {
+      throw new z.errors.Error(tooLong, 'FocusTooLong', 422);
+    }
+    throw new z.errors.HaltedError(tooLong);
+  }
+
+  if (isSample) {
     // Copied, not returned by reference — see the same note in
     // creates/assess.js and creates/verify_claim.js.
     return Promise.resolve({ ...SAMPLE });
-  }
-
-  // Refuse an over-long focus HERE rather than letting it 422. The server
-  // never truncates, and a silently shortened focus would return a subset of
-  // the claims with nothing to indicate it happened — so the failure has to
-  // be loud and say the real number.
-  const focus = normaliseFocus(bundle.inputData.focus);
-  if (focus.length > MAX_FOCUS_CHARS) {
-    throw new z.errors.Error(
-      `Focus is ${focus.length} characters and the limit is ${MAX_FOCUS_CHARS}. ` +
-        'Shorten it — it is a hint about which claims you want, not a description of the text.',
-      'FocusTooLong',
-      422,
-    );
   }
 
   const client = lenzClient(bundle);

@@ -93,9 +93,12 @@ exactly what it sent before and gets exactly what it got before.
 - **Focus** on Extract Claims — a hint of up to 300 characters, e.g. "pricing and
   headcount", that costs nothing extra. It only selects from the claims Lenz
   already found; it cannot add a claim, reword one, or change what counts as a
-  claim. Over 300 characters the step fails with the actual count instead of
+  claim. Over 300 characters the step stops with the actual count instead of
   being shortened without saying so, which would return a subset of the claims
-  with nothing to indicate it happened.
+  with nothing to indicate it happened. It is checked when you click Test, not
+  only on a live run, and it pauses the Zap rather than failing it — the value
+  is fixed in the step, so a failure there would count against the Zap on every
+  run for something no retry can fix.
 
 **Two things to know before branching on them.**
 
