@@ -101,3 +101,38 @@ describe('static dropdown choices stay schema-legal', () => {
     }
   });
 });
+
+
+// The list-children counterpart to the parity ratchet above. Declaring a list
+// field is not enough to make its per-item values mappable in the editor —
+// each child has to be declared too. creates/assess.js declared `claims` not
+// at all while returning five values per claim, so the verdicts themselves
+// were undiscoverable (#22).
+//
+// Only lists with a NON-EMPTY sample array can be checked: an empty sample
+// list has no entry to compare against. creates/verify_claim.js samples its
+// three needs_input lists as `[]` (they are populated only on that branch), so
+// they are skipped here and rely on the shapeNeedsInput tests instead.
+describe('list output fields declare the children their sample carries', () => {
+  const listFields = operations.flatMap(([name, op]) =>
+    (op.sample && typeof op.sample === 'object' ? op.outputFields : [])
+      .filter((f) => typeof f !== 'function' && f.list && Array.isArray(f.children))
+      .map((f) => [`${name}.${f.key}`, f, op.sample[f.key]])
+      .filter(([, , sampleValue]) => Array.isArray(sampleValue) && sampleValue.length > 0),
+  );
+
+  it('finds at least one sampled list to check', () => {
+    expect(listFields.length).toBeGreaterThan(0);
+  });
+
+  it.each(listFields)('%s declares every key its sample entry carries', (_name, field, sampleValue) => {
+    const declared = field.children.map((c) => c.key);
+    const undeclared = Object.keys(sampleValue[0]).filter((k) => !declared.includes(k));
+    expect(undeclared).toEqual([]);
+  });
+
+  it.each(listFields)('%s samples every child it declares', (_name, field, sampleValue) => {
+    const missing = field.children.map((c) => c.key).filter((k) => !(k in sampleValue[0]));
+    expect(missing).toEqual([]);
+  });
+});

@@ -39,10 +39,17 @@ only what the sample shows. These are the values the API actually sends:
 | `status` | Assess (Fast) | `ok`, `no_claim`, or `ambiguous`. Built by the integration, not the API. |
 | `domain` | Extract Claims, New Verification Completed | Capitalised: `Health`, `Science`, `Politics`, `Finance`, `Tech`, `History`, `Legal`, `General` — **or empty**, when the extractor produced no usable domain. A Paths step covering all eight still needs a branch for the empty case. |
 | `passed` | Verify a Claim, Assess (Fast) | Boolean, derived from the verdict. The reliable thing to branch on. |
+| `domain` | Verify a Claim | Same eight capitalised values as above, or empty. |
 | `status` | Verify a Claim | `completed`, `needs_input`, `failed`, or `processing`. Built by the integration. |
 | `reason` | Verify a Claim, when `status` is `needs_input` | `multi_claim`, `clarification_required`, or `duplicate_found`. Empty otherwise. |
 | `depth` | Verify a Claim, when `status` is `completed` | `standard` or `low` — the depth the verdict was **produced** with, which is not always the one you asked for. Empty on every other status, and on verdicts from before Lenz recorded it. |
 | `visibility` | Verify a Claim, when `status` is `completed` | `private` or `unlisted`. Empty on every other status. |
+
+Every field in the table above, and every other field Verify a Claim declares, is
+**present on every result** — empty when it does not apply, never missing. Zapier treats
+"does not exist" and "is empty" as different conditions, so this is what lets a Filter you
+built against the sample behave the same on a live run. `Passed` and `Lenz Score` are
+empty rather than `false`/`0` on a result with no verdict, since nothing was checked.
 | `language` | all four actions (input) | `en` `es` `de` `fr` `it` `pt` `nl` `sv` `da` `no` `fi` `bg`. A dropdown since 1.3.4 — it was free text, and anything outside this set fails the run. |
 
 ### When Lenz asks for input instead of answering
