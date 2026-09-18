@@ -3,7 +3,7 @@
 User-facing changes to the Lenz integration for Zapier. Build and release
 mechanics live in [README.md](README.md#building-and-pushing).
 
-## 1.3.4
+## 1.4.0
 
 Problems that pass on their own now pause your Zap instead of failing it.
 Zapier turns a Zap off after enough failed runs, and conditions like a busy

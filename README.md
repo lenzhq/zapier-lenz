@@ -44,7 +44,7 @@ only what the sample shows. These are the values the API actually sends:
 | `reason` | Verify a Claim, when `status` is `needs_input` | `multi_claim`, `clarification_required`, or `duplicate_found`. Empty otherwise. |
 | `depth` | Verify a Claim, when `status` is `completed` | `standard` or `low` — the depth the verdict was **produced** with, which is not always the one you asked for. Empty on every other status, and on verdicts from before Lenz recorded it. |
 | `visibility` | Verify a Claim, when `status` is `completed` | `private` or `unlisted`. Empty on every other status. |
-| `language` | all four actions (input) | `en` `es` `de` `fr` `it` `pt` `nl` `sv` `da` `no` `fi` `bg`. A dropdown since 1.3.4 — it was free text, and anything outside this set fails the run. |
+| `language` | all four actions (input) | `en` `es` `de` `fr` `it` `pt` `nl` `sv` `da` `no` `fi` `bg`. A dropdown since 1.4.0 — it was free text, and anything outside this set fails the run. |
 
 Every field in the table above, and every other field Verify a Claim declares, is
 **present on every result** — empty when it does not apply, never missing. Zapier treats
@@ -64,7 +64,7 @@ on `reason` rather than treating them as one case:
 | `clarification_required` | One claim that can be read several ways | **Candidate Readings** (line items: `text`) | Pick one and re-run with that exact wording |
 | `duplicate_found` | A verification of this claim **already exists** | **Duplicate Verification ID** and **Duplicate URL**; the full list in **Similar Claims** | Reuse it — map the ID into **Ask Follow-Up**. Do **not** re-run: that spends a full check to reproduce an answer you already have |
 
-Before 1.3.4 all three produced the same "rephrase and re-run" message and the data was
+Before 1.4.0 all three produced the same "rephrase and re-run" message and the data was
 dropped. For `duplicate_found` that advice was wrong and cost money.
 
 Two fields on Extract Claims look filterable and are not:
@@ -80,7 +80,7 @@ it to `ready`. A lowercase `domain` needs capitalising the same way.
 
 All four actions take an optional **Language**, and it is a dropdown of the twelve codes
 the API accepts: `en` `es` `de` `fr` `it` `pt` `nl` `sv` `da` `no` `fi` `bg`. Anything
-outside that set is refused with a 422, which counts as a failed run — so until 1.3.4,
+outside that set is refused with a 422, which counts as a failed run — so until 1.4.0,
 when this was a free-text box described only as "ISO 639-1", typing `English`, `en-US` or
 any unsupported code failed **every** run of that Zap with nothing in the editor to say
 why. If you have an existing Zap with a hand-typed value, re-pick it from the dropdown.
@@ -167,7 +167,7 @@ You'll need a Lenz API key:
 ### What happens when something goes wrong
 
 Zapier turns a Zap off after enough failed runs, so which failures *count* matters
-more than it looks. Since 1.3.4:
+more than it looks. Since 1.4.0:
 
 | Condition | What Zapier does | Counts as an error? |
 |---|---|---|
