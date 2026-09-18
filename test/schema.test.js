@@ -62,3 +62,77 @@ describe('every declared output field is present in the sample', () => {
     expect(missing).toEqual([]);
   });
 });
+
+
+// Static dropdown choices are the same class of trap as the output-field
+// allow-list above: `FieldChoiceWithLabelSchema` requires `value`, `sample`
+// AND `label`, and says `sample` "should match the value". `sample` is a
+// legacy key the editor no longer reads, so it looks redundant and reads like
+// a copy-paste artefact — but dropping it fails `zapier validate`, which CI
+// does not run (the workflow runs `npm test` only). Without this, a removed
+// `sample` passes CI and every review, and only surfaces at the push.
+//
+// The Depth and Visibility choices added in 1.3.4 are the first static choices
+// in this app; this ratchet covers whatever comes next too.
+describe('static dropdown choices stay schema-legal', () => {
+  const inputOperations = [
+    ...Object.entries(App.creates || {}).map(([k, v]) => [`creates.${k}`, v.operation]),
+    ...Object.entries(App.triggers || {}).map(([k, v]) => [`triggers.${k}`, v.operation]),
+    ...Object.entries(App.searches || {}).map(([k, v]) => [`searches.${k}`, v.operation]),
+  ].filter(([, op]) => op && Array.isArray(op.inputFields));
+
+  const withChoices = inputOperations.flatMap(([name, op]) =>
+    op.inputFields
+      .filter((f) => typeof f !== 'function' && Array.isArray(f.choices))
+      .map((f) => [`${name}.${f.key}`, f]),
+  );
+
+  it('finds the static choices this app declares', () => {
+    expect(withChoices.length).toBeGreaterThan(0);
+  });
+
+  it.each(withChoices)('%s gives every choice value, sample and label', (_name, field) => {
+    for (const choice of field.choices) {
+      // The string shorthand is legal too, and carries no keys to get wrong.
+      if (typeof choice === 'string') continue;
+      expect(Object.keys(choice).sort()).toEqual(['label', 'sample', 'value']);
+      expect(choice.sample).toBe(choice.value);
+      expect(choice.label.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+
+// The list-children counterpart to the parity ratchet above. Declaring a list
+// field is not enough to make its per-item values mappable in the editor —
+// each child has to be declared too. creates/assess.js declared `claims` not
+// at all while returning five values per claim, so the verdicts themselves
+// were undiscoverable (#22).
+//
+// Only lists with a NON-EMPTY sample array can be checked: an empty sample
+// list has no entry to compare against. creates/verify_claim.js samples its
+// three needs_input lists as `[]` (they are populated only on that branch), so
+// they are skipped here and rely on the shapeNeedsInput tests instead.
+describe('list output fields declare the children their sample carries', () => {
+  const listFields = operations.flatMap(([name, op]) =>
+    (op.sample && typeof op.sample === 'object' ? op.outputFields : [])
+      .filter((f) => typeof f !== 'function' && f.list && Array.isArray(f.children))
+      .map((f) => [`${name}.${f.key}`, f, op.sample[f.key]])
+      .filter(([, , sampleValue]) => Array.isArray(sampleValue) && sampleValue.length > 0),
+  );
+
+  it('finds at least one sampled list to check', () => {
+    expect(listFields.length).toBeGreaterThan(0);
+  });
+
+  it.each(listFields)('%s declares every key its sample entry carries', (_name, field, sampleValue) => {
+    const declared = field.children.map((c) => c.key);
+    const undeclared = Object.keys(sampleValue[0]).filter((k) => !declared.includes(k));
+    expect(undeclared).toEqual([]);
+  });
+
+  it.each(listFields)('%s samples every child it declares', (_name, field, sampleValue) => {
+    const missing = field.children.map((c) => c.key).filter((k) => !(k in sampleValue[0]));
+    expect(missing).toEqual([]);
+  });
+});

@@ -2,6 +2,7 @@
 
 const { mapLenzError } = require('../lib/errors');
 const { lenzClient } = require('../client');
+const { languageField } = require('../lib/languages');
 
 const SAMPLE = {
   // Realistic, representative example answer, coherent with Verify's Eiffel
@@ -69,13 +70,9 @@ module.exports = {
         helpText:
           'The follow-up question, answered from the verification’s full research and evidence. Clicking Test shows an example answer so you can map the output fields — a turned-on Zap answers this question for real.',
       },
-      {
-        key: 'language',
-        label: 'Language',
-        type: 'string',
-        required: false,
-        helpText: 'Optional ISO 639-1 response language code. Defaults to the claim’s stored language.',
-      },
+      languageField(
+        'The language Lenz answers in. Leave blank to answer in the language the verification itself is stored in, which is usually what you want — unlike the other actions, blank here does NOT mean English. This does not describe your question; you can ask in English about a Spanish verification.',
+      ),
     ],
     perform,
     sample: SAMPLE,

@@ -12,6 +12,13 @@ const App = require('../index');
 
 const appTester = zapier.createAppTester(App);
 
+async function captureCreateError(performFn, bundle) {
+  return appTester(performFn, bundle).then(
+    () => null,
+    (e) => e,
+  );
+}
+
 function mockClient(overrides = {}) {
   return {
     verify: jest.fn(),
@@ -212,6 +219,128 @@ describe('creates.verify_claim', () => {
     const result = await appTester(App.creates.verify_claim.operation.performResume, bundle);
 
     expect(result).toMatchObject({ status: 'needs_input', reason: 'multi_claim' });
+  });
+
+  // Depth and Visibility (#18). Depth is the one that saves money:
+  // VERIFY_DEPTH_COSTS in lenz/billing.py is {standard: 10, low: 5}.
+  describe('depth and visibility', () => {
+    const SUBMIT = {
+      authData: { apiKey: 'lenz_good' },
+      inputData: { claim: 'The Eiffel Tower is 330 metres tall.' },
+    };
+
+    async function submitWith(inputData) {
+      const client = mockClient({ verify: jest.fn().mockResolvedValue({ task_id: 'task_123' }) });
+      LenzClient.mockImplementation(() => client);
+      await appTester(App.creates.verify_claim.operation.perform, {
+        ...SUBMIT,
+        inputData: { ...SUBMIT.inputData, ...inputData },
+      });
+      return client.verify.mock.calls[0][0];
+    }
+
+    it('asks for the depth chosen, so a low check is billed at the low price', async () => {
+      expect(await submitWith({ depth: 'low' })).toMatchObject({ depth: 'low' });
+    });
+
+    it('sends visibility when chosen', async () => {
+      expect(await submitWith({ visibility: 'unlisted' })).toMatchObject({
+        visibility: 'unlisted',
+      });
+    });
+
+    // Blank must be OMITTED, not sent as '', so the server applies its own
+    // default and an existing Zap's request stays byte-identical.
+    it('omits both when left blank, leaving existing Zaps unchanged on the wire', async () => {
+      const body = await submitWith({});
+      expect(body.depth).toBeUndefined();
+      expect(body.visibility).toBeUndefined();
+    });
+
+    // The charge follows the REQUEST; the echo describes the EVIDENCE. A low
+    // request Lenz answers from an existing standard verdict costs 5 and
+    // reads back "standard". Without this field the two are indistinguishable.
+    it('reports the depth the verdict was produced with, not the one requested', async () => {
+      const client = mockClient({
+        getStatus: jest.fn().mockResolvedValue({
+          status: 'completed',
+          result: { verdict: 'True', sources: [], depth: 'standard', visibility: 'unlisted' },
+        }),
+      });
+      LenzClient.mockImplementation(() => client);
+
+      const result = await appTester(App.creates.verify_claim.operation.performResume, {
+        authData: { apiKey: 'lenz_good' },
+        outputData: { task_id: 'task_123' },
+      });
+
+      expect(result.depth).toBe('standard');
+      expect(result.visibility).toBe('unlisted');
+    });
+
+    it('reports an empty depth on a verdict stored before the field existed', async () => {
+      const client = mockClient({
+        getStatus: jest
+          .fn()
+          .mockResolvedValue({ status: 'completed', result: { verdict: 'True', sources: [] } }),
+      });
+      LenzClient.mockImplementation(() => client);
+
+      const result = await appTester(App.creates.verify_claim.operation.performResume, {
+        authData: { apiKey: 'lenz_good' },
+        outputData: { task_id: 'task_123' },
+      });
+
+      expect(result.depth).toBe('');
+      expect(result.visibility).toBe('');
+    });
+
+    // Same every-branch rule as the failure and needs_input fields.
+    it.each([
+      ['needs_input', { status: 'needs_input', reason: 'multi_claim' }],
+      ['failed', { status: 'failed', error: 'boom' }],
+      ['processing', { status: 'processing' }],
+    ])('carries depth and visibility EMPTY, not missing, on %s', async (_label, body) => {
+      LenzClient.mockImplementation(() =>
+        mockClient({ getStatus: jest.fn().mockResolvedValue(body) }),
+      );
+
+      const result = await appTester(App.creates.verify_claim.operation.performResume, {
+        authData: { apiKey: 'lenz_good' },
+        outputData: { task_id: 'task_123' },
+      });
+
+      expect(result).toHaveProperty('depth');
+      expect(result).toHaveProperty('visibility');
+      expect(result.depth).toBe('');
+      expect(result.visibility).toBe('');
+    });
+
+    // The help text promises half price. If that number is ever edited to
+    // match the SDK's stale "same quota cost" docstring, this fails.
+    it('tells the user Low is cheaper, which is the only reason to offer it', () => {
+      const depthField = App.creates.verify_claim.operation.inputFields.find(
+        (f) => f.key === 'depth',
+      );
+      expect(depthField.choices.map((c) => c.value)).toEqual(['standard', 'low']);
+      expect(depthField.helpText).toMatch(/5 credits instead of 10/i);
+      // And the charge/echo split, without which it reads as a billing bug.
+      expect(depthField.helpText).toMatch(/charged for the depth you request/i);
+    });
+
+    // Low is NOT "same reasoning, less evidence". That is the phrase
+    // lenz/constants.py uses and then qualifies in the next breath:
+    // DEBATE_DEPTH_PROFILES[low] is {rebuttals: False}, so the debate stops
+    // after the openings — a reasoning step, not an evidence one. The first
+    // draft of this help text promised identical reasoning and was wrong.
+    it('says the debate is shorter at Low, instead of promising equal reasoning', () => {
+      const helpText = App.creates.verify_claim.operation.inputFields.find(
+        (f) => f.key === 'depth',
+      ).helpText;
+      expect(helpText).toMatch(/debate/i);
+      expect(helpText).toMatch(/opening/i);
+      expect(helpText).not.toMatch(/same reasoning|identical reasoning/i);
+    });
   });
 
   // Lenz stops for input for THREE reasons, each carrying data the user needs
@@ -516,13 +645,186 @@ describe('creates.extract_claims', () => {
   // until 1.3.2 — `status: 'ok'`, `domain: 'science'` and a one-element
   // `identified_claims` — so each gets a ratchet.
   it('samples only status values this integration can receive', () => {
-    // Deliberately NOT including `no_match`. The API schema allows it, but it
-    // is reachable only with a `focus` hint that this integration does not
-    // send, so accepting it here would let the sample carry a value no user
-    // can ever see — the exact defect these tests exist to prevent. Widen
-    // this list in the PR that adds a Focus input field.
-    const RECEIVABLE = ['ready', 'not_a_claim'];
+    // `no_match` joined this list when the Focus input shipped. Before that it
+    // was excluded on purpose: the API schema allowed it, but it needs a
+    // `focus` hint the integration did not send, so accepting it would have
+    // let the sample carry a value no user could ever see. Now Focus exists,
+    // so all three are genuinely receivable.
+    const RECEIVABLE = ['ready', 'not_a_claim', 'no_match'];
     expect(RECEIVABLE).toContain(App.creates.extract_claims.operation.sample.status);
+  });
+
+  // Focus (#18). The 300-char cap is the server's, and it 422s rather than
+  // truncating — a silently shortened focus would return a subset of the
+  // claims with nothing to show it happened.
+  describe('focus', () => {
+    const AUTH_X = { authData: { apiKey: 'lenz_good' } };
+
+    it('sends the focus when given one', async () => {
+      const client = mockClient({
+        extract: jest.fn().mockResolvedValue({ status: 'ready', claim: 'A', identified_claims: [] }),
+      });
+      LenzClient.mockImplementation(() => client);
+
+      await appTester(App.creates.extract_claims.operation.perform, {
+        ...AUTH_X,
+        inputData: { text: 'some text', focus: 'pricing and headcount' },
+      });
+
+      expect(client.extract).toHaveBeenCalledWith(
+        expect.objectContaining({ focus: 'pricing and headcount' }),
+      );
+    });
+
+    it('omits focus entirely when blank, so the wire format is unchanged', async () => {
+      const client = mockClient({
+        extract: jest.fn().mockResolvedValue({ status: 'ready', claim: 'A', identified_claims: [] }),
+      });
+      LenzClient.mockImplementation(() => client);
+
+      await appTester(App.creates.extract_claims.operation.perform, {
+        ...AUTH_X,
+        inputData: { text: 'some text' },
+      });
+
+      expect(client.extract.mock.calls[0][0].focus).toBeUndefined();
+    });
+
+    // Measured the way the server measures it. A 320-character focus whose
+    // runs of whitespace collapse to under 300 is ACCEPTED — checking the raw
+    // string would refuse something the API would have taken.
+    it('measures the limit after collapsing whitespace, not on the raw string', async () => {
+      const client = mockClient({
+        extract: jest.fn().mockResolvedValue({ status: 'ready', claim: 'A', identified_claims: [] }),
+      });
+      LenzClient.mockImplementation(() => client);
+
+      const padded = `${'a'.repeat(290)}${' '.repeat(40)}end`;
+      expect(padded.length).toBeGreaterThan(300);
+
+      await appTester(App.creates.extract_claims.operation.perform, {
+        ...AUTH_X,
+        inputData: { text: 'some text', focus: padded },
+      });
+
+      expect(client.extract).toHaveBeenCalledWith(
+        expect.objectContaining({ focus: `${'a'.repeat(290)} end` }),
+      );
+    });
+
+    it('refuses an over-long focus locally, naming the real length', async () => {
+      const client = mockClient({ extract: jest.fn() });
+      LenzClient.mockImplementation(() => client);
+
+      const err = await captureCreateError(App.creates.extract_claims.operation.perform, {
+        ...AUTH_X,
+        inputData: { text: 'some text', focus: 'x'.repeat(301) },
+      });
+
+      expect(err).toBeTruthy();
+      expect(err.message).toContain('301');
+      expect(err.message).toContain('300');
+      // Refused before the call, so no daily-cap unit is spent on a request
+      // the server would have rejected anyway.
+      expect(client.extract).not.toHaveBeenCalled();
+    });
+
+    // Focus is a static field value, so an over-long one is wrong on every
+    // run, for good. A HaltedError stops the run without counting toward the
+    // error rate that turns the Zap off; a plain Error would retire the Zap
+    // for a typo that retrying can never fix. Same call lib/errors.js makes
+    // for a spent balance and verify_claim.js for a missing webhook secret.
+    it('halts rather than hard-failing on a live run, so the Zap is not auto-disabled', async () => {
+      const client = mockClient({ extract: jest.fn() });
+      LenzClient.mockImplementation(() => client);
+
+      const err = await captureCreateError(App.creates.extract_claims.operation.perform, {
+        ...AUTH_X,
+        inputData: { text: 'some text', focus: 'x'.repeat(301) },
+      });
+
+      expect(err.name).toBe('HaltedError');
+    });
+
+    // The editor is the one place the hard class is right: it makes Test fail
+    // visibly. Checking AFTER the sample return — as this did originally —
+    // meant Test passed green and every live run failed instead.
+    it('fails the editor test too, instead of returning a green sample', async () => {
+      const client = mockClient({ extract: jest.fn() });
+      LenzClient.mockImplementation(() => client);
+
+      const err = await captureCreateError(App.creates.extract_claims.operation.perform, {
+        ...AUTH_X,
+        inputData: { text: 'some text', focus: 'x'.repeat(301) },
+        meta: { isLoadingSample: true },
+      });
+
+      expect(err).toBeTruthy();
+      expect(err.name).not.toBe('HaltedError');
+      expect(err.message).toContain('301');
+      expect(client.extract).not.toHaveBeenCalled();
+    });
+
+    // `.length` counts UTF-16 code units, so 200 emoji measure 400 and would
+    // be refused with a number the user cannot reconcile with what they
+    // typed — while the server, counting characters, would have accepted it.
+    it('counts characters, not UTF-16 code units, so emoji are not double-counted', async () => {
+      const client = mockClient({
+        extract: jest.fn().mockResolvedValue({ status: 'ready', claim: 'A', identified_claims: [] }),
+      });
+      LenzClient.mockImplementation(() => client);
+
+      // 200 characters, 400 code units — over the 300 cap by one measure and
+      // comfortably under it by the one the server uses.
+      const emoji = '🙂'.repeat(200);
+      expect(emoji.length).toBeGreaterThan(300);
+      expect([...emoji].length).toBeLessThanOrEqual(300);
+
+      await appTester(App.creates.extract_claims.operation.perform, {
+        ...AUTH_X,
+        inputData: { text: 'some text', focus: emoji },
+      });
+
+      expect(client.extract).toHaveBeenCalledWith(expect.objectContaining({ focus: emoji }));
+    });
+
+    // no_match is a real answer, not a failure: claims were found and the
+    // focus excluded all of them. It became reachable only with Focus.
+    it('names no_match instead of leaving an unexplained empty list', async () => {
+      const client = mockClient({
+        extract: jest
+          .fn()
+          .mockResolvedValue({ status: 'no_match', claim: '', identified_claims: [] }),
+      });
+      LenzClient.mockImplementation(() => client);
+
+      const result = await appTester(App.creates.extract_claims.operation.perform, {
+        ...AUTH_X,
+        inputData: { text: 'some text', focus: 'something absent' },
+      });
+
+      expect(result.status).toBe('no_match');
+      expect(result.message).toMatch(/none of them fall within your Focus/i);
+    });
+
+    // `message` is declared in outputFields, so it has to exist on every path
+    // — the missing-vs-empty trap again.
+    it('carries message EMPTY, not missing, on the ordinary paths', async () => {
+      for (const status of ['ready', 'not_a_claim']) {
+        const client = mockClient({
+          extract: jest.fn().mockResolvedValue({ status, claim: 'A', identified_claims: [] }),
+        });
+        LenzClient.mockImplementation(() => client);
+
+        const result = await appTester(App.creates.extract_claims.operation.perform, {
+          ...AUTH_X,
+          inputData: { text: 'some text' },
+        });
+
+        expect(result).toHaveProperty('message');
+        expect(result.message).toBe('');
+      }
+    });
   });
 
   // `identified_claims` is the COMPLETE ordered list when more than one claim
@@ -590,5 +892,222 @@ describe('creates.ask', () => {
 
     expect(result.answer).toBeTruthy();
     expect(client.ask.send).not.toHaveBeenCalled();
+  });
+});
+
+// #17 — `language` was free text described as "ISO 639-1", but the API
+// accepts exactly twelve codes and 422s everything else. A 422 becomes a
+// plain z.errors.Error, which counts toward the error rate that turns a Zap
+// off, so `English` or `en-US` in that box failed EVERY run with nothing in
+// the editor to explain it.
+describe('language is a closed set on every action', () => {
+  const ACTIONS = ['verify_claim', 'assess', 'extract_claims', 'ask'];
+
+  // Copied from SUPPORTED_LANGUAGES in lenz/languages.py, which that module
+  // names as its source of truth — `en` first, then roughly descending
+  // expected API demand. Spelled out here rather than imported from
+  // lib/languages.js, because a test that reads the same constant it is
+  // checking would pass no matter what either one said. If the server ever
+  // adds a language, this list and lib/languages.js both move.
+  const SERVER_CODES = [
+    'en',
+    'es',
+    'de',
+    'fr',
+    'it',
+    'pt',
+    'nl',
+    'sv',
+    'da',
+    'no',
+    'fi',
+    'bg',
+  ];
+
+  const languageFieldOf = (action) =>
+    App.creates[action].operation.inputFields.find((f) => f.key === 'language');
+
+  it.each(ACTIONS)('%s offers exactly the codes the server accepts, in order', (action) => {
+    expect(languageFieldOf(action).choices.map((c) => c.value)).toEqual(SERVER_CODES);
+  });
+
+  it.each(ACTIONS)('%s leaves language optional, because blank is meaningful', (action) => {
+    expect(languageFieldOf(action).required).toBe(false);
+  });
+
+  it('labels each code with its language name rather than repeating the code', () => {
+    const choices = languageFieldOf('verify_claim').choices;
+    expect(choices[0]).toEqual({ value: 'en', sample: 'en', label: 'English' });
+    expect(choices[11]).toEqual({ value: 'bg', sample: 'bg', label: 'Bulgarian' });
+    for (const choice of choices) {
+      expect(choice.label).not.toBe(choice.value);
+    }
+  });
+
+  // The two meanings of blank really do differ, so the help text must too.
+  // On ask the server falls back to the CLAIM's stored language
+  // (lenz/api/public_authed.py:2996), not English.
+  it('tells ask users that blank is not English there', () => {
+    const helpText = languageFieldOf('ask').helpText;
+    expect(helpText).toMatch(/does NOT mean English/);
+    expect(helpText).toMatch(/stored in/i);
+  });
+
+  it.each(['verify_claim', 'assess', 'extract_claims'])('%s says blank means English', (action) => {
+    expect(languageFieldOf(action).helpText).toMatch(/Leave blank for English/i);
+  });
+
+  // The point of the field is the OUTPUT language; reading it as a
+  // description of the input is the obvious misreading, and picking it that
+  // way silently changes the answer's language. lenz/languages.py principle 1:
+  // "We never detect, validate, or warn about the input language."
+  it.each(ACTIONS)('%s says the field sets the response, not the input', (action) => {
+    expect(languageFieldOf(action).helpText).toMatch(/does not describe your/i);
+  });
+});
+
+// #22 — the every-branch rule, enforced at RUNTIME.
+//
+// test/schema.test.js already checks `outputFields` against `sample`, but that
+// is a static check on two declarations: both can agree while the code returns
+// something else entirely. That is exactly what happened here. `sample` and
+// `outputFields` promised the full verdict, and the non-completed branches of
+// performResume returned nine fewer keys than that — `passed`, `verdict`,
+// `confidence`, `lenz_score`, `key_finding`, `executive_summary`, `sources`,
+// `verification_id` and `claim` were simply absent.
+//
+// Zapier's Filter treats a MISSING field and an EMPTY one as different
+// conditions, and the editor builds filters from `sample`. So a filter like
+// "Verdict is empty" tested clean against the sample and then never matched on
+// a live run that ended in needs_input or failed — silently, with nothing to
+// indicate why. The file argued this rule for the failure fields and then did
+// not apply it to the verdict ones.
+describe('every performResume branch emits every key the sample promises', () => {
+  const SAMPLE_KEYS = Object.keys(App.creates.verify_claim.operation.sample);
+
+  const resumeWith = async (status) => {
+    LenzClient.mockImplementation(() => mockClient({ getStatus: jest.fn().mockResolvedValue(status) }));
+    return appTester(App.creates.verify_claim.operation.performResume, {
+      authData: { apiKey: 'lenz_good' },
+      outputData: { task_id: 'task_123' },
+    });
+  };
+
+  it.each([
+    ['completed', { status: 'completed', result: { verdict: 'True', sources: [] } }],
+    ['needs_input', { status: 'needs_input', reason: 'multi_claim', claims: [] }],
+    ['needs_input/duplicate', { status: 'needs_input', reason: 'duplicate_found', similar_claims: [] }],
+    ['failed', { status: 'failed', error: 'boom' }],
+    ['processing', { status: 'processing' }],
+    ['unknown status', { status: 'something_new' }],
+  ])('%s', async (_label, status) => {
+    const result = await resumeWith(status);
+    const missing = SAMPLE_KEYS.filter((k) => !(k in result));
+    expect(missing).toEqual([]);
+  });
+
+  // The kickoff return is what Zapier parks as outputData and shows the user
+  // if the callback never arrives, so it is bound by the same rule.
+  it('perform (kickoff)', async () => {
+    LenzClient.mockImplementation(() =>
+      mockClient({ verify: jest.fn().mockResolvedValue({ task_id: 'task_123' }) }),
+    );
+    const result = await appTester(App.creates.verify_claim.operation.perform, {
+      authData: { apiKey: 'lenz_good' },
+      inputData: { claim: 'The Eiffel Tower is 330 metres tall.' },
+    });
+    expect(SAMPLE_KEYS.filter((k) => !(k in result))).toEqual([]);
+  });
+});
+
+// #22 — fields the API always sends that this action used to drop on the
+// floor. Every one of these is unconditionally present in
+// build_verification_detail (lenz/api/verification_payload.py:163-207), so
+// there is no branch where asking for them is speculative.
+describe('the completed verdict carries what the API actually sends', () => {
+  const COMPLETED = {
+    status: 'completed',
+    result: {
+      verdict: 'True',
+      language: 'es',
+      domain: 'Science',
+      warnings: ['Sources disagree on the exact figure.'],
+      created_at: '2026-07-14T12:00:00Z',
+      sources: [
+        {
+          source_name: 'Tour Eiffel',
+          title: 'Official site',
+          url: 'https://www.toureiffel.paris',
+          snippet: 'The tower stands 330 metres tall.',
+          date: '2026-01-15',
+        },
+      ],
+    },
+  };
+
+  const resume = async (status) => {
+    LenzClient.mockImplementation(() =>
+      mockClient({ getStatus: jest.fn().mockResolvedValue(status) }),
+    );
+    return appTester(App.creates.verify_claim.operation.performResume, {
+      authData: { apiKey: 'lenz_good' },
+      outputData: { task_id: 'task_123' },
+    });
+  };
+
+  // snippet is the quotable half of a citation; dropping it meant a Zap could
+  // link a source but never quote it.
+  it('keeps all five source fields, not just title and url', async () => {
+    const result = await resume(COMPLETED);
+    expect(result.sources[0]).toEqual({
+      source_name: 'Tour Eiffel',
+      title: 'Official site',
+      url: 'https://www.toureiffel.paris',
+      snippet: 'The tower stands 330 metres tall.',
+      date: '2026-01-15',
+    });
+  });
+
+  it('passes through language, domain and created_at', async () => {
+    const result = await resume(COMPLETED);
+    expect(result.language).toBe('es');
+    expect(result.domain).toBe('Science');
+    expect(result.created_at).toBe('2026-07-14T12:00:00Z');
+  });
+
+  // Bare strings on the wire, wrapped as line items so a Zap can iterate them
+  // — the same treatment Candidate Readings gets, and for the same reason.
+  it('wraps warnings as line items rather than bare strings', async () => {
+    const result = await resume(COMPLETED);
+    expect(result.warnings).toEqual([{ text: 'Sources disagree on the exact figure.' }]);
+  });
+
+  // An older server, or a claim stored before a field existed, must not
+  // produce `undefined` — that is the missing-vs-empty trap again.
+  it('falls back to empty rather than undefined when the server omits them', async () => {
+    const result = await resume({ status: 'completed', result: { verdict: 'True' } });
+    expect(result.language).toBe('');
+    expect(result.domain).toBe('');
+    expect(result.warnings).toEqual([]);
+    expect(result.created_at).toBe('');
+    expect(result.sources).toEqual([]);
+  });
+});
+
+// #22 — assess echoes the language per claim and dropped it.
+describe('assess carries the per-claim language echo', () => {
+  it('passes language through on each claim', async () => {
+    LenzClient.mockImplementation(() =>
+      mockClient({
+        assess: jest.fn().mockResolvedValue({
+          claims: [{ claim: 'x', verdict: 'True', confidence: 'high', language: 'de' }],
+        }),
+      }),
+    );
+    const result = await appTester(App.creates.assess.operation.perform, {
+      authData: { apiKey: 'lenz_good' },
+      inputData: { text: 'x' },
+    });
+    expect(result.claims[0].language).toBe('de');
   });
 });

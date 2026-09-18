@@ -35,12 +35,22 @@ only what the sample shows. These are the values the API actually sends:
 
 | Field | Where | Values |
 |---|---|---|
-| `status` | Extract Claims | `ready` when claims were found, `not_a_claim` when none were. (`no_match` exists server-side but is reachable only via a `focus` hint, which this integration does not offer yet.) |
+| `status` | Extract Claims | `ready` when claims were found, `not_a_claim` when none were, or `no_match` when claims were found and a **Focus** excluded all of them. `no_match` is reachable only when you set a Focus. |
 | `status` | Assess (Fast) | `ok`, `no_claim`, or `ambiguous`. Built by the integration, not the API. |
 | `domain` | Extract Claims, New Verification Completed | Capitalised: `Health`, `Science`, `Politics`, `Finance`, `Tech`, `History`, `Legal`, `General` — **or empty**, when the extractor produced no usable domain. A Paths step covering all eight still needs a branch for the empty case. |
 | `passed` | Verify a Claim, Assess (Fast) | Boolean, derived from the verdict. The reliable thing to branch on. |
+| `domain` | Verify a Claim | Same eight capitalised values as above, or empty. |
 | `status` | Verify a Claim | `completed`, `needs_input`, `failed`, or `processing`. Built by the integration. |
 | `reason` | Verify a Claim, when `status` is `needs_input` | `multi_claim`, `clarification_required`, or `duplicate_found`. Empty otherwise. |
+| `depth` | Verify a Claim, when `status` is `completed` | `standard` or `low` — the depth the verdict was **produced** with, which is not always the one you asked for. Empty on every other status, and on verdicts from before Lenz recorded it. |
+| `visibility` | Verify a Claim, when `status` is `completed` | `private` or `unlisted`. Empty on every other status. |
+| `language` | all four actions (input) | `en` `es` `de` `fr` `it` `pt` `nl` `sv` `da` `no` `fi` `bg`. A dropdown since 1.3.4 — it was free text, and anything outside this set fails the run. |
+
+Every field in the table above, and every other field Verify a Claim declares, is
+**present on every result** — empty when it does not apply, never missing. Zapier treats
+"does not exist" and "is empty" as different conditions, so this is what lets a Filter you
+built against the sample behave the same on a live run. `Passed` and `Lenz Score` are
+empty rather than `false`/`0` on a result with no verdict, since nothing was checked.
 
 ### When Lenz asks for input instead of answering
 
@@ -65,6 +75,66 @@ Two fields on Extract Claims look filterable and are not:
 Extract's `status` read `ok` in the sample until 1.3.2 — a value the API never sends — so
 a filter built on it matched nothing on a live run. If you built one before 1.3.2, change
 it to `ready`. A lowercase `domain` needs capitalising the same way.
+
+### Language
+
+All four actions take an optional **Language**, and it is a dropdown of the twelve codes
+the API accepts: `en` `es` `de` `fr` `it` `pt` `nl` `sv` `da` `no` `fi` `bg`. Anything
+outside that set is refused with a 422, which counts as a failed run — so until 1.3.4,
+when this was a free-text box described only as "ISO 639-1", typing `English`, `en-US` or
+any unsupported code failed **every** run of that Zap with nothing in the editor to say
+why. If you have an existing Zap with a hand-typed value, re-pick it from the dropdown.
+
+**It sets the language of the answer, not of your input.** Lenz never inspects what
+language your text is in; this field alone decides what comes back. Reading it the other
+way round is the easy mistake, and it quietly changes the output.
+
+**Blank means two different things.** On Verify a Claim, Assess and Extract Claims a blank
+field means English. On **Ask Follow-Up** it means *the language the verification is stored
+in*, which is usually what you want — you can ask in English about a Spanish verification
+by leaving it blank, or set it explicitly to override.
+
+### Depth, Visibility and Focus
+
+Three optional fields, all blank by default. Leaving them blank sends nothing and keeps
+existing Zaps behaving exactly as before.
+
+**Depth** (*Verify a Claim*) — `Standard` or `Low`.
+
+`Low` costs **5 credits instead of 10**, and buys less work rather than a different kind
+of work. It runs at most 3 searches against a 12-page reading limit, where Standard keeps
+searching until it has enough and reads up to 48; it also skips the extra evidence pass
+Standard falls back on when a search provider is struggling. Its debate stops after both
+sides' opening arguments instead of letting them answer each other — so the panel still
+sees both cases in full, just not the replies. Every step runs the same models, and
+framing, the panel and the conclusion are identical at both depths. Useful for bulk
+checks where a thinner answer is still worth having.
+
+The one thing worth knowing before you branch on it: **you are charged for the depth you
+request, but the `depth` output echoes the depth the verdict was produced with.** Lenz can
+answer a `Low` request from a `Standard` verdict it already has — that run costs 5 and
+reads back `standard`. The charge follows your request; the echo describes the evidence.
+They are meant to differ, so a Zap comparing the two will see mismatches that are not errors.
+
+**Visibility** (*Verify a Claim*) — `Private` or `Unlisted`.
+
+`Private` is the default: only your account can read the result. `Unlisted` makes it
+readable by anyone holding its Verification ID or its lenz.io link — useful when the Zap
+posts that link into Slack or email for people without Lenz accounts. Unlisted results are
+never listed in the public Library and never appear in search.
+
+**Focus** (*Extract Claims*) — a short hint, at most 300 characters, costing nothing extra.
+
+It narrows the result to the claims it describes, e.g. `pricing and headcount`. It only
+**selects** from the claims Lenz already found — it cannot add a claim, reword one, or
+change what counts as a claim.
+
+When nothing matches, `status` comes back as `no_match` with an empty list and a **Message**
+explaining why. The unfocused claims are deliberately not substituted, so `no_match` is a
+real answer rather than a failure — but it looks identical to "nothing here" unless your
+Zap branches on the status. A Focus over 300 characters fails the step with the actual
+count rather than being silently shortened, which would return a subset of the claims with
+nothing to indicate it happened.
 
 ## Trigger
 
@@ -97,7 +167,7 @@ You'll need a Lenz API key:
 ### What happens when something goes wrong
 
 Zapier turns a Zap off after enough failed runs, so which failures *count* matters
-more than it looks. Since 1.4.0:
+more than it looks. Since 1.3.4:
 
 | Condition | What Zapier does | Counts as an error? |
 |---|---|---|
@@ -106,6 +176,7 @@ more than it looks. Since 1.4.0:
 | Lenz at capacity, or providers down (503) | Waits the stated time and replays | No |
 | Network drop, or a 5xx naming no reason | Waits 60s and replays | No |
 | No webhook secret on the key (Verify a Claim) | Halts with instructions | No |
+| Focus over 300 characters (Extract Claims) | Halts with instructions | No |
 | Key rejected (401) | Prompts you to reconnect | No |
 | Claim could not be framed, text unreadable (typed 502) | Fails the run | Yes |
 | Private verification or blocked IP (403) | Fails the run | Yes |
@@ -159,6 +230,17 @@ gate, and `zapier push` will package a tree whose tests fail without complaint. 
 pushed version is then one `promote` away from every user. `npm test` locally runs
 exactly what CI runs, coverage floor included, so a clean local run is the minimum
 before building.
+
+**The version number is set once, at release time — not per pull request.** Bumping it
+in every PR guaranteed a conflict in `package.json` and `CHANGELOG.md` between any two
+open branches, which is what happened to #32 and #33. So a merged PR leaves both at the
+number of the release being accumulated, and whoever builds sets them together.
+
+Three places carry it and all three move at once: `package.json`, the top `CHANGELOG.md`
+heading, and the "Since x.y.z:" reference under [What happens when something goes
+wrong](#what-happens-when-something-goes-wrong). Zapier also enforces **sequential**
+versions — including patches — so `1.3.4` cannot be pushed unless `1.3.3` exists; a gap
+needs a stepping-stone version pushed first.
 
 **Do not run `zapier push` from Windows.** `zapier-platform-cli` 19.1.0 copies the
 project into `%TEMP%\zapier-<hash>` and archives it with that path embedded, so the

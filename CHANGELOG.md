@@ -39,6 +39,21 @@ moment at Lenz or a brief network drop were counting toward that.
   fixed "rephrase and re-run" message for all of them.
 - Fix trigger/new_verification: the trigger reads up to 100 finished checks per
   poll instead of 20, so a busy account stops losing the oldest ones.
+- New create/verify_claim: **Depth**, to run a check at half the credit cost.
+- New create/verify_claim: **Visibility**, to make a result readable by anyone
+  holding its link.
+- New create/extract_claims: **Focus**, to narrow the extraction to the claims
+  you care about.
+- Fix: **Language** is a dropdown of the twelve codes the API accepts, on all
+  four actions. It was free text, and anything else failed every run.
+- Fix create/verify_claim: the verdict fields are present-but-empty on every
+  result, instead of missing on the ones that carry no verdict.
+- Fix create/assess: the per-claim verdict fields are declared, so they can be
+  mapped in the editor.
+- New create/verify_claim: Sources carry the quote and the publication date,
+  not just a title and a link; and the verdict carries Language, Domain,
+  Warnings and Created At.
+- New create/assess: each claim carries the Language its verdict is written in.
 
 **Asking for input.** Lenz pauses a verification for three different reasons,
 and each one needs a different response:
@@ -68,6 +83,96 @@ scrolled off the first page by the time the next poll ran. Nothing failed and
 nothing was logged; the rows simply never reached the Zap. 100 is the largest
 page the API will return, so a run of more than 100 between polls can still
 outrun it.
+
+**Three new fields, all optional.** Each is blank by default; a blank field is
+left out of the request entirely, so a Zap built before this release sends
+exactly what it sent before and gets exactly what it got before.
+
+- **Depth** on Verify a Claim — Standard or Low. Low costs 5 credits instead of
+  10. It runs at most 3 searches against a 12-page reading limit, where Standard
+  keeps searching until it has enough and reads up to 48, and its debate stops
+  after both sides' opening arguments rather than letting them answer each
+  other. The panel still sees both cases in full. Every step runs the same
+  models, and framing, the panel and the conclusion are identical at both
+  depths.
+- **Visibility** on Verify a Claim — Private or Unlisted. Private is the default
+  and means only your account can read the result. Unlisted makes it readable by
+  anyone holding its Verification ID or its lenz.io link, which is what you want
+  when the Zap posts that link to people without Lenz accounts. Unlisted results
+  are never listed in the public Library and never appear in search.
+- **Focus** on Extract Claims — a hint of up to 300 characters, e.g. "pricing and
+  headcount", that costs nothing extra. It only selects from the claims Lenz
+  already found; it cannot add a claim, reword one, or change what counts as a
+  claim. Over 300 characters the step stops with the actual count instead of
+  being shortened without saying so, which would return a subset of the claims
+  with nothing to indicate it happened. It is checked when you click Test, not
+  only on a live run, and it pauses the Zap rather than failing it — the value
+  is fixed in the step, so a failure there would count against the Zap on every
+  run for something no retry can fix.
+
+**Two things to know before branching on them.**
+
+Verify a Claim now also returns **Depth** and **Visibility** as outputs, and the
+Depth output is not always the Depth you asked for. You are charged for the depth
+you REQUEST; the output echoes the depth the verdict was PRODUCED with. Lenz can
+answer a Low request from a Standard verdict it already holds — that run costs 5
+and reads back "standard". The two are meant to differ, so a Zap comparing them
+will see mismatches that are not errors.
+
+**The verdict fields are on every result now.** Verify a Claim promised
+`Passed`, `Verdict`, `Confidence`, `Lenz Score`, `Verification ID`, `Claim`,
+`Key Finding`, `Executive Summary` and `Sources` in its sample, and then left
+all nine OUT of any result that was not a finished verdict — a run that ended
+in needs_input, failed, or was still processing. Zapier treats a missing field
+and an empty one as different conditions, and the Zap editor builds filters
+from the sample, so a filter like "Verdict is empty" tested clean while you were
+building and then matched nothing on a live run. Nothing failed and nothing was
+logged. They are now present and empty on those results, the same way the
+failure fields already were.
+
+`Passed` is empty rather than false on a result with no verdict: false would say
+this claim did not pass, and nothing was checked.
+
+**Sources are whole citations now.** Verify a Claim returned only a title and a
+URL per source. The API sends five fields, always: the publication name, the
+title, the URL, the **quoted passage** the verdict rests on, and the source's
+publication date. A Zap could link a source but not quote it. All five are
+returned and mappable, and Sources itself is now declared — it was being
+returned without being declared, so it showed up in a test result and could not
+be mapped into the next step.
+
+The verdict also carries four fields it used to drop: **Language**, **Domain**,
+**Warnings** (caveats the conclusion attached to this verdict, one line item
+each) and **Created At**.
+
+**Assess's per-claim fields can be mapped.** The action returns a claim, verdict,
+confidence, passed and verification URL for each claim it assessed, but declared
+only Status and Message — so the verdicts showed up in a test result and could
+not be mapped into the next step. All five are declared now.
+
+**Language is now a dropdown.** It was a free-text box described as "ISO 639-1",
+but the API accepts exactly twelve codes — `en es de fr it pt nl sv da no fi bg` —
+and refuses anything else with a 422. A 422 fails the run, so a Zap with
+`English`, `en-US` or an unsupported code in that box failed EVERY time it ran,
+and nothing in the editor said why. The dropdown can only offer values the
+server accepts. If you have a Zap with a hand-typed value, re-pick it from the
+list.
+
+Two things about that field that were never written down:
+
+- **It sets the language of the ANSWER, not of your input.** Lenz never inspects
+  what language your text is in — this field alone decides what comes back.
+- **Blank means something different on Ask Follow-Up.** On Verify a Claim,
+  Assess and Extract Claims a blank field means English. On Ask Follow-Up it
+  means the language the verification is stored in, so you can ask in English
+  about a Spanish verification by leaving it blank.
+
+Extract Claims gains a third Status value, `no_match`, which means claims WERE
+found and the Focus excluded all of them. It is only reachable when a Focus is
+set, so nothing that ran before this release can start returning it. It arrives
+with a **Message** saying why the list is empty, because an empty list from a
+Focus looks identical to "nothing here" otherwise. The unfocused claims are
+deliberately never substituted.
 
 **The trigger is account-wide, and always was.** It fires for every completed
 verification the account owns, whichever surface produced it — a check run on
