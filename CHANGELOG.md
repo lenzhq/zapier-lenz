@@ -232,7 +232,7 @@ so it is clear whether the answer is a top-up or a plan change.
 
 ## 1.2.2
 
-- Update create/verify_claim and trigger/new_verification: a failed
+- Update create/verify_claim: a failed
   verification returns failure_reason, failure_class and retryable as fields
   you can map, so a Filter or Paths step branches on why it failed instead of
   parsing the error text. failure_class is one of upstream_unavailable,

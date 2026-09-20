@@ -135,7 +135,10 @@ const perform = (z, bundle) => {
           ? 'Claims were found, but none of them fall within your Focus. Widen or reword it ' +
             'and run again — the unfocused claims are deliberately not substituted.'
           : '';
-      return { ...result, message };
+      // `||` rather than an overwrite: today ExtractOut carries no `message`
+      // of its own, but if the API ever adds one (say, explaining a
+      // `not_a_claim`) it must not be silently blanked by the spread below.
+      return { ...result, message: message || (result && result.message) || '' };
     })
     .catch((err) => mapLenzError(z, err));
 };
@@ -179,9 +182,13 @@ module.exports = {
       { key: 'status', label: 'Status' },
       { key: 'claim', label: 'Primary Claim' },
       { key: 'domain', label: 'Domain' },
-      // Set only on `no_match`, to say why the list is empty. Absent on every
-      // other path, which is why it is declared: an undeclared field is not
-      // offerable in the editor at all.
+      // Present on EVERY path — filled on `no_match` to say why the list is
+      // empty, `''` otherwise — never absent. Declared so it is offerable in
+      // the editor; emitted empty so a Filter built against the sample
+      // behaves the same on a live run (missing and empty are different
+      // conditions to Zapier). An earlier version of this comment said
+      // "absent on every other path", which is the exact bug `perform`
+      // guards against.
       { key: 'message', label: 'Message' },
     ],
   },

@@ -88,7 +88,9 @@ const NO_FAILURE = { error: '', failure_reason: '', failure_class: '', retryable
 // be. Spread into EVERY branch that is not `completed`, for the same reason as
 // NO_FAILURE and NO_INPUT_NEEDED: Zapier's Filter treats a MISSING field and an
 // EMPTY one as different conditions, and the editor builds filters from SAMPLE,
-// which promises all eleven.
+// which promises all of them (fifteen keys: the nine verdict fields that
+// shipped first, plus Depth, Visibility, Language, Domain, Warnings and
+// Created At).
 //
 // This file argued that rule for the failure fields from the start and then did
 // not apply it to the verdict ones — so a Zap filtering on "Verdict is empty"
@@ -351,7 +353,13 @@ const performResume = async (z, bundle) => {
     return {
       task_id: bundle.outputData.task_id,
       status: 'failed',
-      error: status.error || status.failure_detail || status.failure_reason || 'Pipeline failed.',
+      // `error` is always present on a failed status: every failed branch on
+      // the server goes through one builder (`_failed` in
+      // lenz/api/public_authed.py, "so the body cannot vary with poll
+      // timing"), and that builder has no `failure_detail`. The SDK's
+      // TaskStatus type still lists `failure_detail` as a back-compat key;
+      // the server it describes never sends it, so it is not read here.
+      error: status.error || status.failure_reason || 'Pipeline failed.',
       failure_reason: status.failure_reason || '',
       failure_class: status.failure_class || '',
       retryable: status.retryable ?? null,
@@ -402,7 +410,7 @@ module.exports = {
         type: 'text',
         required: true,
         helpText:
-          'The claim to investigate in depth. This action needs a webhook secret on your Lenz API key — generate it once under API key settings → Webhooks. Clicking Test shows an example verdict so you can map the output fields; a turned-on Zap verifies this claim and returns the real result.',
+          'The claim to investigate in depth. Up to 10,000 characters; longer input is cut off without warning. This action needs a webhook secret on your Lenz API key — generate it once under API key settings → Webhooks. Clicking Test shows an example verdict so you can map the output fields; a turned-on Zap verifies this claim and returns the real result.',
       },
       {
         key: 'sourceUrl',
@@ -593,7 +601,10 @@ module.exports = {
       //   depth       The depth the verdict was PRODUCED with — not always
       //               the one requested. A Low request served from an existing
       //               Standard verdict is charged 5 and reads "standard".
-      //   visibility  "private" or "unlisted", echoing what was submitted.
+      //   visibility  "private", "unlisted" or "public". The first two are
+      //               what can be REQUESTED; "public" is read back when the
+      //               verdict was served from an existing verification
+      //               someone made public (lenz-io `Verification.visibility`).
       { key: 'depth', label: 'Depth' },
       { key: 'visibility', label: 'Visibility' },
     ],

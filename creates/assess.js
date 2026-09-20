@@ -105,7 +105,8 @@ module.exports = {
         label: 'Claim',
         type: 'text',
         required: true,
-        helpText: 'The claim to check. If it contains several claims, each is assessed separately.',
+        helpText:
+          'The claim to check. If it contains several claims, each is assessed separately. Up to 10,000 characters; longer input is cut off without warning, so send a long document to Extract Claims first.',
       },
       languageField(),
     ],
