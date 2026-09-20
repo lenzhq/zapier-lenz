@@ -699,6 +699,99 @@ describe('creates.assess', () => {
     );
   });
 
+  // #19. A Zapier replay is a fresh process with a fresh SDK client, so the
+  // SDK's own random per-invocation key does not survive it — the replayed
+  // request looks new to the server and is charged again. The key has to be
+  // derived from what the replay shares with its original.
+  describe('replay idempotency key', () => {
+    const live = (over = {}) => ({
+      authData: { apiKey: 'lenz_good' },
+      inputData: { text: 'The tower is tall.', language: 'en' },
+      meta: { zap: { id: 12345 } },
+      ...over,
+    });
+    const keyOf = (client) => client.assess.mock.calls[0][0].idempotencyKey;
+
+    it('sends a key derived from the Zap, the input and the hour — the same one on a replay', async () => {
+      const client = mockClient({ assess: jest.fn().mockResolvedValue({ claims: [] }) });
+      LenzClient.mockImplementation(() => client);
+
+      await appTester(App.creates.assess.operation.perform, live());
+      const first = keyOf(client);
+      expect(first).toMatch(/^[0-9a-f]{64}$/);
+
+      // A replay: same bundle, new process. Modelled as a second call.
+      client.assess.mockClear();
+      await appTester(App.creates.assess.operation.perform, live());
+      expect(keyOf(client)).toBe(first);
+    });
+
+    it('differs for a different Zap, input, or language', async () => {
+      const client = mockClient({ assess: jest.fn().mockResolvedValue({ claims: [] }) });
+      LenzClient.mockImplementation(() => client);
+
+      await appTester(App.creates.assess.operation.perform, live());
+      const base = keyOf(client);
+
+      for (const variant of [
+        live({ meta: { zap: { id: 99999 } } }),
+        live({ inputData: { text: 'A different claim.', language: 'en' } }),
+        live({ inputData: { text: 'The tower is tall.', language: 'es' } }),
+      ]) {
+        client.assess.mockClear();
+        await appTester(App.creates.assess.operation.perform, variant);
+        expect(keyOf(client)).not.toBe(base);
+      }
+    });
+
+    // No text ever crosses the wire in the header: the key is a digest.
+    it('is a digest, not the input', async () => {
+      const client = mockClient({ assess: jest.fn().mockResolvedValue({ claims: [] }) });
+      LenzClient.mockImplementation(() => client);
+
+      await appTester(App.creates.assess.operation.perform, live());
+      expect(keyOf(client)).not.toContain('tower');
+    });
+
+    // `bundle.meta.zap.id` is @deprecated in platform-core and absent from
+    // the bundle docs, so it may be missing on a live run. The guard must not
+    // silently switch itself off there: without it the key falls back to the
+    // input and the hour, which the server already scopes per API key.
+    it('still sends a stable key without a zap id, keyed on the input and the hour', async () => {
+      const client = mockClient({ assess: jest.fn().mockResolvedValue({ claims: [] }) });
+      LenzClient.mockImplementation(() => client);
+
+      await appTester(App.creates.assess.operation.perform, live({ meta: {} }));
+      const first = keyOf(client);
+      expect(first).toMatch(/^[0-9a-f]{64}$/);
+
+      client.assess.mockClear();
+      await appTester(App.creates.assess.operation.perform, live({ meta: {} }));
+      expect(keyOf(client)).toBe(first);
+    });
+
+    // `z.hash` defaults its input encoding to 'binary' (latin1), which drops
+    // the high byte of every UTF-16 unit: U+4E00 and U+4F00 would collide,
+    // and two different Chinese claims would share a verdict. Review of #43.
+    it('does not collide on non-Latin text that differs only in the high byte', async () => {
+      const client = mockClient({ assess: jest.fn().mockResolvedValue({ claims: [] }) });
+      LenzClient.mockImplementation(() => client);
+
+      await appTester(
+        App.creates.assess.operation.perform,
+        live({ inputData: { text: '一', language: 'zh' } }),
+      );
+      const a = keyOf(client);
+
+      client.assess.mockClear();
+      await appTester(
+        App.creates.assess.operation.perform,
+        live({ inputData: { text: '伀', language: 'zh' } }),
+      );
+      expect(keyOf(client)).not.toBe(a);
+    });
+  });
+
   // A transient failure inside a 200. The same condition thrown as a typed
   // 503 is mapped to ThrottledError and replayed (test/errors.test.js), so a
   // row-shaped one must not quietly read as "checked and did not pass" —
@@ -731,6 +824,38 @@ describe('creates.assess', () => {
         expect(err.message).toContain('nothing was charged');
       },
     );
+
+    // The server stores every 200 under its Idempotency-Key for 24h — this
+    // all-Error body included. A replay 60s later would carry the same key
+    // (same Zap, input, hour) and get the stored rows back, then land here
+    // again every 60s until the hour ticked over. So the delay reaches into
+    // the NEXT hour bucket, where the key changes and the panel really runs.
+    it('delays the replay into the next hour bucket so it gets a fresh key', async () => {
+      const { DEFAULT_THROTTLE_DELAY, MAX_THROTTLE_DELAY } = require('../lib/errors');
+      const client = mockClient({
+        assess: jest.fn().mockResolvedValue({ claims: [transientRow('timeout')] }),
+      });
+      LenzClient.mockImplementation(() => client);
+
+      const before = Date.now();
+      const err = await captureCreateError(App.creates.assess.operation.perform, {
+        authData: { apiKey: 'lenz_good' },
+        inputData: { text: 'A' },
+        meta: { zap: { id: 1 } },
+      });
+
+      const HOUR = 60 * 60 * 1000;
+      const nextBucketAt = (Math.floor(before / HOUR) + 1) * HOUR;
+      // ThrottledError serialises `{ message, delay }` into its message.
+      const { delay } = JSON.parse(err.message);
+      const replayAt = Date.now() + delay * 1000;
+
+      expect(err.name).toBe('ThrottledError');
+      expect(delay).toBeGreaterThanOrEqual(DEFAULT_THROTTLE_DELAY);
+      expect(delay).toBeLessThanOrEqual(MAX_THROTTLE_DELAY);
+      // The one property that matters: the replay lands in a later bucket.
+      expect(replayAt).toBeGreaterThanOrEqual(nextBucketAt);
+    });
 
     // Verdict rows are charged; a replay would charge them again. So a mixed
     // result is returned, and the transient row keeps its error_code so a
