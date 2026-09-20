@@ -36,12 +36,13 @@ only what the sample shows. These are the values the API actually sends:
 | Field | Where | Values |
 |---|---|---|
 | `status` | Extract Claims | `ready` when claims were found, `not_a_claim` when none were, or `no_match` when claims were found and a **Focus** excluded all of them. `no_match` is reachable only when you set a Focus. |
-| `status` | Assess (Fast) | `ok`, `no_claim`, or `ambiguous`. Built by the integration, not the API. |
+| `status` | Assess (Fast) | `ok` when at least one row came back, `no_claim` when none did. Built by the integration, not the API. `ambiguous` was a third value until the API retired it on 2026-09-12 — a vague input is now checked on its most likely reading — so a Paths branch on it never fires; remove it. |
+| `claims[].error_code` | Assess (Fast) | Empty on a verdict row. On a row whose `verdict` is `Error`, why it has no verdict: `no_claim`, `framing_failed`, `upstream_unavailable` or `timeout` — an open set, so branch on the ones you know and let the rest fall through. Error rows are free, and `hint` on the same row says what to send instead. |
 | `domain` | Extract Claims, New Verification Completed | Capitalised: `Health`, `Science`, `Politics`, `Finance`, `Tech`, `History`, `Legal`, `General` — **or empty**, when the extractor produced no usable domain. A Paths step covering all eight still needs a branch for the empty case. |
 | `passed` | Verify a Claim, Assess (Fast) | Boolean, derived from the verdict. The reliable thing to branch on. |
 | `domain` | Verify a Claim | Same eight capitalised values as above, or empty. |
 | `status` | Verify a Claim | `completed`, `needs_input`, `failed`, or `processing`. Built by the integration. |
-| `reason` | Verify a Claim, when `status` is `needs_input` | `multi_claim`, `clarification_required`, or `duplicate_found`. Empty otherwise. |
+| `reason` | Verify a Claim, when `status` is `needs_input` | `multi_claim` or `duplicate_found`. Empty otherwise. `clarification_required` was a third value until the API retired it on 2026-09-12; **Candidate Readings** is still emitted, always empty, so a Zap that maps it keeps working. |
 | `depth` | Verify a Claim, when `status` is `completed` | `standard` or `low` — the depth the verdict was **produced** with, which is not always the one you asked for. Empty on every other status, and on verdicts from before Lenz recorded it. |
 | `visibility` | Verify a Claim, when `status` is `completed` | `private` or `unlisted`. Empty on every other status. |
 | `language` | all four actions (input) | `en` `es` `de` `fr` `it` `pt` `nl` `sv` `da` `no` `fi` `bg`. A dropdown since 1.4.0 — it was free text, and anything outside this set fails the run. |
@@ -61,7 +62,7 @@ on `reason` rather than treating them as one case:
 | `reason` | What Lenz found | What to map | What to do |
 |---|---|---|---|
 | `multi_claim` | Several separate claims in one input | **Claims Found** (line items: `text`, `domain`) | Fan out — a Verify step per item, or send them one at a time |
-| `clarification_required` | One claim that can be read several ways | **Candidate Readings** (line items: `text`) | Pick one and re-run with that exact wording |
+| ~~`clarification_required`~~ | *Retired 2026-09-12.* A vague claim is now checked on its most likely reading instead of paused | **Candidate Readings** — still present, always empty | Nothing; it no longer occurs |
 | `duplicate_found` | A verification of this claim **already exists** | **Duplicate Verification ID** and **Duplicate URL**; the full list in **Similar Claims** | Reuse it — map the ID into **Ask Follow-Up**. Do **not** re-run: that spends a full check to reproduce an answer you already have |
 
 Before 1.4.0 all three produced the same "rephrase and re-run" message and the data was

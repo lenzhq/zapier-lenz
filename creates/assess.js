@@ -1,7 +1,7 @@
 'use strict';
 
 const { mapLenzError } = require('../lib/errors');
-const { lenzClient } = require('../client');
+const { lenzClient, CALL_TIMEOUT_MS } = require('../client');
 const { languageField } = require('../lib/languages');
 
 function isPassingVerdict(verdict) {
@@ -9,8 +9,14 @@ function isPassingVerdict(verdict) {
 }
 
 // `status` here is BUILT by this action, not passed through from the API:
-// `ok` on the happy path, `no_claim` or `ambiguous` when nothing checkable was
-// found. Those three are the real vocabulary.
+// `ok` when the API returned at least one row, `no_claim` when it returned
+// none. Those two are the whole vocabulary.
+//
+// `ambiguous` used to be a third value. The API retired it on 2026-09-12 — a
+// vague input is now checked on its most likely reading instead of being
+// bounced back with candidate readings — so the branch that produced it could
+// never run again, and a Paths step with an `ambiguous` branch had one leg
+// that would never fire. lenz-io ≥ 2.14.0 documents the retirement.
 //
 // `message` and `candidate_claims` are spread into EVERY branch, and declared
 // here, because Zapier's Filter treats a MISSING field and an EMPTY one as
@@ -19,7 +25,19 @@ function isPassingVerdict(verdict) {
 // exists. Omit them on the happy path and a filter the user tested against
 // the sample behaves differently on a live run. Same reasoning as NO_FAILURE
 // in creates/verify_claim.js.
+//
+// `candidate_claims` is kept, always empty, for the same reason in reverse:
+// it is a declared output that existing Zaps may map, and the server still
+// sends the key. Removing it would be a breaking change for a field that
+// costs nothing to carry.
 const NO_ERROR = { message: '', candidate_claims: [] };
+
+// Every per-row key, present on every row. A verdict row has the verdict
+// fields filled and the error fields empty; an Error row (`verdict: "Error"`)
+// is the other way round. Both shapes carry every key, so a Filter built
+// against the sample sees the same fields on a live run whichever kind of row
+// comes back.
+const NO_ROW_ERROR = { error_code: '', hint: '', identified_claims: [] };
 
 const SAMPLE = {
   status: 'ok',
@@ -32,9 +50,46 @@ const SAMPLE = {
       passed: true,
       verification_url: 'https://lenz.io/c/eiffel-tower-height-ab12cd34',
       language: 'en',
+      rationale:
+        'Sample reviewer note shown while testing in the Zap editor — a live, turned-on Zap returns the real reasoning for your claim.',
+      dissent: '',
+      ...NO_ROW_ERROR,
     },
   ],
 };
+
+const shapeRow = (c) => ({
+  claim: c.claim || '',
+  verdict: c.verdict || null,
+  confidence: c.confidence || null,
+  passed: isPassingVerdict(c.verdict),
+  // Null on all but one path. The API only fills this when the verdict
+  // came from an existing full verification it can serve to this caller
+  // (lenz/api/public_authed.py:1559) — a fresh panel result has no page to
+  // link. So a Zap must handle it being empty; it is not a bug.
+  verification_url: c.verification_url || null,
+  // The language this verdict is written in, echoed per claim.
+  language: c.language || '',
+  // A reviewer's reasoning, not a checked source — the SDK is explicit that
+  // sourced evidence means `verify`. `dissent` is set only when a reviewer
+  // landed far from the panel's verdict, so a non-empty value is itself a
+  // signal worth branching on.
+  rationale: c.rationale || '',
+  dissent: c.dissent || '',
+  // Set only on an Error row: WHY it has no verdict. An open set — the SDK
+  // types it `string` and says new causes may arrive in a minor version — so
+  // branch on the ones you know and let the rest fall through. Today:
+  // `no_claim`, `framing_failed`, `upstream_unavailable`, `timeout`. Error
+  // rows are free.
+  error_code: c.error_code || '',
+  // One sentence on what to send next. On every Error row, and on a verdict
+  // row whose input held more claims than the one assessed.
+  hint: c.hint || '',
+  // The OTHER claims found in this input that were not assessed — a compound
+  // input is assessed on its main claim. Send these as their own steps to
+  // check the rest.
+  identified_claims: Array.isArray(c.identified_claims) ? c.identified_claims : [],
+});
 
 // Fast 3-model panel verdict (~10s) — one entry per claim found in the
 // text. Well under Zapier's 30s action timeout, so a live run is a plain
@@ -55,14 +110,24 @@ const perform = async (z, bundle) => {
     .assess({
       text: bundle.inputData.text,
       language: bundle.inputData.language || undefined,
+      // Pinned per call, NOT left to the client-wide value. Since lenz-io
+      // 2.12.0 `assess` waits `max(client timeoutMs, 45s)` unless the call
+      // says otherwise — a floor chosen for scripts, where a slow panel is
+      // better waited for than re-run. Here it would carry the call straight
+      // past Zapier's ~30s step limit and undo the whole budget client.js
+      // sets: the step is killed by the platform, counted as a failure, and
+      // lib/errors.js never gets to map it. `extract` has the same floor at
+      // 90s; creates/extract_claims.js pins it the same way.
+      timeoutMs: CALL_TIMEOUT_MS,
     })
     .catch((err) => mapLenzError(z, err));
 
   if (!result.claims || result.claims.length === 0) {
     return {
-      status: result.error_code === 'ambiguous' ? 'ambiguous' : 'no_claim',
+      status: 'no_claim',
       message: result.error || 'No verifiable factual claim was detected.',
-      candidate_claims: result.candidate_claims || [],
+      // Deprecated on the API, always empty; see NO_ERROR.
+      candidate_claims: [],
       claims: [],
     };
   }
@@ -70,20 +135,7 @@ const perform = async (z, bundle) => {
   return {
     status: 'ok',
     ...NO_ERROR,
-    claims: result.claims.map((c) => ({
-      claim: c.claim || '',
-      verdict: c.verdict || null,
-      confidence: c.confidence || null,
-      passed: isPassingVerdict(c.verdict),
-      // Null on all but one path. The API only fills this when the verdict
-      // came from an existing full verification it can serve to this caller
-      // (lenz/api/public_authed.py:1559) — a fresh panel result has no page to
-      // link. So a Zap must handle it being empty; it is not a bug.
-      verification_url: c.verification_url || null,
-      // The language this verdict is written in, echoed per claim. Dropped
-      // until now (#22).
-      language: c.language || '',
-    })),
+    claims: result.claims.map(shapeRow),
   };
 };
 
@@ -93,7 +145,7 @@ module.exports = {
   display: {
     label: 'Assess (Fast)',
     description:
-      'Checks a claim and returns a verdict for it, in about 10 seconds. Several claims in one input are each assessed separately.',
+      'Checks a claim and returns a verdict for it, in about 10 seconds. Several claims in one input are each assessed separately. A claim that could not be checked comes back as an "Error" row with an Error Code saying why and a Hint saying what to send instead.',
   },
   operation: {
     inputFields: [
@@ -114,8 +166,13 @@ module.exports = {
     outputFields: [
       { key: 'status', label: 'Status' },
       { key: 'message', label: 'Message' },
+      // Declared because it is still emitted (always empty) and a Zap built
+      // before the API retired it may map it. Dropping the declaration
+      // would not break that Zap, but declaring it keeps the sample and the
+      // field list honest with each other.
+      { key: 'candidate_claims', label: 'Candidate Claims (always empty)', list: true },
       // Declared as a line-item list with children, the same shape the
-      // needs_input lists use in creates/verify_claim.js. Until now
+      // needs_input lists use in creates/verify_claim.js. Until 1.4.0
       // `outputFields` named only Status and Message, so every per-claim
       // value the action actually returns — the verdicts themselves — was
       // undiscoverable in the editor: a user could see them in a test result
@@ -124,7 +181,9 @@ module.exports = {
       // `passed` is the field to branch on. `verdict` is prose from a closed
       // set and `confidence` is low/medium/high, but `passed` is already
       // derived from the verdict by this action, so a Filter does not have to
-      // enumerate the verdict vocabulary.
+      // enumerate the verdict vocabulary. `error_code` is the field to branch
+      // on when `passed` is false and you need to know whether the claim
+      // failed or was never checked.
       {
         key: 'claims',
         label: 'Claims',
@@ -136,6 +195,11 @@ module.exports = {
           { key: 'passed', label: 'Passed', type: 'boolean' },
           { key: 'verification_url', label: 'Verification URL' },
           { key: 'language', label: 'Language' },
+          { key: 'rationale', label: 'Reviewer Rationale' },
+          { key: 'dissent', label: 'Reviewer Dissent' },
+          { key: 'error_code', label: 'Error Code' },
+          { key: 'hint', label: 'Hint' },
+          { key: 'identified_claims', label: 'Other Claims Found', list: true },
         ],
       },
     ],

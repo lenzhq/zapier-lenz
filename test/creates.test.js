@@ -612,6 +612,132 @@ describe('creates.assess', () => {
     expect(result.status).toBe('ok');
     expect(client.assess).not.toHaveBeenCalled();
   });
+
+  // The API retired `ambiguous` on 2026-09-12 (lenz-io 2.14.0 changelog): a
+  // vague input is now assessed on its most likely reading. The old branch
+  // mapped `error_code === 'ambiguous'` to a third status value, which a
+  // Paths step could be built on and which would then never fire. Whatever
+  // code arrives with an empty list, the status is `no_claim`.
+  it('reports no_claim for an empty list whatever the error_code — ambiguous is retired', async () => {
+    const client = mockClient({
+      assess: jest.fn().mockResolvedValue({
+        claims: [],
+        error: 'Which one?',
+        error_code: 'ambiguous',
+        candidate_claims: ['Reading A', 'Reading B'],
+      }),
+    });
+    LenzClient.mockImplementation(() => client);
+
+    const bundle = { authData: { apiKey: 'lenz_good' }, inputData: { text: 'vague' } };
+    const result = await appTester(App.creates.assess.operation.perform, bundle);
+
+    expect(result.status).toBe('no_claim');
+    // Always empty now, even if an old cached response still carries values:
+    // the sample and outputFields say so, and a Zap must not be taught to
+    // expect readings that the API no longer produces.
+    expect(result.candidate_claims).toEqual([]);
+  });
+
+  // #28. Every row carries every key. A verdict row and an Error row are the
+  // same shape with different halves filled, so a Filter built against the
+  // sample sees the same fields on a live run whichever comes back.
+  it('passes error_code, hint and identified_claims through per row, empty on verdict rows', async () => {
+    const client = mockClient({
+      assess: jest.fn().mockResolvedValue({
+        claims: [
+          {
+            claim: 'The tower is tall and it was built in 1889.',
+            verdict: 'True',
+            confidence: 'high',
+            language: 'en',
+            rationale: 'Official figures agree.',
+            dissent: null,
+            error_code: null,
+            hint: 'Also check: it was built in 1889.',
+            identified_claims: ['It was built in 1889.'],
+          },
+          {
+            claim: 'hello',
+            verdict: 'Error',
+            confidence: null,
+            language: 'en',
+            rationale: null,
+            dissent: null,
+            error_code: 'no_claim',
+            hint: 'Send a statement of fact, not a greeting.',
+            identified_claims: [],
+          },
+        ],
+      }),
+    });
+    LenzClient.mockImplementation(() => client);
+
+    const bundle = { authData: { apiKey: 'lenz_good' }, inputData: { text: 'x' } };
+    const result = await appTester(App.creates.assess.operation.perform, bundle);
+
+    expect(result.status).toBe('ok');
+    expect(result.claims[0]).toEqual(
+      expect.objectContaining({
+        passed: true,
+        rationale: 'Official figures agree.',
+        dissent: '',
+        error_code: '',
+        hint: 'Also check: it was built in 1889.',
+        identified_claims: ['It was built in 1889.'],
+      }),
+    );
+    expect(result.claims[1]).toEqual(
+      expect.objectContaining({
+        verdict: 'Error',
+        passed: false,
+        error_code: 'no_claim',
+        hint: 'Send a statement of fact, not a greeting.',
+        identified_claims: [],
+        rationale: '',
+      }),
+    );
+  });
+
+  // Every row key is present on every row — including on a response from a
+  // server old enough not to send the new keys at all.
+  it('emits every declared row key even when the API omits them', () => {
+    const declared = App.creates.assess.operation.outputFields
+      .find((f) => f.key === 'claims')
+      .children.map((c) => c.key);
+    const client = mockClient({
+      assess: jest.fn().mockResolvedValue({ claims: [{ claim: 'A', verdict: 'True' }] }),
+    });
+    LenzClient.mockImplementation(() => client);
+
+    return appTester(App.creates.assess.operation.perform, {
+      authData: { apiKey: 'lenz_good' },
+      inputData: { text: 'A' },
+    }).then((result) => {
+      for (const key of declared) {
+        expect(result.claims[0]).toHaveProperty(key);
+      }
+    });
+  });
+
+  // lenz-io 2.12.0 gave `assess` a 45s floor: `max(client timeoutMs, 45s)`
+  // unless the call passes its own. Left alone, that carries the request
+  // past Zapier's ~30s step limit and undoes the budget client.js sets. The
+  // pin is invisible in any other test because the client is mocked, so it
+  // gets its own.
+  it('pins the per-call timeout so the SDK floor cannot exceed the Zapier budget', async () => {
+    const { CALL_TIMEOUT_MS } = require('../client');
+    const client = mockClient({ assess: jest.fn().mockResolvedValue({ claims: [] }) });
+    LenzClient.mockImplementation(() => client);
+
+    await appTester(App.creates.assess.operation.perform, {
+      authData: { apiKey: 'lenz_good' },
+      inputData: { text: 'A' },
+    });
+
+    expect(client.assess).toHaveBeenCalledWith(expect.objectContaining({ timeoutMs: CALL_TIMEOUT_MS }));
+    expect(CALL_TIMEOUT_MS).toBeLessThan(30000);
+  });
 });
 
 describe('creates.extract_claims', () => {
@@ -637,6 +763,23 @@ describe('creates.extract_claims', () => {
     expect(result.status).toBe('ready');
     expect(Array.isArray(result.identified_claims)).toBe(true);
     expect(client.extract).not.toHaveBeenCalled();
+  });
+
+  // lenz-io 2.14.0 gave `extract` a 90s floor — three times Zapier's step
+  // limit. See the matching assess test for why it needs its own assertion.
+  it('pins the per-call timeout so the SDK 90s floor cannot exceed the Zapier budget', async () => {
+    const { CALL_TIMEOUT_MS } = require('../client');
+    const client = mockClient({
+      extract: jest.fn().mockResolvedValue({ status: 'ready', claim: 'A', identified_claims: [] }),
+    });
+    LenzClient.mockImplementation(() => client);
+
+    await appTester(App.creates.extract_claims.operation.perform, {
+      authData: { apiKey: 'lenz_good' },
+      inputData: { text: 'A' },
+    });
+
+    expect(client.extract).toHaveBeenCalledWith(expect.objectContaining({ timeoutMs: CALL_TIMEOUT_MS }));
   });
 
   // The sample IS the contract for filter-building: `perform` passes the API

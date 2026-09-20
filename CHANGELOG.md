@@ -3,6 +3,30 @@
 User-facing changes to the Lenz integration for Zapier. Build and release
 mechanics live in [README.md](README.md#building-and-pushing).
 
+## Unreleased
+
+- New create/assess: each claim carries **Error Code**, **Hint**, **Other
+  Claims Found**, **Reviewer Rationale** and **Reviewer Dissent**. A claim
+  that could not be checked comes back as a row whose Verdict is `Error`, with
+  Error Code saying why (`no_claim`, `framing_failed`, `upstream_unavailable`
+  or `timeout`) and Hint saying what to send instead, so a Filter or Paths
+  step can branch on the reason rather than on a bare "Error". Error rows
+  cost nothing. Other Claims Found lists the claims in a compound input that
+  were not the one assessed, to fan out into their own steps.
+- Update create/assess: `Status` is `ok` or `no_claim`. `ambiguous` is gone —
+  the API retired it on 2026-09-12 and now checks a vague claim on its most
+  likely reading. **Candidate Claims** is still emitted and always empty.
+- Update create/verify_claim: the `clarification_required` reason is gone for
+  the same cause. **Candidate Readings** is still emitted and always empty. A
+  Paths step with a branch on either retired value has a leg that never
+  fires; remove it.
+- Fix create/assess and create/extract_claims: both calls pin their own
+  timeout to the Zap step budget. The updated Lenz SDK gives `assess` a 45s
+  and `extract` a 90s wait by default — right for a script, but past the
+  ~30s Zapier allows a step, so without the pin the step would be killed and
+  counted as a failure instead of paused or mapped. Requires `lenz-io`
+  ≥ 2.15.0.
+
 ## 1.4.0
 
 Problems that pass on their own now pause your Zap instead of failing it.
