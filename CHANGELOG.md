@@ -13,6 +13,13 @@ mechanics live in [README.md](README.md#building-and-pushing).
   step can branch on the reason rather than on a bare "Error". Error rows
   cost nothing. Other Claims Found lists the claims in a compound input that
   were not the one assessed, to fan out into their own steps.
+- Fix create/assess: when every claim comes back as an `Error` row for a
+  reason that passes on its own — `upstream_unavailable` or `timeout` — the
+  run waits and replays instead of returning `Passed: false`. Those rows
+  cost nothing, and returning them would have sent a claim that was never
+  checked down a Zap's "failed fact-check" branch. A result that mixes
+  verdicts with such rows is returned as is, because the verdicts were
+  charged; each row's Error Code says which is which.
 - Update create/assess: `Status` is `ok` or `no_claim`. `ambiguous` is gone —
   the API retired it on 2026-09-12 and now checks a vague claim on its most
   likely reading. **Candidate Claims** is still emitted and always empty.

@@ -119,7 +119,7 @@ const perform = (z, bundle) => {
       text: bundle.inputData.text,
       language: bundle.inputData.language || undefined,
       focus: focus || undefined,
-      // Pinned per call. Since lenz-io 2.14.0 `extract` waits
+      // Pinned per call. Since lenz-io 2.13.0 `extract` waits
       // `max(client timeoutMs, 90s)` unless the call says otherwise — right
       // for a script, where the slowest page reads take 30-60s and a client
       // timeout would re-run the extraction. Inside a Zap the platform ends

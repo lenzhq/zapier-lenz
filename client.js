@@ -73,7 +73,7 @@ const fetchAsZapier = (url, init = {}) => {
 const CALL_TIMEOUT_MS = 28000;
 
 // The constructor's `timeoutMs` is NOT the whole story. Since lenz-io 2.12.0
-// (`assess`, 45s) and 2.14.0 (`extract`, 90s) those two calls wait
+// (`assess`, 45s) and 2.13.0 (`extract`, 90s) those two calls wait
 // `max(client timeoutMs, floor)` unless the call itself passes `timeoutMs` —
 // which is why creates/assess.js and creates/extract_claims.js each pass
 // CALL_TIMEOUT_MS explicitly. Set it here alone and the SDK would quietly

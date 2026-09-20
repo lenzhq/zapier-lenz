@@ -1,6 +1,6 @@
 'use strict';
 
-const { mapLenzError } = require('../lib/errors');
+const { mapLenzError, DEFAULT_THROTTLE_DELAY } = require('../lib/errors');
 const { lenzClient, CALL_TIMEOUT_MS } = require('../client');
 const { languageField } = require('../lib/languages');
 
@@ -16,7 +16,7 @@ function isPassingVerdict(verdict) {
 // vague input is now checked on its most likely reading instead of being
 // bounced back with candidate readings — so the branch that produced it could
 // never run again, and a Paths step with an `ambiguous` branch had one leg
-// that would never fire. lenz-io ≥ 2.14.0 documents the retirement.
+// that would never fire. lenz-io ≥ 2.13.0 documents the retirement.
 //
 // `message` and `candidate_claims` are spread into EVERY branch, and declared
 // here, because Zapier's Filter treats a MISSING field and an EMPTY one as
@@ -38,6 +38,13 @@ const NO_ERROR = { message: '', candidate_claims: [] };
 // against the sample sees the same fields on a live run whichever kind of row
 // comes back.
 const NO_ROW_ERROR = { error_code: '', hint: '', identified_claims: [] };
+
+// The row causes that resolve on their own. The other two documented causes
+// are answers about the input — `no_claim` wants different text and
+// `framing_failed` is deterministic — so they stay as rows. Kept as a set
+// rather than a negation because `error_code` is an OPEN set: a cause added
+// in a minor version should land as a row, not as a replay.
+const TRANSIENT_ROW_CODES = new Set(['upstream_unavailable', 'timeout']);
 
 const SAMPLE = {
   status: 'ok',
@@ -132,10 +139,39 @@ const perform = async (z, bundle) => {
     };
   }
 
+  const rows = result.claims.map(shapeRow);
+
+  // A transient failure can arrive INSIDE a 200, as rows: `upstream_unavailable`
+  // (a provider was down) and `timeout` (the call ran out of budget before this
+  // item), both of which the SDK says are "worth resending as-is". Returned as
+  // rows they would read as `status: ok, passed: false` — and a Zap branching
+  // on `passed` would fire its "claim failed fact-check" leg for a claim that
+  // was never assessed, with nothing replaying. The SAME condition delivered
+  // as a thrown 503 is mapped to ThrottledError by lib/errors.js and replayed,
+  // so the two paths must agree.
+  //
+  // EVERY row, not any: Error rows are free but verdict rows are charged, so a
+  // mixed result has spent credits that a replay would spend again. There the
+  // honest answer is to return the rows — each transient one carries its
+  // `error_code`, so a Zap can still tell "checked and failed" from "never
+  // checked" — and let the user decide about the leftovers.
+  //
+  // "Nothing was charged" is safe to say here for the reason it is safe on the
+  // typed-503 branch: the server produced these rows, and it produces an Error
+  // row instead of charging.
+  if (rows.every((r) => r.verdict === 'Error' && TRANSIENT_ROW_CODES.has(r.error_code))) {
+    const delay = DEFAULT_THROTTLE_DELAY;
+    throw new z.errors.ThrottledError(
+      `Lenz could not check this claim right now (${rows[0].error_code}) — nothing was charged. ` +
+        `Retrying in ${delay}s.`,
+      delay,
+    );
+  }
+
   return {
     status: 'ok',
     ...NO_ERROR,
-    claims: result.claims.map(shapeRow),
+    claims: rows,
   };
 };
 

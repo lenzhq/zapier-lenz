@@ -613,7 +613,7 @@ describe('creates.assess', () => {
     expect(client.assess).not.toHaveBeenCalled();
   });
 
-  // The API retired `ambiguous` on 2026-09-12 (lenz-io 2.14.0 changelog): a
+  // The API retired `ambiguous` on 2026-09-12 (lenz-io 2.13.0 changelog): a
   // vague input is now assessed on its most likely reading. The old branch
   // mapped `error_code === 'ambiguous'` to a third status value, which a
   // Paths step could be built on and which would then never fire. Whatever
@@ -699,6 +699,83 @@ describe('creates.assess', () => {
     );
   });
 
+  // A transient failure inside a 200. The same condition thrown as a typed
+  // 503 is mapped to ThrottledError and replayed (test/errors.test.js), so a
+  // row-shaped one must not quietly read as "checked and did not pass" —
+  // which is what `status: ok, passed: false` says to a Filter.
+  describe('transient Error rows', () => {
+    const transientRow = (code) => ({
+      claim: 'A',
+      verdict: 'Error',
+      confidence: null,
+      error_code: code,
+      hint: 'Send it again.',
+      identified_claims: [],
+    });
+
+    it.each(['upstream_unavailable', 'timeout'])(
+      'replays with ThrottledError when every row is %s — nothing was charged',
+      async (code) => {
+        const client = mockClient({
+          assess: jest.fn().mockResolvedValue({ claims: [transientRow(code), transientRow(code)] }),
+        });
+        LenzClient.mockImplementation(() => client);
+
+        const err = await captureCreateError(App.creates.assess.operation.perform, {
+          authData: { apiKey: 'lenz_good' },
+          inputData: { text: 'A and B' },
+        });
+
+        expect(err.name).toBe('ThrottledError');
+        expect(err.message).toContain(code);
+        expect(err.message).toContain('nothing was charged');
+      },
+    );
+
+    // Verdict rows are charged; a replay would charge them again. So a mixed
+    // result is returned, and the transient row keeps its error_code so a
+    // Zap can still tell it apart from a failed claim.
+    it('returns the rows when only some are transient, since the others were charged', async () => {
+      const client = mockClient({
+        assess: jest.fn().mockResolvedValue({
+          claims: [
+            { claim: 'A', verdict: 'True', confidence: 'high' },
+            transientRow('upstream_unavailable'),
+          ],
+        }),
+      });
+      LenzClient.mockImplementation(() => client);
+
+      const result = await appTester(App.creates.assess.operation.perform, {
+        authData: { apiKey: 'lenz_good' },
+        inputData: { text: 'A and B' },
+      });
+
+      expect(result.status).toBe('ok');
+      expect(result.claims[0]).toEqual(expect.objectContaining({ passed: true, error_code: '' }));
+      expect(result.claims[1]).toEqual(
+        expect.objectContaining({ passed: false, error_code: 'upstream_unavailable' }),
+      );
+    });
+
+    // `no_claim` and `framing_failed` are answers about the input, not the
+    // weather. Replaying them spends the run for the same result.
+    it.each(['no_claim', 'framing_failed'])('keeps a %s Error row as a row', async (code) => {
+      const client = mockClient({
+        assess: jest.fn().mockResolvedValue({ claims: [transientRow(code)] }),
+      });
+      LenzClient.mockImplementation(() => client);
+
+      const result = await appTester(App.creates.assess.operation.perform, {
+        authData: { apiKey: 'lenz_good' },
+        inputData: { text: 'hello' },
+      });
+
+      expect(result.status).toBe('ok');
+      expect(result.claims[0]).toEqual(expect.objectContaining({ verdict: 'Error', error_code: code }));
+    });
+  });
+
   // Every row key is present on every row — including on a response from a
   // server old enough not to send the new keys at all.
   it('emits every declared row key even when the API omits them', () => {
@@ -765,7 +842,7 @@ describe('creates.extract_claims', () => {
     expect(client.extract).not.toHaveBeenCalled();
   });
 
-  // lenz-io 2.14.0 gave `extract` a 90s floor — three times Zapier's step
+  // lenz-io 2.13.0 gave `extract` a 90s floor — three times Zapier's step
   // limit. See the matching assess test for why it needs its own assertion.
   it('pins the per-call timeout so the SDK 90s floor cannot exceed the Zapier budget', async () => {
     const { CALL_TIMEOUT_MS } = require('../client');
