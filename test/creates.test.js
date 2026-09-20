@@ -344,7 +344,7 @@ describe('creates.verify_claim', () => {
   });
 
   // Lenz stops for input for THREE reasons, each carrying data the user needs
-  // to act. Until 1.3.4 every one of them got the same "rephrase and re-run"
+  // to act. Until 1.4.0 every one of them got the same "rephrase and re-run"
   // message and the data was dropped. Shapes here mirror the server
   // (lenz/api/public_authed.py, /verify/status) exactly.
   describe('needs_input, keyed on reason', () => {

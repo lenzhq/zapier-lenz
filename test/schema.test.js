@@ -72,7 +72,7 @@ describe('every declared output field is present in the sample', () => {
 // does not run (the workflow runs `npm test` only). Without this, a removed
 // `sample` passes CI and every review, and only surfaces at the push.
 //
-// The Depth and Visibility choices added in 1.3.4 are the first static choices
+// The Depth and Visibility choices added in 1.4.0 are the first static choices
 // in this app; this ratchet covers whatever comes next too.
 describe('static dropdown choices stay schema-legal', () => {
   const inputOperations = [

@@ -132,7 +132,7 @@ const NO_INPUT_NEEDED = {
 
 // Lenz can stop a verification to ask for input rather than run the pipeline,
 // and it does so for THREE different reasons that need three different
-// responses. Until 1.3.4 all three collapsed into one "rephrase and re-run"
+// responses. Until 1.4.0 all three collapsed into one "rephrase and re-run"
 // message and the data Lenz offered was thrown away. For duplicate_found that
 // advice was actively wrong: a verification of the claim already EXISTS, and
 // re-running spends a full 10-credit pipeline to reproduce it.
