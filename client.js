@@ -72,6 +72,14 @@ const fetchAsZapier = (url, init = {}) => {
 // That is a limit of the surface, not a number to tune.
 const CALL_TIMEOUT_MS = 28000;
 
+// The constructor's `timeoutMs` is NOT the whole story. Since lenz-io 2.12.0
+// (`assess`, 45s) and 2.13.0 (`extract`, 90s) those two calls wait
+// `max(client timeoutMs, floor)` unless the call itself passes `timeoutMs` —
+// which is why creates/assess.js and creates/extract_claims.js each pass
+// CALL_TIMEOUT_MS explicitly. Set it here alone and the SDK would quietly
+// wait past Zapier's ceiling on exactly the two calls most likely to need
+// the budget. test/creates.test.js pins that both calls forward it.
+
 // Single construction point for the SDK client. Every action and trigger goes
 // through this so a new one can't silently ship without the Zapier
 // User-Agent — the attribution above only holds if it's applied everywhere.

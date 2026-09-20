@@ -15,7 +15,7 @@
     "test": "jest --testTimeout 10000 && zapier-platform validate --without-style"
   },
   "dependencies": {
-    "lenz-io": "^2.9.0",
+    "lenz-io": "^2.15.0",
     "zapier-platform-core": "19.1.0"
   },
   "devDependencies": {

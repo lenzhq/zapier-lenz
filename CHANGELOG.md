@@ -3,6 +3,46 @@
 User-facing changes to the Lenz integration for Zapier. Build and release
 mechanics live in [README.md](README.md#building-and-pushing).
 
+## Unreleased
+
+- New create/assess: each claim carries **Error Code**, **Hint**, **Other
+  Claims Found**, **Reviewer Rationale** and **Reviewer Dissent**. A claim
+  that could not be checked comes back as a row whose Verdict is `Error`, with
+  Error Code saying why (`no_claim`, `framing_failed`, `upstream_unavailable`
+  or `timeout`) and Hint saying what to send instead, so a Filter or Paths
+  step can branch on the reason rather than on a bare "Error". Error rows
+  cost nothing. Other Claims Found lists the claims in a compound input that
+  were not the one assessed, to fan out into their own steps.
+- Fix create/assess: a run that waits and replays after a timeout no longer
+  pays for a second panel. The action sends an idempotency key built from the
+  Zap, the input and the current hour, so Lenz returns the answer it already
+  produced. Where Zapier does not supply a Zap id, the key is the input and
+  the hour alone; Lenz already scopes keys to your API key. The one edge: the same Zap sending the same text twice on purpose
+  within one hour gets the first answer twice. Verify a Claim was already
+  covered by its per-run callback URL; Extract Claims is free.
+- Fix create/assess: when every claim comes back as an `Error` row for a
+  reason that passes on its own — `upstream_unavailable` or `timeout` — the
+  run waits and replays instead of returning `Passed: false`. Those rows
+  cost nothing, and returning them would have sent a claim that was never
+  checked down a Zap's "failed fact-check" branch. The wait runs to the top
+  of the next hour rather than 60 seconds: the replay key below is tied to
+  the hour, and a sooner replay would be handed the same stored rows back. A result that mixes
+  verdicts with such rows is returned as is, because the verdicts were
+  charged; each row's Error Code says which is which.
+- Update create/assess: `Status` is `ok` or `no_claim`. `ambiguous` is gone —
+  the API retired it on 2026-09-12 and now checks a vague claim on its most
+  likely reading. **Candidate Claims** is still emitted and always empty.
+- Update create/verify_claim: the `clarification_required` reason is gone for
+  the same cause. **Candidate Readings** is still emitted and always empty. A
+  Paths step with a branch on either retired value has a leg that never
+  fires; remove it.
+- Fix create/assess and create/extract_claims: both calls pin their own
+  timeout to the Zap step budget. The updated Lenz SDK gives `assess` a 45s
+  and `extract` a 90s wait by default — right for a script, but past the
+  ~30s Zapier allows a step, so without the pin the step would be killed and
+  counted as a failure instead of paused or mapped. Requires `lenz-io`
+  ≥ 2.15.0.
+
 ## 1.4.0
 
 Problems that pass on their own now pause your Zap instead of failing it.

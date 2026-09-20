@@ -1,7 +1,7 @@
 'use strict';
 
 const { mapLenzError } = require('../lib/errors');
-const { lenzClient } = require('../client');
+const { lenzClient, CALL_TIMEOUT_MS } = require('../client');
 const { languageField } = require('../lib/languages');
 
 // `perform` returns the API's response untouched, so every value here has to
@@ -119,6 +119,15 @@ const perform = (z, bundle) => {
       text: bundle.inputData.text,
       language: bundle.inputData.language || undefined,
       focus: focus || undefined,
+      // Pinned per call. Since lenz-io 2.13.0 `extract` waits
+      // `max(client timeoutMs, 90s)` unless the call says otherwise — right
+      // for a script, where the slowest page reads take 30-60s and a client
+      // timeout would re-run the extraction. Inside a Zap the platform ends
+      // the step at ~30s regardless, so a 90s wait only guarantees the step
+      // is killed and counted as a failure before lib/errors.js can map
+      // anything. client.js sets the budget; this makes the SDK honour it.
+      // creates/assess.js pins its 45s floor the same way.
+      timeoutMs: CALL_TIMEOUT_MS,
     })
     .then((result) => {
       // `no_match` means claims WERE found and the focus excluded all of

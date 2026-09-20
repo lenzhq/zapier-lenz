@@ -36,12 +36,13 @@ only what the sample shows. These are the values the API actually sends:
 | Field | Where | Values |
 |---|---|---|
 | `status` | Extract Claims | `ready` when claims were found, `not_a_claim` when none were, or `no_match` when claims were found and a **Focus** excluded all of them. `no_match` is reachable only when you set a Focus. |
-| `status` | Assess (Fast) | `ok`, `no_claim`, or `ambiguous`. Built by the integration, not the API. |
+| `status` | Assess (Fast) | `ok` when at least one row came back, `no_claim` when none did. Built by the integration, not the API. `ambiguous` was a third value until the API retired it on 2026-09-12 — a vague input is now checked on its most likely reading — so a Paths branch on it never fires; remove it. |
+| `claims[].error_code` | Assess (Fast) | Empty on a verdict row. On a row whose `verdict` is `Error`, why it has no verdict: `no_claim`, `framing_failed`, `upstream_unavailable` or `timeout` — an open set, so branch on the ones you know and let the rest fall through. Error rows are free, and `hint` on the same row says what to send instead. |
 | `domain` | Extract Claims, New Verification Completed | Capitalised: `Health`, `Science`, `Politics`, `Finance`, `Tech`, `History`, `Legal`, `General` — **or empty**, when the extractor produced no usable domain. A Paths step covering all eight still needs a branch for the empty case. |
 | `passed` | Verify a Claim, Assess (Fast) | Boolean, derived from the verdict. The reliable thing to branch on. |
 | `domain` | Verify a Claim | Same eight capitalised values as above, or empty. |
 | `status` | Verify a Claim | `completed`, `needs_input`, `failed`, or `processing`. Built by the integration. |
-| `reason` | Verify a Claim, when `status` is `needs_input` | `multi_claim`, `clarification_required`, or `duplicate_found`. Empty otherwise. |
+| `reason` | Verify a Claim, when `status` is `needs_input` | `multi_claim` or `duplicate_found`. Empty otherwise. `clarification_required` was a third value until the API retired it on 2026-09-12; **Candidate Readings** is still emitted, always empty, so a Zap that maps it keeps working. |
 | `depth` | Verify a Claim, when `status` is `completed` | `standard` or `low` — the depth the verdict was **produced** with, which is not always the one you asked for. Empty on every other status, and on verdicts from before Lenz recorded it. |
 | `visibility` | Verify a Claim, when `status` is `completed` | `private`, `unlisted` or `public`. You can only *request* the first two; `public` is read back when the verdict was served from an existing verification someone made public. Empty on every other status. |
 | `language` | all four actions (input) | `en` `es` `de` `fr` `it` `pt` `nl` `sv` `da` `no` `fi` `bg`. A dropdown since 1.4.0 — it was free text, and anything outside this set fails the run. |
@@ -61,7 +62,7 @@ on `reason` rather than treating them as one case:
 | `reason` | What Lenz found | What to map | What to do |
 |---|---|---|---|
 | `multi_claim` | Several separate claims in one input | **Claims Found** (line items: `text`, `domain`) | Fan out — a Verify step per item, or send them one at a time |
-| `clarification_required` | One claim that can be read several ways | **Candidate Readings** (line items: `text`) | Pick one and re-run with that exact wording |
+| ~~`clarification_required`~~ | *Retired 2026-09-12.* A vague claim is now checked on its most likely reading instead of paused | **Candidate Readings** — still present, always empty | Nothing; it no longer occurs |
 | `duplicate_found` | A verification of this claim **already exists** | **Duplicate Verification ID** and **Duplicate URL**; the full list in **Similar Claims** | Reuse it — map the ID into **Ask Follow-Up**. Do **not** re-run: that spends a full check to reproduce an answer you already have |
 
 Before 1.4.0 all three produced the same "rephrase and re-run" message and the data was
@@ -174,6 +175,7 @@ more than it looks. Since 1.4.0:
 | Out of credits (402) | Halts the run with a top-up link | No |
 | Daily `/extract` cap (429) | Waits the stated time and replays | No |
 | Lenz at capacity, or providers down (503) | Waits the stated time and replays | No |
+| Assess (Fast): every claim came back `Error` with `upstream_unavailable` or `timeout` | Waits until the next hour begins and replays — Error rows are free, so nothing was charged. The wait is tied to the hour because the replay key is; a sooner replay would be handed the same stored rows | No |
 | Network drop, or a 5xx naming no reason | Waits 60s and replays | No |
 | No webhook secret on the key (Verify a Claim) | Halts with instructions | No |
 | Focus over 300 characters (Extract Claims) | Halts with instructions | No |
@@ -184,15 +186,16 @@ more than it looks. Since 1.4.0:
 The last two are deliberate: they are answers about the input, so replaying them
 spends the run again for the same result.
 
-**One caveat on replays.** A run that waits and replays runs the action again. For
-the refusals above — out of credits, over a cap, Lenz at capacity — that costs
-nothing, because the call is turned away before any work happens. A *timeout* is
-different: the request may have reached Lenz and be running, and there is no way to
-tell from the Zap's side, so the replay can repeat the check and charge for it.
-`/verify` carries a per-run callback URL that keeps separate runs apart; `/assess`
-does not, and it charges before it starts. If that matters for your volume, keep an
-eye on it — a proper idempotency key is tracked in
-[#19](https://github.com/lenzhq/zapier-lenz/issues/19).
+**On replays.** A run that waits and replays runs the action again. For the refusals
+above — out of credits, over a cap, Lenz at capacity — that costs nothing, because
+the call is turned away before any work happens. A *timeout* is different: the
+request may have reached Lenz and be running, and there is no way to tell from the
+Zap's side. Both claim-checking actions guard against paying twice for it. Verify a
+Claim carries a per-run callback URL that keeps runs apart. Assess (Fast) sends an
+idempotency key built from the Zap, the input and the current hour, so a replay
+within the hour gets the answer Lenz already produced instead of a second panel.
+The one edge that follows: if a single Zap sends the *same* text twice on purpose
+within one hour, the second run gets the first answer rather than a fresh check.
 
 A call makes **one attempt** and lets Zapier do any waiting. The SDK used to retry
 up to four times inside one run and could sleep a stated wait of up to a minute —

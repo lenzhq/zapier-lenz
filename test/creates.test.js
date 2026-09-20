@@ -612,6 +612,334 @@ describe('creates.assess', () => {
     expect(result.status).toBe('ok');
     expect(client.assess).not.toHaveBeenCalled();
   });
+
+  // The API retired `ambiguous` on 2026-09-12 (lenz-io 2.13.0 changelog): a
+  // vague input is now assessed on its most likely reading. The old branch
+  // mapped `error_code === 'ambiguous'` to a third status value, which a
+  // Paths step could be built on and which would then never fire. Whatever
+  // code arrives with an empty list, the status is `no_claim`.
+  it('reports no_claim for an empty list whatever the error_code — ambiguous is retired', async () => {
+    const client = mockClient({
+      assess: jest.fn().mockResolvedValue({
+        claims: [],
+        error: 'Which one?',
+        error_code: 'ambiguous',
+        candidate_claims: ['Reading A', 'Reading B'],
+      }),
+    });
+    LenzClient.mockImplementation(() => client);
+
+    const bundle = { authData: { apiKey: 'lenz_good' }, inputData: { text: 'vague' } };
+    const result = await appTester(App.creates.assess.operation.perform, bundle);
+
+    expect(result.status).toBe('no_claim');
+    // Always empty now, even if an old cached response still carries values:
+    // the sample and outputFields say so, and a Zap must not be taught to
+    // expect readings that the API no longer produces.
+    expect(result.candidate_claims).toEqual([]);
+  });
+
+  // #28. Every row carries every key. A verdict row and an Error row are the
+  // same shape with different halves filled, so a Filter built against the
+  // sample sees the same fields on a live run whichever comes back.
+  it('passes error_code, hint and identified_claims through per row, empty on verdict rows', async () => {
+    const client = mockClient({
+      assess: jest.fn().mockResolvedValue({
+        claims: [
+          {
+            claim: 'The tower is tall and it was built in 1889.',
+            verdict: 'True',
+            confidence: 'high',
+            language: 'en',
+            rationale: 'Official figures agree.',
+            dissent: null,
+            error_code: null,
+            hint: 'Also check: it was built in 1889.',
+            identified_claims: ['It was built in 1889.'],
+          },
+          {
+            claim: 'hello',
+            verdict: 'Error',
+            confidence: null,
+            language: 'en',
+            rationale: null,
+            dissent: null,
+            error_code: 'no_claim',
+            hint: 'Send a statement of fact, not a greeting.',
+            identified_claims: [],
+          },
+        ],
+      }),
+    });
+    LenzClient.mockImplementation(() => client);
+
+    const bundle = { authData: { apiKey: 'lenz_good' }, inputData: { text: 'x' } };
+    const result = await appTester(App.creates.assess.operation.perform, bundle);
+
+    expect(result.status).toBe('ok');
+    expect(result.claims[0]).toEqual(
+      expect.objectContaining({
+        passed: true,
+        rationale: 'Official figures agree.',
+        dissent: '',
+        error_code: '',
+        hint: 'Also check: it was built in 1889.',
+        identified_claims: ['It was built in 1889.'],
+      }),
+    );
+    expect(result.claims[1]).toEqual(
+      expect.objectContaining({
+        verdict: 'Error',
+        passed: false,
+        error_code: 'no_claim',
+        hint: 'Send a statement of fact, not a greeting.',
+        identified_claims: [],
+        rationale: '',
+      }),
+    );
+  });
+
+  // #19. A Zapier replay is a fresh process with a fresh SDK client, so the
+  // SDK's own random per-invocation key does not survive it — the replayed
+  // request looks new to the server and is charged again. The key has to be
+  // derived from what the replay shares with its original.
+  describe('replay idempotency key', () => {
+    const live = (over = {}) => ({
+      authData: { apiKey: 'lenz_good' },
+      inputData: { text: 'The tower is tall.', language: 'en' },
+      meta: { zap: { id: 12345 } },
+      ...over,
+    });
+    const keyOf = (client) => client.assess.mock.calls[0][0].idempotencyKey;
+
+    it('sends a key derived from the Zap, the input and the hour — the same one on a replay', async () => {
+      const client = mockClient({ assess: jest.fn().mockResolvedValue({ claims: [] }) });
+      LenzClient.mockImplementation(() => client);
+
+      await appTester(App.creates.assess.operation.perform, live());
+      const first = keyOf(client);
+      expect(first).toMatch(/^[0-9a-f]{64}$/);
+
+      // A replay: same bundle, new process. Modelled as a second call.
+      client.assess.mockClear();
+      await appTester(App.creates.assess.operation.perform, live());
+      expect(keyOf(client)).toBe(first);
+    });
+
+    it('differs for a different Zap, input, or language', async () => {
+      const client = mockClient({ assess: jest.fn().mockResolvedValue({ claims: [] }) });
+      LenzClient.mockImplementation(() => client);
+
+      await appTester(App.creates.assess.operation.perform, live());
+      const base = keyOf(client);
+
+      for (const variant of [
+        live({ meta: { zap: { id: 99999 } } }),
+        live({ inputData: { text: 'A different claim.', language: 'en' } }),
+        live({ inputData: { text: 'The tower is tall.', language: 'es' } }),
+      ]) {
+        client.assess.mockClear();
+        await appTester(App.creates.assess.operation.perform, variant);
+        expect(keyOf(client)).not.toBe(base);
+      }
+    });
+
+    // No text ever crosses the wire in the header: the key is a digest.
+    it('is a digest, not the input', async () => {
+      const client = mockClient({ assess: jest.fn().mockResolvedValue({ claims: [] }) });
+      LenzClient.mockImplementation(() => client);
+
+      await appTester(App.creates.assess.operation.perform, live());
+      expect(keyOf(client)).not.toContain('tower');
+    });
+
+    // `bundle.meta.zap.id` is @deprecated in platform-core and absent from
+    // the bundle docs, so it may be missing on a live run. The guard must not
+    // silently switch itself off there: without it the key falls back to the
+    // input and the hour, which the server already scopes per API key.
+    it('still sends a stable key without a zap id, keyed on the input and the hour', async () => {
+      const client = mockClient({ assess: jest.fn().mockResolvedValue({ claims: [] }) });
+      LenzClient.mockImplementation(() => client);
+
+      await appTester(App.creates.assess.operation.perform, live({ meta: {} }));
+      const first = keyOf(client);
+      expect(first).toMatch(/^[0-9a-f]{64}$/);
+
+      client.assess.mockClear();
+      await appTester(App.creates.assess.operation.perform, live({ meta: {} }));
+      expect(keyOf(client)).toBe(first);
+    });
+
+    // `z.hash` defaults its input encoding to 'binary' (latin1), which drops
+    // the high byte of every UTF-16 unit: U+4E00 and U+4F00 would collide,
+    // and two different Chinese claims would share a verdict. Review of #43.
+    it('does not collide on non-Latin text that differs only in the high byte', async () => {
+      const client = mockClient({ assess: jest.fn().mockResolvedValue({ claims: [] }) });
+      LenzClient.mockImplementation(() => client);
+
+      await appTester(
+        App.creates.assess.operation.perform,
+        live({ inputData: { text: '一', language: 'zh' } }),
+      );
+      const a = keyOf(client);
+
+      client.assess.mockClear();
+      await appTester(
+        App.creates.assess.operation.perform,
+        live({ inputData: { text: '伀', language: 'zh' } }),
+      );
+      expect(keyOf(client)).not.toBe(a);
+    });
+  });
+
+  // A transient failure inside a 200. The same condition thrown as a typed
+  // 503 is mapped to ThrottledError and replayed (test/errors.test.js), so a
+  // row-shaped one must not quietly read as "checked and did not pass" —
+  // which is what `status: ok, passed: false` says to a Filter.
+  describe('transient Error rows', () => {
+    const transientRow = (code) => ({
+      claim: 'A',
+      verdict: 'Error',
+      confidence: null,
+      error_code: code,
+      hint: 'Send it again.',
+      identified_claims: [],
+    });
+
+    it.each(['upstream_unavailable', 'timeout'])(
+      'replays with ThrottledError when every row is %s — nothing was charged',
+      async (code) => {
+        const client = mockClient({
+          assess: jest.fn().mockResolvedValue({ claims: [transientRow(code), transientRow(code)] }),
+        });
+        LenzClient.mockImplementation(() => client);
+
+        const err = await captureCreateError(App.creates.assess.operation.perform, {
+          authData: { apiKey: 'lenz_good' },
+          inputData: { text: 'A and B' },
+        });
+
+        expect(err.name).toBe('ThrottledError');
+        expect(err.message).toContain(code);
+        expect(err.message).toContain('nothing was charged');
+      },
+    );
+
+    // The server stores every 200 under its Idempotency-Key for 24h — this
+    // all-Error body included. A replay 60s later would carry the same key
+    // (same Zap, input, hour) and get the stored rows back, then land here
+    // again every 60s until the hour ticked over. So the delay reaches into
+    // the NEXT hour bucket, where the key changes and the panel really runs.
+    it('delays the replay into the next hour bucket so it gets a fresh key', async () => {
+      const { DEFAULT_THROTTLE_DELAY, MAX_THROTTLE_DELAY } = require('../lib/errors');
+      const client = mockClient({
+        assess: jest.fn().mockResolvedValue({ claims: [transientRow('timeout')] }),
+      });
+      LenzClient.mockImplementation(() => client);
+
+      const before = Date.now();
+      const err = await captureCreateError(App.creates.assess.operation.perform, {
+        authData: { apiKey: 'lenz_good' },
+        inputData: { text: 'A' },
+        meta: { zap: { id: 1 } },
+      });
+
+      const HOUR = 60 * 60 * 1000;
+      const nextBucketAt = (Math.floor(before / HOUR) + 1) * HOUR;
+      // ThrottledError serialises `{ message, delay }` into its message.
+      const { delay } = JSON.parse(err.message);
+      const replayAt = Date.now() + delay * 1000;
+
+      expect(err.name).toBe('ThrottledError');
+      expect(delay).toBeGreaterThanOrEqual(DEFAULT_THROTTLE_DELAY);
+      expect(delay).toBeLessThanOrEqual(MAX_THROTTLE_DELAY);
+      // The one property that matters: the replay lands in a later bucket.
+      expect(replayAt).toBeGreaterThanOrEqual(nextBucketAt);
+    });
+
+    // Verdict rows are charged; a replay would charge them again. So a mixed
+    // result is returned, and the transient row keeps its error_code so a
+    // Zap can still tell it apart from a failed claim.
+    it('returns the rows when only some are transient, since the others were charged', async () => {
+      const client = mockClient({
+        assess: jest.fn().mockResolvedValue({
+          claims: [
+            { claim: 'A', verdict: 'True', confidence: 'high' },
+            transientRow('upstream_unavailable'),
+          ],
+        }),
+      });
+      LenzClient.mockImplementation(() => client);
+
+      const result = await appTester(App.creates.assess.operation.perform, {
+        authData: { apiKey: 'lenz_good' },
+        inputData: { text: 'A and B' },
+      });
+
+      expect(result.status).toBe('ok');
+      expect(result.claims[0]).toEqual(expect.objectContaining({ passed: true, error_code: '' }));
+      expect(result.claims[1]).toEqual(
+        expect.objectContaining({ passed: false, error_code: 'upstream_unavailable' }),
+      );
+    });
+
+    // `no_claim` and `framing_failed` are answers about the input, not the
+    // weather. Replaying them spends the run for the same result.
+    it.each(['no_claim', 'framing_failed'])('keeps a %s Error row as a row', async (code) => {
+      const client = mockClient({
+        assess: jest.fn().mockResolvedValue({ claims: [transientRow(code)] }),
+      });
+      LenzClient.mockImplementation(() => client);
+
+      const result = await appTester(App.creates.assess.operation.perform, {
+        authData: { apiKey: 'lenz_good' },
+        inputData: { text: 'hello' },
+      });
+
+      expect(result.status).toBe('ok');
+      expect(result.claims[0]).toEqual(expect.objectContaining({ verdict: 'Error', error_code: code }));
+    });
+  });
+
+  // Every row key is present on every row — including on a response from a
+  // server old enough not to send the new keys at all.
+  it('emits every declared row key even when the API omits them', () => {
+    const declared = App.creates.assess.operation.outputFields
+      .find((f) => f.key === 'claims')
+      .children.map((c) => c.key);
+    const client = mockClient({
+      assess: jest.fn().mockResolvedValue({ claims: [{ claim: 'A', verdict: 'True' }] }),
+    });
+    LenzClient.mockImplementation(() => client);
+
+    return appTester(App.creates.assess.operation.perform, {
+      authData: { apiKey: 'lenz_good' },
+      inputData: { text: 'A' },
+    }).then((result) => {
+      for (const key of declared) {
+        expect(result.claims[0]).toHaveProperty(key);
+      }
+    });
+  });
+
+  // lenz-io 2.12.0 gave `assess` a 45s floor: `max(client timeoutMs, 45s)`
+  // unless the call passes its own. Left alone, that carries the request
+  // past Zapier's ~30s step limit and undoes the budget client.js sets. The
+  // pin is invisible in any other test because the client is mocked, so it
+  // gets its own.
+  it('pins the per-call timeout so the SDK floor cannot exceed the Zapier budget', async () => {
+    const { CALL_TIMEOUT_MS } = require('../client');
+    const client = mockClient({ assess: jest.fn().mockResolvedValue({ claims: [] }) });
+    LenzClient.mockImplementation(() => client);
+
+    await appTester(App.creates.assess.operation.perform, {
+      authData: { apiKey: 'lenz_good' },
+      inputData: { text: 'A' },
+    });
+
+    expect(client.assess).toHaveBeenCalledWith(expect.objectContaining({ timeoutMs: CALL_TIMEOUT_MS }));
+    expect(CALL_TIMEOUT_MS).toBeLessThan(30000);
+  });
 });
 
 describe('creates.extract_claims', () => {
@@ -637,6 +965,23 @@ describe('creates.extract_claims', () => {
     expect(result.status).toBe('ready');
     expect(Array.isArray(result.identified_claims)).toBe(true);
     expect(client.extract).not.toHaveBeenCalled();
+  });
+
+  // lenz-io 2.13.0 gave `extract` a 90s floor — three times Zapier's step
+  // limit. See the matching assess test for why it needs its own assertion.
+  it('pins the per-call timeout so the SDK 90s floor cannot exceed the Zapier budget', async () => {
+    const { CALL_TIMEOUT_MS } = require('../client');
+    const client = mockClient({
+      extract: jest.fn().mockResolvedValue({ status: 'ready', claim: 'A', identified_claims: [] }),
+    });
+    LenzClient.mockImplementation(() => client);
+
+    await appTester(App.creates.extract_claims.operation.perform, {
+      authData: { apiKey: 'lenz_good' },
+      inputData: { text: 'A' },
+    });
+
+    expect(client.extract).toHaveBeenCalledWith(expect.objectContaining({ timeoutMs: CALL_TIMEOUT_MS }));
   });
 
   // The sample IS the contract for filter-building: `perform` passes the API
