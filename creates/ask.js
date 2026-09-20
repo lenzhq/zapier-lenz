@@ -68,7 +68,7 @@ module.exports = {
         type: 'string',
         required: true,
         helpText:
-          'The follow-up question, answered from the verification’s full research and evidence. Clicking Test shows an example answer so you can map the output fields — a turned-on Zap answers this question for real.',
+          'The follow-up question, answered from the verification’s full research and evidence. Up to 500 characters. Clicking Test shows an example answer so you can map the output fields — a turned-on Zap answers this question for real.',
       },
       languageField(
         'The language Lenz answers in. Leave blank to answer in the language the verification itself is stored in, which is usually what you want — unlike the other actions, blank here does NOT mean English. This does not describe your question; you can ask in English about a Spanish verification.',

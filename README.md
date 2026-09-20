@@ -26,7 +26,7 @@ This integration is not yet in Zapier's public App Directory. While private, it'
 | **Extract Claims** | Free — pulls the verifiable factual claims out of a block of text without checking them. Useful as a first step before running Assess or Verify a Claim on each claim individually. **Text** can also be a single public web page URL: Lenz reads the page, or a YouTube video's transcript, and extracts the claims from its first 50,000 characters. Pages behind a login (Facebook, Instagram, Threads, LinkedIn) can't be read. A URL call typically takes 5-40 seconds and a Zap step has 30, so a slow page can fail the step; for a long page, send its text instead. |
 | **Ask Follow-Up** | Asks a question grounded in the full research behind a completed **Verify a Claim** result. Requires the `verification_id` that action returns — not usable standalone. |
 
-Every claim-checking action returns a `passed` boolean (derived from the verdict) alongside the raw verdict/confidence/citations, so you can wire a **Filter** step directly off the result — e.g. only continue the Zap when a claim passed.
+Every claim-checking action returns a `passed` boolean (derived from the verdict) alongside the raw verdict and confidence — and, on Verify a Claim, the sourced citations — so you can wire a **Filter** step directly off the result — e.g. only continue the Zap when a claim passed.
 
 ### Values to filter on
 
@@ -43,7 +43,7 @@ only what the sample shows. These are the values the API actually sends:
 | `status` | Verify a Claim | `completed`, `needs_input`, `failed`, or `processing`. Built by the integration. |
 | `reason` | Verify a Claim, when `status` is `needs_input` | `multi_claim`, `clarification_required`, or `duplicate_found`. Empty otherwise. |
 | `depth` | Verify a Claim, when `status` is `completed` | `standard` or `low` — the depth the verdict was **produced** with, which is not always the one you asked for. Empty on every other status, and on verdicts from before Lenz recorded it. |
-| `visibility` | Verify a Claim, when `status` is `completed` | `private` or `unlisted`. Empty on every other status. |
+| `visibility` | Verify a Claim, when `status` is `completed` | `private`, `unlisted` or `public`. You can only *request* the first two; `public` is read back when the verdict was served from an existing verification someone made public. Empty on every other status. |
 | `language` | all four actions (input) | `en` `es` `de` `fr` `it` `pt` `nl` `sv` `da` `no` `fi` `bg`. A dropdown since 1.4.0 — it was free text, and anything outside this set fails the run. |
 
 Every field in the table above, and every other field Verify a Claim declares, is
@@ -238,9 +238,10 @@ number of the release being accumulated, and whoever builds sets them together.
 
 Three places carry it and all three move at once: `package.json`, the top `CHANGELOG.md`
 heading, and the "Since x.y.z:" reference under [What happens when something goes
-wrong](#what-happens-when-something-goes-wrong). Zapier also enforces **sequential**
-versions — including patches — so `1.3.4` cannot be pushed unless `1.3.3` exists; a gap
-needs a stepping-stone version pushed first.
+wrong](#what-happens-when-something-goes-wrong). Zapier does **not** require versions to
+be sequential: 1.4.0 was pushed on 2026-09-20 with neither 1.3.3 nor 1.3.4 ever having
+existed on Zapier, and it was accepted without comment. An earlier version of this
+paragraph claimed otherwise; it had never been tested.
 
 **Do not run `zapier push` from Windows.** `zapier-platform-cli` 19.1.0 copies the
 project into `%TEMP%\zapier-<hash>` and archives it with that path embedded, so the
