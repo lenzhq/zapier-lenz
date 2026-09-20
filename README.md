@@ -175,7 +175,7 @@ more than it looks. Since 1.4.0:
 | Out of credits (402) | Halts the run with a top-up link | No |
 | Daily `/extract` cap (429) | Waits the stated time and replays | No |
 | Lenz at capacity, or providers down (503) | Waits the stated time and replays | No |
-| Assess (Fast): every claim came back `Error` with `upstream_unavailable` or `timeout` | Waits 60s and replays — Error rows are free, so nothing was charged | No |
+| Assess (Fast): every claim came back `Error` with `upstream_unavailable` or `timeout` | Waits until the next hour begins and replays — Error rows are free, so nothing was charged. The wait is tied to the hour because the replay key is; a sooner replay would be handed the same stored rows | No |
 | Network drop, or a 5xx naming no reason | Waits 60s and replays | No |
 | No webhook secret on the key (Verify a Claim) | Halts with instructions | No |
 | Focus over 300 characters (Extract Claims) | Halts with instructions | No |

@@ -1,6 +1,6 @@
 'use strict';
 
-const { mapLenzError, DEFAULT_THROTTLE_DELAY } = require('../lib/errors');
+const { mapLenzError, DEFAULT_THROTTLE_DELAY, MAX_THROTTLE_DELAY } = require('../lib/errors');
 const { lenzClient, CALL_TIMEOUT_MS } = require('../client');
 const { languageField } = require('../lib/languages');
 
@@ -128,16 +128,40 @@ const REPLAY_BUCKET_MS = 60 * 60 * 1000;
 // new bucket and can still double-run; accepted rather than closed, because
 // the SDK sends one key and carrying two would mean two requests.
 //
-// No `zap.id` (the editor, appTester) means no stable identity to hang a key
-// on, so return `undefined` and let the SDK generate its random one — that is
-// strictly what happened before this existed, not a new behaviour.
+// `bundle.meta.zap.id` is the best per-Zap identity available, and it is
+// `@deprecated` in zapier-platform-core's types and absent from the current
+// bundle docs — so it may be missing on a live run, not only in the editor
+// and appTester. When it is, the key falls back to the input and the hour
+// alone rather than to nothing: the server scopes keys per API key already,
+// so the collision that fallback admits is "the same account assessing the
+// same text in the same hour from two different Zaps" — and those two would
+// have received the same verdict anyway. Sending no key there would make the
+// whole guard a silent no-op wherever `zap.id` is absent, with the README
+// still claiming it exists.
+//
+// `'utf8'` is not optional. `z.hash` defaults its INPUT encoding to
+// `'binary'` (latin1), which keeps only the low byte of each UTF-16 unit — so
+// `一` (U+4E00) and `伀` (U+4F00) would hash identically, and two different
+// non-Latin claims from one Zap in one hour could share a key and a verdict.
 const replayKey = (z, bundle) => {
-  const zapId = bundle.meta && bundle.meta.zap && bundle.meta.zap.id;
-  if (!zapId) return undefined;
-  const bucket = Math.floor(Date.now() / REPLAY_BUCKET_MS);
+  const zapId = (bundle.meta && bundle.meta.zap && bundle.meta.zap.id) || '';
+  const bucket = replayBucket();
   const text = (bundle.inputData && bundle.inputData.text) || '';
   const language = (bundle.inputData && bundle.inputData.language) || '';
-  return z.hash('sha256', `${zapId}|${bucket}|${language}|${text}`);
+  return z.hash('sha256', `${zapId}|${bucket}|${language}|${text}`, 'hex', 'utf8');
+};
+
+const replayBucket = () => Math.floor(Date.now() / REPLAY_BUCKET_MS);
+
+// Seconds until the NEXT bucket begins, with a margin so a replay scheduled
+// for then lands inside it and not on the boundary. Floored at the default
+// replay delay so it stays a real wait, capped at the ceiling lib/errors.js
+// uses for the same reason it does.
+const secondsToNextBucket = () => {
+  const now = Date.now();
+  const next = (Math.floor(now / REPLAY_BUCKET_MS) + 1) * REPLAY_BUCKET_MS;
+  const seconds = Math.ceil((next - now) / 1000) + 5;
+  return Math.min(Math.max(seconds, DEFAULT_THROTTLE_DELAY), MAX_THROTTLE_DELAY);
 };
 
 // Fast 3-model panel verdict (~10s) — one entry per claim found in the
@@ -206,7 +230,20 @@ const perform = async (z, bundle) => {
   // typed-503 branch: the server produced these rows, and it produces an Error
   // row instead of charging.
   if (rows.every((r) => r.verdict === 'Error' && TRANSIENT_ROW_CODES.has(r.error_code))) {
-    const delay = DEFAULT_THROTTLE_DELAY;
+    // Into the NEXT hour bucket, not the default 60s — because of the key.
+    // The server stores every 200 under its Idempotency-Key for 24h, and
+    // this all-Error response IS a 200. A replay 60s later would carry the
+    // same key (same Zap, same input, same hour) and be handed the stored
+    // error rows straight back — then land here again, and again, every 60s
+    // until the hour ticked over. Waiting for the next bucket means the
+    // replay sends a new key and the server actually runs the panel.
+    //
+    // The price is a wait of up to an hour on a transient outage, where 60s
+    // would do if the server did not persist an uncharged all-Error body.
+    // That is the server's call to make (a short TTL for such responses is
+    // the clean fix, and `_finalize_200` already takes a per-response TTL);
+    // until it does, this is the honest client-side delay.
+    const delay = secondsToNextBucket();
     throw new z.errors.ThrottledError(
       `Lenz could not check this claim right now (${rows[0].error_code}) — nothing was charged. ` +
         `Retrying in ${delay}s.`,
