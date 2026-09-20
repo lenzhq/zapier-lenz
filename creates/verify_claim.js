@@ -353,6 +353,12 @@ const performResume = async (z, bundle) => {
     return {
       task_id: bundle.outputData.task_id,
       status: 'failed',
+      // `error` is always present on a failed status: every failed branch on
+      // the server goes through one builder (`_failed` in
+      // lenz/api/public_authed.py, "so the body cannot vary with poll
+      // timing"), and that builder has no `failure_detail`. The SDK's
+      // TaskStatus type still lists `failure_detail` as a back-compat key;
+      // the server it describes never sends it, so it is not read here.
       error: status.error || status.failure_reason || 'Pipeline failed.',
       failure_reason: status.failure_reason || '',
       failure_class: status.failure_class || '',
@@ -595,7 +601,10 @@ module.exports = {
       //   depth       The depth the verdict was PRODUCED with — not always
       //               the one requested. A Low request served from an existing
       //               Standard verdict is charged 5 and reads "standard".
-      //   visibility  "private" or "unlisted", echoing what was submitted.
+      //   visibility  "private", "unlisted" or "public". The first two are
+      //               what can be REQUESTED; "public" is read back when the
+      //               verdict was served from an existing verification
+      //               someone made public (lenz-io `Verification.visibility`).
       { key: 'depth', label: 'Depth' },
       { key: 'visibility', label: 'Visibility' },
     ],
