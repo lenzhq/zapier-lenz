@@ -186,15 +186,16 @@ more than it looks. Since 1.4.0:
 The last two are deliberate: they are answers about the input, so replaying them
 spends the run again for the same result.
 
-**One caveat on replays.** A run that waits and replays runs the action again. For
-the refusals above — out of credits, over a cap, Lenz at capacity — that costs
-nothing, because the call is turned away before any work happens. A *timeout* is
-different: the request may have reached Lenz and be running, and there is no way to
-tell from the Zap's side, so the replay can repeat the check and charge for it.
-`/verify` carries a per-run callback URL that keeps separate runs apart; `/assess`
-does not, and it charges before it starts. If that matters for your volume, keep an
-eye on it — a proper idempotency key is tracked in
-[#19](https://github.com/lenzhq/zapier-lenz/issues/19).
+**On replays.** A run that waits and replays runs the action again. For the refusals
+above — out of credits, over a cap, Lenz at capacity — that costs nothing, because
+the call is turned away before any work happens. A *timeout* is different: the
+request may have reached Lenz and be running, and there is no way to tell from the
+Zap's side. Both claim-checking actions guard against paying twice for it. Verify a
+Claim carries a per-run callback URL that keeps runs apart. Assess (Fast) sends an
+idempotency key built from the Zap, the input and the current hour, so a replay
+within the hour gets the answer Lenz already produced instead of a second panel.
+The one edge that follows: if a single Zap sends the *same* text twice on purpose
+within one hour, the second run gets the first answer rather than a fresh check.
 
 A call makes **one attempt** and lets Zapier do any waiting. The SDK used to retry
 up to four times inside one run and could sleep a stated wait of up to a minute —

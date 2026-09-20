@@ -98,6 +98,48 @@ const shapeRow = (c) => ({
   identified_claims: Array.isArray(c.identified_claims) ? c.identified_claims : [],
 });
 
+// Width of the replay window, in ms. One hour.
+const REPLAY_BUCKET_MS = 60 * 60 * 1000;
+
+// The `Idempotency-Key` for this run — the one thing that stops a Zapier
+// replay from charging a second panel for an answer the server already gave
+// (#19).
+//
+// The problem it solves: `/assess` debits before the panel runs. When our
+// 28s abort fires on a request the server had already accepted, lib/errors.js
+// maps that to ThrottledError and Zapier REPLAYS the step — a fresh process,
+// a fresh SDK client, and so a fresh random key. The server sees a new
+// request and runs (and charges) the panel again.
+//
+// What a key needs to be: stable across the replay of ONE run, and different
+// for every other run. Zapier exposes no run id, so this derives one from the
+// three things a replay does share with its original — the Zap, the input,
+// and (near enough) the time — and hashes them so the header carries no
+// user text.
+//
+// The hour bucket is the compromise, and it is deliberate. The SDK warns
+// against a purely content-derived key: "an identical claim sent an hour
+// later is a new question, and a content-derived key would replay the first
+// answer for 24h" (its 2.12.0 changelog). Bucketing by hour cuts that 24h to
+// the window a replay actually lives in. The cost is the edge case where one
+// Zap sends the same text twice ON PURPOSE within one hour and wanted two
+// independent panels — it gets the first answer twice. Rarer, and cheaper,
+// than paying for work already received. A replay that straddles :00 gets a
+// new bucket and can still double-run; accepted rather than closed, because
+// the SDK sends one key and carrying two would mean two requests.
+//
+// No `zap.id` (the editor, appTester) means no stable identity to hang a key
+// on, so return `undefined` and let the SDK generate its random one — that is
+// strictly what happened before this existed, not a new behaviour.
+const replayKey = (z, bundle) => {
+  const zapId = bundle.meta && bundle.meta.zap && bundle.meta.zap.id;
+  if (!zapId) return undefined;
+  const bucket = Math.floor(Date.now() / REPLAY_BUCKET_MS);
+  const text = (bundle.inputData && bundle.inputData.text) || '';
+  const language = (bundle.inputData && bundle.inputData.language) || '';
+  return z.hash('sha256', `${zapId}|${bucket}|${language}|${text}`);
+};
+
 // Fast 3-model panel verdict (~10s) — one entry per claim found in the
 // text. Well under Zapier's 30s action timeout, so a live run is a plain
 // sync call. Editor testing (isLoadingSample) returns stubbed sample data and
@@ -117,6 +159,10 @@ const perform = async (z, bundle) => {
     .assess({
       text: bundle.inputData.text,
       language: bundle.inputData.language || undefined,
+      // Stable across a Zapier replay of THIS run, different for the next
+      // one. See replayKey for why it is built the way it is. `undefined`
+      // lets the SDK fall back to its own random per-invocation key.
+      idempotencyKey: replayKey(z, bundle),
       // Pinned per call, NOT left to the client-wide value. Since lenz-io
       // 2.12.0 `assess` waits `max(client timeoutMs, 45s)` unless the call
       // says otherwise — a floor chosen for scripts, where a slow panel is

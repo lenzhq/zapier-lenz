@@ -699,6 +699,73 @@ describe('creates.assess', () => {
     );
   });
 
+  // #19. A Zapier replay is a fresh process with a fresh SDK client, so the
+  // SDK's own random per-invocation key does not survive it — the replayed
+  // request looks new to the server and is charged again. The key has to be
+  // derived from what the replay shares with its original.
+  describe('replay idempotency key', () => {
+    const live = (over = {}) => ({
+      authData: { apiKey: 'lenz_good' },
+      inputData: { text: 'The tower is tall.', language: 'en' },
+      meta: { zap: { id: 12345 } },
+      ...over,
+    });
+    const keyOf = (client) => client.assess.mock.calls[0][0].idempotencyKey;
+
+    it('sends a key derived from the Zap, the input and the hour — the same one on a replay', async () => {
+      const client = mockClient({ assess: jest.fn().mockResolvedValue({ claims: [] }) });
+      LenzClient.mockImplementation(() => client);
+
+      await appTester(App.creates.assess.operation.perform, live());
+      const first = keyOf(client);
+      expect(first).toMatch(/^[0-9a-f]{64}$/);
+
+      // A replay: same bundle, new process. Modelled as a second call.
+      client.assess.mockClear();
+      await appTester(App.creates.assess.operation.perform, live());
+      expect(keyOf(client)).toBe(first);
+    });
+
+    it('differs for a different Zap, input, or language', async () => {
+      const client = mockClient({ assess: jest.fn().mockResolvedValue({ claims: [] }) });
+      LenzClient.mockImplementation(() => client);
+
+      await appTester(App.creates.assess.operation.perform, live());
+      const base = keyOf(client);
+
+      for (const variant of [
+        live({ meta: { zap: { id: 99999 } } }),
+        live({ inputData: { text: 'A different claim.', language: 'en' } }),
+        live({ inputData: { text: 'The tower is tall.', language: 'es' } }),
+      ]) {
+        client.assess.mockClear();
+        await appTester(App.creates.assess.operation.perform, variant);
+        expect(keyOf(client)).not.toBe(base);
+      }
+    });
+
+    // No text ever crosses the wire in the header: the key is a digest.
+    it('is a digest, not the input', async () => {
+      const client = mockClient({ assess: jest.fn().mockResolvedValue({ claims: [] }) });
+      LenzClient.mockImplementation(() => client);
+
+      await appTester(App.creates.assess.operation.perform, live());
+      expect(keyOf(client)).not.toContain('tower');
+    });
+
+    // No `zap.id` means no stable identity to key on. Sending `undefined`
+    // hands the choice back to the SDK, which generates its random key —
+    // exactly the behaviour before this existed. Deriving one from text
+    // alone would make two Zaps that assess the same claim share an answer.
+    it('sends no key without a zap id, leaving the SDK default in place', async () => {
+      const client = mockClient({ assess: jest.fn().mockResolvedValue({ claims: [] }) });
+      LenzClient.mockImplementation(() => client);
+
+      await appTester(App.creates.assess.operation.perform, live({ meta: {} }));
+      expect(keyOf(client)).toBeUndefined();
+    });
+  });
+
   // A transient failure inside a 200. The same condition thrown as a typed
   // 503 is mapped to ThrottledError and replayed (test/errors.test.js), so a
   // row-shaped one must not quietly read as "checked and did not pass" —

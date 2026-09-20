@@ -13,6 +13,12 @@ mechanics live in [README.md](README.md#building-and-pushing).
   step can branch on the reason rather than on a bare "Error". Error rows
   cost nothing. Other Claims Found lists the claims in a compound input that
   were not the one assessed, to fan out into their own steps.
+- Fix create/assess: a run that waits and replays after a timeout no longer
+  pays for a second panel. The action sends an idempotency key built from the
+  Zap, the input and the current hour, so Lenz returns the answer it already
+  produced. The one edge: the same Zap sending the same text twice on purpose
+  within one hour gets the first answer twice. Verify a Claim was already
+  covered by its per-run callback URL; Extract Claims is free.
 - Fix create/assess: when every claim comes back as an `Error` row for a
   reason that passes on its own — `upstream_unavailable` or `timeout` — the
   run waits and replays instead of returning `Passed: false`. Those rows
