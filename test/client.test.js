@@ -112,7 +112,7 @@ describe('lenzClient', () => {
     );
     globalThis.fetch = spy;
 
-    const client = lenzClient({ authData: { apiKey: 'lenz_test' } });
+    const client = lenzClient({ authData: { access_token: 'lenz_test' } });
     await client.usage();
 
     expect(spy).toHaveBeenCalled();
@@ -123,7 +123,7 @@ describe('lenzClient', () => {
   });
 
   it('returns a real Lenz instance', () => {
-    expect(lenzClient({ authData: { apiKey: 'lenz_test' } })).toBeInstanceOf(Lenz);
+    expect(lenzClient({ authData: { access_token: 'lenz_test' } })).toBeInstanceOf(Lenz);
   });
 });
 
@@ -173,7 +173,7 @@ describe('retry budget fits inside Zapier’s run budget', () => {
     );
     globalThis.fetch = spy;
 
-    const client = lenzClient({ authData: { apiKey: 'lenz_test' } });
+    const client = lenzClient({ authData: { access_token: 'lenz_test' } });
     const startedAt = Date.now();
     const err = await client.usage().then(
       () => null,
@@ -203,7 +203,7 @@ describe('retry budget fits inside Zapier’s run budget', () => {
     const spy = jest.fn().mockRejectedValue(new Error('ECONNRESET'));
     globalThis.fetch = spy;
 
-    const client = lenzClient({ authData: { apiKey: 'lenz_test' } });
+    const client = lenzClient({ authData: { access_token: 'lenz_test' } });
     const startedAt = Date.now();
     await client.usage().catch(() => {});
 
@@ -220,7 +220,7 @@ describe('retry budget fits inside Zapier’s run budget', () => {
     );
     globalThis.fetch = spy;
 
-    const client = lenzClient({ authData: { apiKey: 'lenz_test' } });
+    const client = lenzClient({ authData: { access_token: 'lenz_test' } });
     await client.usage().catch(() => {});
 
     expect(spy).toHaveBeenCalledTimes(1);

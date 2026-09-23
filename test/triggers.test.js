@@ -32,7 +32,7 @@ describe('triggers.new_verification', () => {
     });
     LenzClient.mockImplementation(() => client);
 
-    const bundle = { authData: { apiKey: 'lenz_good' } };
+    const bundle = { authData: { access_token: 'lenz_good' } };
     const result = await appTester(App.triggers.new_verification.operation.perform, bundle);
 
     expect(result).toEqual([
@@ -51,7 +51,7 @@ describe('triggers.new_verification', () => {
     LenzClient.mockImplementation(() => client);
 
     await appTester(App.triggers.new_verification.operation.perform, {
-      authData: { apiKey: 'lenz_good' },
+      authData: { access_token: 'lenz_good' },
     });
 
     expect(client.request).toHaveBeenCalledWith(
@@ -75,7 +75,7 @@ describe('triggers.new_verification', () => {
     });
     LenzClient.mockImplementation(() => client);
 
-    const bundle = { authData: { apiKey: 'lenz_good' } };
+    const bundle = { authData: { access_token: 'lenz_good' } };
     const result = await appTester(App.triggers.new_verification.operation.perform, bundle);
 
     expect(result[0].key_finding).toBe('Official figures confirm 330 metres.');
@@ -86,7 +86,7 @@ describe('triggers.new_verification', () => {
     const client = mockClient({ items: [], total: 0, page: 1, page_size: 100 });
     LenzClient.mockImplementation(() => client);
 
-    const bundle = { authData: { apiKey: 'lenz_good' } };
+    const bundle = { authData: { access_token: 'lenz_good' } };
     const result = await appTester(App.triggers.new_verification.operation.perform, bundle);
 
     expect(result).toEqual([]);
@@ -120,7 +120,7 @@ describe('triggers.new_verification on the wire', () => {
     globalThis.fetch = spy;
 
     await appTester(App.triggers.new_verification.operation.perform, {
-      authData: { apiKey: 'lenz_good' },
+      authData: { access_token: 'lenz_good' },
     });
 
     expect(spy).toHaveBeenCalled();

@@ -285,7 +285,48 @@ const perform = async (z, bundle) => {
 // Lenz's webhook POST is only the wake-up signal here — the terminal result
 // is fetched fresh via getStatus() so this never depends on how Zapier
 // represents the raw callback body (bundle.cleanedRequest / rawRequest).
+// SPIKE diagnostic (Lenz#873, plan D3b): what does Zapier actually hand the
+// resume, and does Lenz's signature verify over it? Logs shapes, header names
+// and outcomes only — never the body, the signature or the secret. Removed
+// once the spike's questions are answered.
+const logResumeShape = (z, bundle) => {
+  const { verifySignature, SIGNATURE_HEADER } = require('lenz-io');
+  const raw = bundle.rawRequest;
+  const rawType = raw === undefined ? 'undefined' : Array.isArray(raw) ? 'array' : typeof raw;
+  const rawKeys = raw && typeof raw === 'object' ? Object.keys(raw).sort().join(',') : '-';
+  const headers = (raw && raw.headers) || {};
+  const headerNames = Object.keys(headers).map((h) => h.toLowerCase()).sort();
+  const cleaned = bundle.cleanedRequest;
+  z.console.log(
+    `[spike] resume bundle keys=${Object.keys(bundle).sort().join(',')} rawRequest=${rawType}` +
+      ` rawKeys=${rawKeys} headers=${headerNames.join(',')}` +
+      ` cleanedKeys=${cleaned && typeof cleaned === 'object' ? Object.keys(cleaned).sort().join(',') : typeof cleaned}`,
+  );
+  const content = raw && typeof raw === 'object' ? raw.content : undefined;
+  const sigKey = Object.keys(headers).find((h) => h.toLowerCase() === SIGNATURE_HEADER.toLowerCase());
+  const signature = sigKey ? String(headers[sigKey]) : '';
+  const secret = bundle.authData && bundle.authData.webhook_secret;
+  let outcome;
+  if (typeof content !== 'string') outcome = `no raw content (type ${typeof content})`;
+  else if (!signature) outcome = 'no signature header';
+  else if (!secret) outcome = 'no webhook_secret in authData';
+  else {
+    try {
+      verifySignature(content, signature, secret);
+      outcome = 'VERIFIED';
+    } catch (err) {
+      outcome = `failed: ${err && err.name}: ${err && err.message}`;
+    }
+  }
+  z.console.log(`[spike] resume signature check: ${outcome} (content length ${typeof content === 'string' ? content.length : '-'})`);
+};
+
 const performResume = async (z, bundle) => {
+  try {
+    logResumeShape(z, bundle);
+  } catch (err) {
+    z.console.log(`[spike] resume diagnostic threw: ${err && err.message}`);
+  }
   const client = lenzClient(bundle);
   const status = await client
     .getStatus(bundle.outputData.task_id)
