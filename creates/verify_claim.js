@@ -220,9 +220,12 @@ const perform = async (z, bundle) => {
     const usage = await client.usage().catch((err) => mapLenzError(z, err));
     if (usage && usage.has_webhook_secret === false) {
       throw new z.errors.Error(
-        'Verify a Claim needs a webhook secret on this API key, and this key doesn\'t have one yet. ' +
-          'Go to lenz.io → API key settings → "Generate webhook secret" (Webhooks panel) once, then try this step again. ' +
-          '(Assess, Extract Claims, and Ask Follow-Up work without a secret.)',
+        // Under OAuth the secret belongs to the connection (the grant), minted
+        // when the account is connected; `has_webhook_secret` reports the
+        // grant's (OAuthPrincipal.hmac_secret). The only fix is to reconnect.
+        'Verify a Claim needs this Lenz connection to have a webhook signing secret, and it ' +
+          'doesn\'t. Reconnect your Lenz account (Connect a new account) and try this step again. ' +
+          '(Assess, Extract Claims, and Ask Follow-Up work without it.)',
         'WebhookSecretMissing',
         422,
       );
@@ -273,9 +276,9 @@ const perform = async (z, bundle) => {
       // reached the user anyway.
       if (err instanceof LenzError && err.body && err.body.code === 'webhook_secret_missing') {
         throw new z.errors.HaltedError(
-          'This API key doesn\'t have a webhook secret yet. Go to lenz.io → API key ' +
-            'settings → "Generate webhook secret" (Webhooks panel) once, then turn this Zap ' +
-            'back on.',
+          'This Lenz connection has no webhook signing secret, so Verify a Claim cannot ' +
+            'receive its result. Reconnect your Lenz account (Connect a new account), then ' +
+            'turn this Zap back on.',
         );
       }
       return mapLenzError(z, err);
@@ -451,7 +454,7 @@ module.exports = {
         type: 'text',
         required: true,
         helpText:
-          'The claim to investigate in depth. Up to 10,000 characters; longer input is cut off without warning. This action needs a webhook secret on your Lenz API key — generate it once under API key settings → Webhooks. Clicking Test shows an example verdict so you can map the output fields; a turned-on Zap verifies this claim and returns the real result.',
+          'The claim to investigate in depth. Up to 10,000 characters; longer input is cut off without warning. Clicking Test shows an example verdict so you can map the output fields; a turned-on Zap verifies this claim and returns the real result.',
       },
       {
         key: 'sourceUrl',

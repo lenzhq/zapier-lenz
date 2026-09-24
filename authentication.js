@@ -1,6 +1,6 @@
 'use strict';
 
-const { lenzClient, USER_AGENT } = require('./client');
+const { lenzClient, fetchAsZapier } = require('./client');
 const { mapLenzError } = require('./lib/errors');
 
 // OAuth 2.0 against Lenz's own issuer (Lenz#873). A user connects by signing in
@@ -43,20 +43,37 @@ const basicAuth = () =>
   'Basic ' +
   Buffer.from(`${process.env.CLIENT_ID || ''}:${process.env.CLIENT_SECRET || ''}`).toString('base64');
 
-const postToken = (z, form) =>
-  z.request({
-    url: TOKEN_URL,
+// NOT z.request, on purpose. With `autoRefresh: true`, zapier-platform-core
+// puts `throwForStaleAuth` on every z.request response, and it throws a bare
+// RefreshAuthError on ANY 401 before the app sees the body —
+// `skipThrowForStatus` does not stop it (create-app-request-client.js). The
+// token endpoint answers a wrong client secret with 401 `invalid_client`, so
+// through z.request that would surface as a "refresh" error at connect time,
+// and as a refresh-inside-a-refresh during refreshAccessToken. `fetchAsZapier`
+// is plain fetch with this app's User-Agent (the same one the SDK uses), so
+// every status reaches tokenResponse and its OAuth `error` code survives. A
+// side effect worth keeping: neither the token nor the webhook secret is
+// written to Zapier's HTTP request log.
+const fetchJson = async (url, init) => {
+  const response = await fetchAsZapier(url, init);
+  let json = {};
+  try {
+    json = await response.json();
+  } catch (_err) {
+    json = {};
+  }
+  return { status: response.status, json: json && typeof json === 'object' ? json : {} };
+};
+
+const postToken = (form) =>
+  fetchJson(TOKEN_URL, {
     method: 'POST',
     headers: {
       Authorization: basicAuth(),
       'Content-Type': 'application/x-www-form-urlencoded',
       Accept: 'application/json',
-      'User-Agent': USER_AGENT,
     },
     body: new URLSearchParams(form).toString(),
-    // Read the OAuth `error` code ourselves rather than letting a 4xx throw a
-    // generic HTTP error — see tokenResponse.
-    skipThrowForStatus: true,
   });
 
 // SPIKE: the error mapping here is the minimal one. The reviewed plan (D7,
@@ -76,11 +93,9 @@ const tokenResponse = (response) => {
 // Minted once per grant and kept by the server; re-reading it returns the
 // same value. Failing here fails the CONNECTION, visibly, instead of a later
 // Verify run.
-const mintWebhookSecret = async (z, accessToken) => {
-  const response = await z.request({
-    url: WEBHOOK_SECRET_URL,
-    headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json', 'User-Agent': USER_AGENT },
-    skipThrowForStatus: true,
+const mintWebhookSecret = async (accessToken) => {
+  const response = await fetchJson(WEBHOOK_SECRET_URL, {
+    headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
   });
   const secret = response.json && response.json.webhook_secret;
   if (response.status !== 200 || typeof secret !== 'string' || !secret) {
@@ -106,8 +121,8 @@ const getAccessToken = async (z, bundle) => {
   if (bundle.inputData.code_verifier) {
     form.code_verifier = bundle.inputData.code_verifier;
   }
-  const body = tokenResponse(await postToken(z, form));
-  const webhookSecret = await mintWebhookSecret(z, body.access_token);
+  const body = tokenResponse(await postToken(form));
+  const webhookSecret = await mintWebhookSecret(body.access_token);
   return {
     access_token: body.access_token,
     refresh_token: body.refresh_token,
@@ -117,7 +132,7 @@ const getAccessToken = async (z, bundle) => {
 
 const refreshAccessToken = async (z, bundle) => {
   const body = tokenResponse(
-    await postToken(z, {
+    await postToken({
       grant_type: 'refresh_token',
       refresh_token: bundle.authData.refresh_token,
     }),

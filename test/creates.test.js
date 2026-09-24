@@ -95,7 +95,7 @@ describe('creates.verify_claim', () => {
     };
 
     await expect(appTester(App.creates.verify_claim.operation.perform, bundle)).rejects.toThrow(
-      /webhook secret/i,
+      /reconnect your Lenz account/i,
     );
     expect(client.verify).not.toHaveBeenCalled();
   });
@@ -134,7 +134,7 @@ describe('creates.verify_claim', () => {
     };
 
     await expect(appTester(App.creates.verify_claim.operation.perform, bundle)).rejects.toThrow(
-      /generate webhook secret/i,
+      /reconnect your Lenz account/i,
     );
   });
 

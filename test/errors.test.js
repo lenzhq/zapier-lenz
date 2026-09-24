@@ -323,9 +323,11 @@ describe('quota (402) → HaltedError', () => {
     });
 
     expect(err.name).toBe('HaltedError');
-    expect(err.message).toContain('webhook secret');
-    // Still actionable, not just silent: it names where to go.
-    expect(err.message).toContain('API key');
+    expect(err.message).toContain('webhook signing secret');
+    // Still actionable, not just silent: under OAuth the secret belongs to the
+    // connection, so the fix it names is reconnecting, not API key settings.
+    expect(err.message).toMatch(/reconnect/i);
+    expect(err.message).not.toContain('API key');
   });
 });
 
