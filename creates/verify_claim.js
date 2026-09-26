@@ -1,6 +1,6 @@
 'use strict';
 
-const { LenzError } = require('lenz-io');
+const { LenzError, LenzWebhooks } = require('lenz-io');
 const { mapLenzError } = require('../lib/errors');
 const { lenzClient } = require('../client');
 const { languageField } = require('../lib/languages');
@@ -220,9 +220,12 @@ const perform = async (z, bundle) => {
     const usage = await client.usage().catch((err) => mapLenzError(z, err));
     if (usage && usage.has_webhook_secret === false) {
       throw new z.errors.Error(
-        'Verify a Claim needs a webhook secret on this API key, and this key doesn\'t have one yet. ' +
-          'Go to lenz.io → API key settings → "Generate webhook secret" (Webhooks panel) once, then try this step again. ' +
-          '(Assess, Extract Claims, and Ask Follow-Up work without a secret.)',
+        // Under OAuth the secret belongs to the connection (the grant), minted
+        // when the account is connected; `has_webhook_secret` reports the
+        // grant's (OAuthPrincipal.hmac_secret). The only fix is to reconnect.
+        'Verify a Claim needs this Lenz connection to have a webhook signing secret, and it ' +
+          'doesn\'t. Reconnect your Lenz account (Connect a new account) and try this step again. ' +
+          '(Assess, Extract Claims, and Ask Follow-Up work without it.)',
         'WebhookSecretMissing',
         422,
       );
@@ -273,28 +276,100 @@ const perform = async (z, bundle) => {
       // reached the user anyway.
       if (err instanceof LenzError && err.body && err.body.code === 'webhook_secret_missing') {
         throw new z.errors.HaltedError(
-          'This API key doesn\'t have a webhook secret yet. Go to lenz.io → API key ' +
-            'settings → "Generate webhook secret" (Webhooks panel) once, then turn this Zap ' +
-            'back on.',
+          'This Lenz connection has no webhook signing secret, so Verify a Claim cannot ' +
+            'receive its result. Reconnect your Lenz account (Connect a new account), then ' +
+            'turn this Zap back on.',
         );
       }
       return mapLenzError(z, err);
     });
 };
 
-// Lenz's webhook POST is only the wake-up signal here — the terminal result
-// is fetched fresh via getStatus() so this never depends on how Zapier
-// represents the raw callback body (bundle.cleanedRequest / rawRequest).
-const performResume = async (z, bundle) => {
-  const client = lenzClient(bundle);
-  const status = await client
-    .getStatus(bundle.outputData.task_id)
-    .catch((err) => mapLenzError(z, err));
+// Verify's finishing step (Lenz#873, plan D3b).
+//
+// Under OAuth the access token lives an hour. A Verify parks for ~90 s between
+// submit and callback, so some resumes find their token already expired, and
+// a getStatus() call would 401. Zapier would then refresh, but whether it
+// RETRIES performResume after the refresh is not something its platform
+// guarantees (zapier-platform#664 shows it skipping the retry elsewhere). The
+// loser would be a paid, completed result.
+//
+// Lenz's callback already carries that result, signed with the connection's
+// webhook secret (minted in getAccessToken). So the finishing step reads it
+// from the callback and makes NO API call — an expired token cannot touch it:
+//
+//   Lenz ──signed POST──▶ Zapier callback URL ──▶ performResume
+//                                                   │
+//     raw body + signature + secret present? ──no───┼─────────▶ getStatus (fallback)
+//       LenzWebhooks.parse: HMAC ok, <300 s old? ─no┤
+//       task_id is THIS Verify's?  ─────────────no──┤
+//       completed with a result / failed? ──────no──┘
+//                                   │yes
+//                   shape from the callback: no token, no API call
+//
+// The task-id check matters: the secret is per CONNECTION, not per Verify, so
+// a genuine signed body for another Verify on the same account must never
+// become this one's answer. Anything that does not pass every check falls
+// back to getStatus, exactly what this step did before OAuth.
+//
+// `needs_input` is left to the fallback on purpose: it is not a charged
+// result, and its shape (shapeNeedsInput) is built from the status route.
 
-  if (status.status === 'completed' && status.result) {
-    const result = status.result;
+// Zapier hands a callback's headers with an `Http-` prefix
+// (`Http-X-Lenz-Signature`); the SDK looks `X-Lenz-Signature` up exactly, in
+// lower case or in upper case. Normalise to bare lower-case names.
+const callbackHeaders = (headers) => {
+  const out = {};
+  for (const [name, value] of Object.entries(headers || {})) {
+    out[name.toLowerCase().replace(/^http-/, '')] = String(value);
+  }
+  return out;
+};
+
+// The shaped output from the signed callback, or `{ fallback: <reason> }`.
+// The reason is logged, never the body, the signature or the secret.
+const fromSignedCallback = (bundle) => {
+  const secret = bundle.authData && bundle.authData.webhook_secret;
+  const raw = bundle.rawRequest;
+  const content = raw && typeof raw === 'object' ? raw.content : undefined;
+  if (!secret) return { fallback: 'no webhook_secret on the connection' };
+  if (typeof content !== 'string' || !content) return { fallback: 'no raw callback body' };
+
+  let event;
+  try {
+    event = new LenzWebhooks({ secret }).parse(content, callbackHeaders(raw.headers));
+  } catch (err) {
+    return { fallback: `callback rejected: ${(err && err.message) || 'unparseable'}` };
+  }
+
+  const taskId = bundle.outputData && bundle.outputData.task_id;
+  if (!taskId || event.taskId !== taskId) return { fallback: 'callback is for a different task' };
+
+  if (event.event === 'verification.completed') {
+    const result = event.result;
+    if (!result || typeof result !== 'object' || Object.keys(result).length === 0) {
+      return { fallback: 'completed callback carried no result' };
+    }
+    return { output: shapeCompleted(taskId, result) };
+  }
+  if (event.event === 'verification.failed') {
     return {
-      task_id: bundle.outputData.task_id,
+      output: shapeFailed(taskId, {
+        error: event.error,
+        failure_reason: event.raw && event.raw.failure_reason,
+        failure_class: event.failureClass,
+        retryable: event.retryable,
+      }),
+    };
+  }
+  return { fallback: `event ${event.event || 'unknown'} is read from the status route` };
+};
+
+// Both the callback and getStatus() build `result` with the same server
+// function (build_verification_detail in lenz/api/verification_payload.py), so
+// one shaper serves both paths.
+const shapeCompleted = (taskId, result) => ({
+      task_id: taskId,
       status: 'completed',
       passed: isPassingVerdict(result.verdict),
       verification_id: result.verification_id || null,
@@ -331,7 +406,47 @@ const performResume = async (z, bundle) => {
       visibility: result.visibility || '',
       ...NO_FAILURE,
       ...NO_INPUT_NEEDED,
-    };
+});
+
+// A terminal failure. failure_class is a closed set (upstream_unavailable |
+// insufficient_evidence | invalid_input | cancelled | internal); retryable is
+// true only for upstream_unavailable. Both are absent on verifications older
+// than 2026-08 — explicit fields so a Filter/Paths step can branch on WHY,
+// not parse prose.
+//
+// `error` is always present on a failed status: every failed branch on the
+// server goes through one builder (`_failed` in lenz/api/public_authed.py,
+// "so the body cannot vary with poll timing"), and that builder has no
+// `failure_detail`. The SDK's TaskStatus type still lists `failure_detail`
+// as a back-compat key; the server it describes never sends it.
+const shapeFailed = (taskId, failed) => ({
+  task_id: taskId,
+  status: 'failed',
+  error: failed.error || failed.failure_reason || 'Pipeline failed.',
+  failure_reason: failed.failure_reason || '',
+  failure_class: failed.failure_class || '',
+  retryable: failed.retryable ?? null,
+  ...NO_INPUT_NEEDED,
+  ...NO_VERDICT,
+});
+
+const performResume = async (z, bundle) => {
+  const signed = fromSignedCallback(bundle);
+  if (signed.output) {
+    z.console.log('Verify result read from the signed Lenz callback (no API call).');
+    return signed.output;
+  }
+  // Every fallback reason is recorded: it is the one path where an expired
+  // token can still reach this step, so how often it runs is worth seeing.
+  z.console.log(`Verify result read from the status route: ${signed.fallback}.`);
+
+  const client = lenzClient(bundle);
+  const status = await client
+    .getStatus(bundle.outputData.task_id)
+    .catch((err) => mapLenzError(z, err));
+
+  if (status.status === 'completed' && status.result) {
+    return shapeCompleted(bundle.outputData.task_id, status.result);
   }
 
   if (status.status === 'needs_input') {
@@ -344,28 +459,8 @@ const performResume = async (z, bundle) => {
     };
   }
 
-  // A terminal failure. failure_class is a closed set (upstream_unavailable |
-  // insufficient_evidence | invalid_input | cancelled | internal); retryable is
-  // true only for upstream_unavailable. Both are absent on verifications older
-  // than 2026-08 — explicit fields so a Filter/Paths step can branch on WHY,
-  // not parse prose.
   if (status.status === 'failed') {
-    return {
-      task_id: bundle.outputData.task_id,
-      status: 'failed',
-      // `error` is always present on a failed status: every failed branch on
-      // the server goes through one builder (`_failed` in
-      // lenz/api/public_authed.py, "so the body cannot vary with poll
-      // timing"), and that builder has no `failure_detail`. The SDK's
-      // TaskStatus type still lists `failure_detail` as a back-compat key;
-      // the server it describes never sends it, so it is not read here.
-      error: status.error || status.failure_reason || 'Pipeline failed.',
-      failure_reason: status.failure_reason || '',
-      failure_class: status.failure_class || '',
-      retryable: status.retryable ?? null,
-      ...NO_INPUT_NEEDED,
-      ...NO_VERDICT,
-    };
+    return shapeFailed(bundle.outputData.task_id, status);
   }
 
   // Anything else: Lenz's callback fired before the pipeline reached a terminal
@@ -410,7 +505,7 @@ module.exports = {
         type: 'text',
         required: true,
         helpText:
-          'The claim to investigate in depth. Up to 10,000 characters; longer input is cut off without warning. This action needs a webhook secret on your Lenz API key — generate it once under API key settings → Webhooks. Clicking Test shows an example verdict so you can map the output fields; a turned-on Zap verifies this claim and returns the real result.',
+          'The claim to investigate in depth. Up to 10,000 characters; longer input is cut off without warning. Clicking Test shows an example verdict so you can map the output fields; a turned-on Zap verifies this claim and returns the real result.',
       },
       {
         key: 'sourceUrl',

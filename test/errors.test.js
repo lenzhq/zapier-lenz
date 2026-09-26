@@ -73,7 +73,7 @@ async function captureError(performFn, bundle) {
   );
 }
 
-const AUTH = { authData: { apiKey: 'lenz_good' } };
+const AUTH = { authData: { access_token: 'lenz_good' } };
 
 describe('quota (402) → HaltedError', () => {
   it('halts rather than erroring, so running out of credits cannot disable a Zap', async () => {
@@ -323,9 +323,11 @@ describe('quota (402) → HaltedError', () => {
     });
 
     expect(err.name).toBe('HaltedError');
-    expect(err.message).toContain('webhook secret');
-    // Still actionable, not just silent: it names where to go.
-    expect(err.message).toContain('API key');
+    expect(err.message).toContain('webhook signing secret');
+    // Still actionable, not just silent: under OAuth the secret belongs to the
+    // connection, so the fix it names is reconnecting, not API key settings.
+    expect(err.message).toMatch(/reconnect/i);
+    expect(err.message).not.toContain('API key');
   });
 });
 
@@ -543,9 +545,8 @@ describe('quota fallbacks when the server omits fields', () => {
 
 describe('editor-test path (isLoadingSample)', () => {
   it('maps a rejected key on the Test click, not just on a live run', async () => {
-    // verify_claim probes /me/usage while the user is building the Zap. That
-    // is the FIRST place a revoked key surfaces, so it must produce the same
-    // ExpiredAuthError a live run would.
+    // verify_claim probes /me/usage while the user is building the Zap. A 401
+    // there must produce the same RefreshAuthError a live run would.
     const err401 = new LenzAuthError({ message: 'Unauthorized', statusCode: 401 });
     LenzClient.mockImplementation(() =>
       mockClient({ usage: jest.fn().mockRejectedValue(err401) }),
@@ -557,12 +558,15 @@ describe('editor-test path (isLoadingSample)', () => {
       meta: { isLoadingSample: true },
     });
 
-    expect(err.name).toBe('ExpiredAuthError');
+    expect(err.name).toBe('RefreshAuthError');
   });
 });
 
-describe('bad key (401) → ExpiredAuthError', () => {
-  it('prompts a reconnect rather than leaving the user to decode a 401', async () => {
+// Under OAuth a 401 is an expired one-hour token. The SDK owns the transport,
+// so Zapier's own middleware never sees the 401: this mapping is the only
+// thing that makes Zapier refresh. (Lenz#873)
+describe('401 → RefreshAuthError', () => {
+  it('asks Zapier to refresh the token and retry', async () => {
     const err401 = new LenzAuthError({ message: 'Unauthorized', statusCode: 401 });
     LenzClient.mockImplementation(() =>
       mockClient({ assess: jest.fn().mockRejectedValue(err401) }),
@@ -573,7 +577,7 @@ describe('bad key (401) → ExpiredAuthError', () => {
       inputData: { text: 'x' },
     });
 
-    expect(err.name).toBe('ExpiredAuthError');
+    expect(err.name).toBe('RefreshAuthError');
   });
 });
 

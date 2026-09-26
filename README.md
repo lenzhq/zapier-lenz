@@ -145,7 +145,7 @@ nothing to indicate it happened.
 
 **The trigger is account-wide, not key-wide.** It fires for every completed verification
 the account owns, whichever surface produced it — a check you ran on the website, through
-the MCP server, or with a different API key will start this Zap. Filter on something the
+the MCP server, or another connection will start this Zap. Filter on something the
 Zap can see (`domain`, `verdict`, `passed`) if you only want a subset.
 
 It reads up to 100 completions per poll. Zapier polls every 1-15 minutes, so an account
@@ -154,15 +154,44 @@ server's maximum page size, not a setting.
 
 ## Credentials
 
-You'll need a Lenz API key:
+Since 2.0.0 you connect by **signing in to Lenz**, not by pasting an API key.
 
-1. Sign up at [lenz.io/api-credentials](https://lenz.io/api-credentials) to get a key (starts with `lenz_`).
-2. In Zapier, when connecting the Lenz app, paste the key and Zapier will test it automatically against your account's usage endpoint.
+1. In Zapier, add a Lenz step and choose *Connect a new account*.
+2. Sign in to Lenz and approve the access Zapier asks for. Lenz asks every time you
+   connect and never remembers the answer; that is deliberate.
+3. Zapier tests the connection against your account's usage endpoint.
+
+The access asked for is exactly what the steps use: assess, verify, ask, extract, read your
+verification history, read your usage, and manage the connection's webhook secret. It never
+asks to delete anything. You can revoke it at any time from lenz.io; the next Zap run then
+asks you to reconnect.
+
+### Moving from 1.x (API key)
+
+Zapier cannot move a connection from an API key to a sign-in, so existing Zaps built on
+1.x keep using their API key until you switch them. To switch, open each Lenz step, choose
+*Connect a new account*, and sign in. The API-key version is retired on a date announced
+when 2.0.0 ships; Zaps still using it then will stop.
+
+### How the connection works (for maintainers)
+
+- OAuth 2.0 authorization code with PKCE against Lenz's own issuer
+  (`https://lenz.io/oauth2/authorize`, token at `https://lenz.io/api/v1/oauth/token`).
+  The client's credentials are the `CLIENT_ID` / `CLIENT_SECRET` environment values of the
+  Zapier version (`zapier env:set <version> …`), sent as HTTP Basic — the only method the
+  issuer accepts.
+- Access tokens last an hour and refresh automatically. A refresh failure is mapped by its
+  OAuth error code, the same way lenz-mcp does it: only `invalid_grant` asks the user to
+  reconnect; a misconfiguration on our side never does.
+- Connecting also fetches the connection's **webhook signing secret**
+  (`GET /me/webhook-secret`). Verify a Claim reads its result from Lenz's signed callback
+  with it, so a token that expired while the check ran cannot lose the result. If the
+  callback cannot be verified, the step falls back to fetching the result.
 
 ## Usage
 
 - **Verify a Claim takes ~90 seconds.** The Zap step will show as "waiting" while the pipeline runs — this is expected, not a stuck Zap.
-- **Verify a Claim** requires the connected API key to have webhook delivery enabled (an HMAC secret provisioned) — see the Lenz dashboard's API key settings if a submission fails immediately with a webhook-related error.
+- **Verify a Claim** needs the connection's webhook signing secret, which is fetched automatically when you connect. There is nothing to set up.
 - For **Ask Follow-Up**, chain it directly after **Verify a Claim** in the same Zap, mapping its `verification_id` output into the Ask step's Verification ID field.
 
 ### What happens when something goes wrong
@@ -177,9 +206,11 @@ more than it looks. Since 1.4.0:
 | Lenz at capacity, or providers down (503) | Waits the stated time and replays | No |
 | Assess (Fast): every claim came back `Error` with `upstream_unavailable` or `timeout` | Waits until the next hour begins and replays — Error rows are free, so nothing was charged. The wait is tied to the hour because the replay key is; a sooner replay would be handed the same stored rows | No |
 | Network drop, or a 5xx naming no reason | Waits 60s and replays | No |
-| No webhook secret on the key (Verify a Claim) | Halts with instructions | No |
+| No webhook secret on the connection (Verify a Claim) | Halts: reconnect your Lenz account | No |
 | Focus over 300 characters (Extract Claims) | Halts with instructions | No |
-| Key rejected (401) | Prompts you to reconnect | No |
+| Sign-in expired (401) | Refreshes the sign-in and retries | No |
+| Sign-in revoked at lenz.io | Prompts you to reconnect | No |
+| This integration's OAuth credentials rejected by Lenz | Fails the run; reconnecting will not help | Yes |
 | Claim could not be framed, text unreadable (typed 502) | Fails the run | Yes |
 | Private verification or blocked IP (403) | Fails the run | Yes |
 
