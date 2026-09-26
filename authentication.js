@@ -55,16 +55,32 @@ const basicAuth = () =>
 // side effect worth keeping: neither the token nor the webhook secret is
 // written to Zapier's HTTP request log.
 //
-// One retry on a TRANSPORT failure (no response at all), as lenz-mcp's
-// `_post` does: a dropped connection is the common transient, and a token
-// request is idempotent enough to repeat once — the server's 60 s reuse grace
-// hands a replayed refresh the same pair. A second failure is reported as
-// `transport_error` with status 0.
-const fetchJson = async (url, init) => {
+// Every attempt has its own deadline. Plain fetch waits minutes for a server
+// that accepted the connection and never answers, far past the ~30 s Zapier
+// gives a step, so without one the step would be killed by the platform and
+// the `transport_error` handling below would never run. The budget is sized
+// for the worst sequence, connect: one code exchange (never retried) plus the
+// secret mint (retried once) = 3 x 9 s = 27 s.
+//
+// `retry` is opt-in per call, and only where repeating is harmless (as
+// lenz-mcp's `_post` retries one dropped connection):
+//   - a REFRESH: the issuer's 60 s reuse grace hands a replayed refresh token
+//     the same pair, so a repeat right away cannot revoke anything;
+//   - the webhook-secret GET: minted once and kept, so re-reading is a no-op.
+// NOT the authorization-code exchange: a code is single-use. If the first POST
+// reached Lenz and only the response was lost, a repeat is `invalid_grant` —
+// and RFC 6749 lets the issuer revoke the tokens that code already minted.
+//
+// A failure with no response (dropped, refused, deadline hit) comes back as
+// status 0, `transport_error`.
+const ATTEMPT_TIMEOUT_MS = 9000;
+
+const fetchJson = async (url, init, { retry = false } = {}) => {
   let response;
-  for (let attempt = 0; attempt < 2 && !response; attempt += 1) {
+  const attempts = retry ? 2 : 1;
+  for (let attempt = 0; attempt < attempts && !response; attempt += 1) {
     try {
-      response = await fetchAsZapier(url, init);
+      response = await fetchAsZapier(url, { ...init, signal: AbortSignal.timeout(ATTEMPT_TIMEOUT_MS) });
     } catch (_err) {
       response = undefined;
     }
@@ -84,15 +100,19 @@ const fetchJson = async (url, init) => {
 };
 
 const postToken = (form) =>
-  fetchJson(TOKEN_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: basicAuth(),
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Accept: 'application/json',
+  fetchJson(
+    TOKEN_URL,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: basicAuth(),
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'application/json',
+      },
+      body: new URLSearchParams(form).toString(),
     },
-    body: new URLSearchParams(form).toString(),
-  });
+    { retry: form.grant_type === 'refresh_token' },
+  );
 
 // Token-endpoint failures are mapped by the OAuth `error` CODE, never the
 // HTTP status — ported from lenz-mcp (src/lenz_mcp/exchange.py `_failure`), the
@@ -104,11 +124,15 @@ const postToken = (form) =>
 //     refresh  → ExpiredAuthError: Zapier asks the user to reconnect. Right,
 //                because reconnecting is the only fix.
 //   invalid_client, invalid_request, unsupported_grant_type,
-//   unauthorized_client, invalid_target, invalid_scope, a malformed 200
+//   unauthorized_client, invalid_target, invalid_scope
 //     both     → a plain Error, logged loudly, NO reconnect prompt. These mean
 //                THIS APP is misconfigured (e.g. a rotated client secret);
 //                emailing every user to reconnect would not fix it.
-//   temporarily_unavailable, slow_down, server_error, 429, 5xx, no response
+//   a malformed 200, no response (dropped, refused, deadline)
+//     refresh  → ThrottledError in 15 s. The server may already have rotated
+//                the token; a replay inside its 60 s grace gets the same pair
+//                (see LOST_RESPONSE_REPLAY_S).
+//   temporarily_unavailable, slow_down, server_error, 429, 5xx
 //     refresh  → ThrottledError with the stated wait: Zapier replays the run.
 //
 // At connect time (getAccessToken) every failure is a plain Error: the user is
@@ -123,6 +147,15 @@ const OPERATIONAL_ERRORS = new Set([
 ]);
 const BUSY_ERRORS = new Set(['temporarily_unavailable', 'slow_down', 'server_error', 'transport_error']);
 const DEFAULT_RETRY_AFTER_S = 60;
+
+// When a REFRESH may already have been rotated on the server but we never read
+// the answer — a 200 we could not parse (a body cut off mid-read reads as
+// `{}`), or no response at all — the replay must land inside the issuer's
+// 60 s reuse grace. There it is handed the SAME new pair; after it, the old
+// refresh token counts as replayed and the issuer revokes the whole grant,
+// forcing a reconnect over a network blip. So those two replay in 15 s, not
+// the default 60.
+const LOST_RESPONSE_REPLAY_S = 15;
 
 const retryAfterSeconds = (value) => {
   const n = Number(value);
@@ -162,7 +195,14 @@ const tokenResponse = (z, response, phase) => {
         'Reconnect your Lenz account.',
     );
   }
-  if (OPERATIONAL_ERRORS.has(code) || code === 'malformed_response') {
+  if (code === 'malformed_response' || status === 0) {
+    throw new z.errors.ThrottledError(
+      `Lenz's answer to the sign-in refresh did not arrive intact (${label}). ` +
+        `Retrying in ${LOST_RESPONSE_REPLAY_S}s.`,
+      LOST_RESPONSE_REPLAY_S,
+    );
+  }
+  if (OPERATIONAL_ERRORS.has(code)) {
     // Loud on purpose: only an operator can fix it, and every refresh for
     // every user fails until then.
     z.console.error(`Lenz OAuth refresh refused as misconfigured: ${label} (HTTP ${status})`);
@@ -174,7 +214,7 @@ const tokenResponse = (z, response, phase) => {
       status || 502,
     );
   }
-  if (BUSY_ERRORS.has(code) || status === 429 || status >= 500 || status === 0) {
+  if (BUSY_ERRORS.has(code) || status === 429 || status >= 500) {
     const delay = retryAfterSeconds(response.retryAfter);
     throw new z.errors.ThrottledError(
       `Lenz could not refresh your sign-in right now (${label}). Retrying in ${delay}s.`,
@@ -189,9 +229,11 @@ const tokenResponse = (z, response, phase) => {
 // same value. Failing here fails the CONNECTION, visibly, instead of a later
 // Verify run.
 const mintWebhookSecret = async (z, accessToken) => {
-  const response = await fetchJson(WEBHOOK_SECRET_URL, {
-    headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
-  });
+  const response = await fetchJson(
+    WEBHOOK_SECRET_URL,
+    { headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' } },
+    { retry: true },
+  );
   const secret = response.json && response.json.webhook_secret;
   if (response.status !== 200 || typeof secret !== 'string' || !secret) {
     throw new z.errors.Error(

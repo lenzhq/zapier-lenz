@@ -115,6 +115,34 @@ describe('OAuth token requests', () => {
     // Through z.request a 401 here would have become a bare RefreshAuthError
     // (Zapier's stale-auth middleware runs before the app sees the body). The
     // connect dialog must show Lenz's real reason instead.
+    // An authorization code is single-use. If the first POST reached Lenz and
+    // only the response was lost, a repeat would be `invalid_grant` — and the
+    // issuer may revoke what the code already minted. So it is never retried.
+    it('never retries the code exchange after a dropped connection', async () => {
+      const spy = jest.fn().mockRejectedValue(new TypeError('fetch failed'));
+      globalThis.fetch = spy;
+
+      const err = await capture(getAccessToken, connectBundle);
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(err.name).toBe('AppError');
+      expect(err.message).toContain('transport_error');
+    });
+
+    it('does retry the secret mint, which is safe to repeat', async () => {
+      const spy = jest
+        .fn()
+        .mockResolvedValueOnce(json(TOKEN_OK))
+        .mockRejectedValueOnce(new TypeError('fetch failed'))
+        .mockResolvedValueOnce(json({ webhook_secret: 'whsec_1' }));
+      globalThis.fetch = spy;
+
+      const authData = await appTester(getAccessToken, connectBundle);
+
+      expect(spy).toHaveBeenCalledTimes(3);
+      expect(authData.webhook_secret).toBe('whsec_1');
+    });
+
     it('surfaces the OAuth error code on a refused exchange, not a refresh error', async () => {
       globalThis.fetch = jest.fn().mockResolvedValueOnce(json({ error: 'invalid_client' }, 401));
 
@@ -174,13 +202,27 @@ describe('OAuth token requests', () => {
       },
     );
 
-    it('treats a malformed 200 as an issuer problem, not a dead connection', async () => {
+    // Lenz may already have ROTATED the refresh token when the answer we
+    // could not read was sent. Replaying inside its 60 s reuse grace gets the
+    // same pair; replaying after it would read as a stolen token and revoke
+    // the grant. So: a quick replay, never a "credentials rejected" error.
+    it('replays a malformed 200 inside the 60 s reuse grace, not as a misconfiguration', async () => {
       globalThis.fetch = jest.fn().mockResolvedValueOnce(json({ token_type: 'Bearer' }));
 
       const err = await capture(refreshAccessToken, refreshBundle);
 
-      expect(err.name).toBe('AppError');
+      expect(err.name).toBe('ThrottledError');
       expect(err.message).toContain('malformed_response');
+      expect(JSON.parse(err.message).delay).toBeLessThan(60);
+    });
+
+    it('replays a body cut off mid-read the same way', async () => {
+      globalThis.fetch = jest.fn().mockResolvedValueOnce(new Response('{"access_tok', { status: 200 }));
+
+      const err = await capture(refreshAccessToken, refreshBundle);
+
+      expect(err.name).toBe('ThrottledError');
+      expect(JSON.parse(err.message).delay).toBeLessThan(60);
     });
 
     it('replays after the stated wait when the issuer is busy', async () => {
@@ -213,11 +255,29 @@ describe('OAuth token requests', () => {
       expect(authData.access_token).toBe('lat_new');
     });
 
-    it('replays when the connection drops twice', async () => {
+    it('replays inside the reuse grace when the connection drops twice', async () => {
       globalThis.fetch = jest.fn().mockRejectedValue(new TypeError('fetch failed'));
 
       const err = await capture(refreshAccessToken, refreshBundle);
 
+      expect(err.name).toBe('ThrottledError');
+      expect(JSON.parse(err.message).delay).toBeLessThan(60);
+    });
+
+    // Plain fetch would wait minutes on a server that accepts the connection
+    // and never answers; Zapier ends the step at ~30 s. Each attempt carries
+    // its own deadline, and a deadline hit is handled like a dropped
+    // connection instead of being killed by the platform.
+    it('puts a deadline on every attempt and treats hitting it as a dropped connection', async () => {
+      const spy = jest.fn().mockImplementation((_url, init) => {
+        expect(init.signal).toBeInstanceOf(AbortSignal);
+        return Promise.reject(new DOMException('The operation timed out.', 'TimeoutError'));
+      });
+      globalThis.fetch = spy;
+
+      const err = await capture(refreshAccessToken, refreshBundle);
+
+      expect(spy).toHaveBeenCalledTimes(2);
       expect(err.name).toBe('ThrottledError');
     });
   });
