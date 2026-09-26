@@ -3,6 +3,22 @@
 User-facing changes to the Lenz integration for Zapier. Build and release
 mechanics live in [README.md](README.md#building-and-pushing).
 
+## 2.0.0
+
+**You now connect by signing in to Lenz instead of pasting an API key.** This is a new
+major version because Zapier cannot move an existing connection to the new sign-in: Zaps
+built on 1.x keep working on their API key until you reconnect them. To switch, open each
+Lenz step, choose *Connect a new account*, and sign in.
+
+- New: connect with your Lenz sign-in (OAuth 2.0 with PKCE). Lenz asks you to approve
+  access every time you connect.
+- New: no webhook secret to set up for Verify a Claim. It is fetched automatically when
+  you connect.
+- Update: your sign-in refreshes itself when it expires, which it does every hour. You are
+  only asked to reconnect if the connection has actually been revoked.
+- Update create/verify_claim: the result is read from Lenz's signed callback, so a sign-in
+  that expired while the check was running cannot lose it.
+
 ## Unreleased
 
 - New create/assess: each claim carries **Error Code**, **Hint**, **Other

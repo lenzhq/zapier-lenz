@@ -54,15 +54,33 @@ const basicAuth = () =>
 // every status reaches tokenResponse and its OAuth `error` code survives. A
 // side effect worth keeping: neither the token nor the webhook secret is
 // written to Zapier's HTTP request log.
+//
+// One retry on a TRANSPORT failure (no response at all), as lenz-mcp's
+// `_post` does: a dropped connection is the common transient, and a token
+// request is idempotent enough to repeat once — the server's 60 s reuse grace
+// hands a replayed refresh the same pair. A second failure is reported as
+// `transport_error` with status 0.
 const fetchJson = async (url, init) => {
-  const response = await fetchAsZapier(url, init);
+  let response;
+  for (let attempt = 0; attempt < 2 && !response; attempt += 1) {
+    try {
+      response = await fetchAsZapier(url, init);
+    } catch (_err) {
+      response = undefined;
+    }
+  }
+  if (!response) return { status: 0, json: { error: 'transport_error' }, retryAfter: null };
   let json = {};
   try {
     json = await response.json();
   } catch (_err) {
     json = {};
   }
-  return { status: response.status, json: json && typeof json === 'object' ? json : {} };
+  return {
+    status: response.status,
+    json: json && typeof json === 'object' ? json : {},
+    retryAfter: response.headers && response.headers.get ? response.headers.get('retry-after') : null,
+  };
 };
 
 const postToken = (form) =>
@@ -76,53 +94,130 @@ const postToken = (form) =>
     body: new URLSearchParams(form).toString(),
   });
 
-// SPIKE: the error mapping here is the minimal one. The reviewed plan (D7,
-// ported from lenz-mcp's exchange.py) maps refresh failures by OAuth `error`
-// code so a misconfiguration on our side never mass-emails users to
-// reconnect; that lands after the spike confirms Zapier honours it.
-const tokenResponse = (response) => {
+// Token-endpoint failures are mapped by the OAuth `error` CODE, never the
+// HTTP status — ported from lenz-mcp (src/lenz_mcp/exchange.py `_failure`), the
+// other Lenz OAuth client, so both behave alike (plan D7).
+//
+// Which Zapier error is thrown decides what the USER is told:
+//
+//   invalid_grant          the grant is dead (revoked, expired, replayed)
+//     refresh  → ExpiredAuthError: Zapier asks the user to reconnect. Right,
+//                because reconnecting is the only fix.
+//   invalid_client, invalid_request, unsupported_grant_type,
+//   unauthorized_client, invalid_target, invalid_scope, a malformed 200
+//     both     → a plain Error, logged loudly, NO reconnect prompt. These mean
+//                THIS APP is misconfigured (e.g. a rotated client secret);
+//                emailing every user to reconnect would not fix it.
+//   temporarily_unavailable, slow_down, server_error, 429, 5xx, no response
+//     refresh  → ThrottledError with the stated wait: Zapier replays the run.
+//
+// At connect time (getAccessToken) every failure is a plain Error: the user is
+// watching the connect dialog, and there is no run to replay.
+const OPERATIONAL_ERRORS = new Set([
+  'invalid_client',
+  'invalid_request',
+  'unsupported_grant_type',
+  'unauthorized_client',
+  'invalid_target',
+  'invalid_scope',
+]);
+const BUSY_ERRORS = new Set(['temporarily_unavailable', 'slow_down', 'server_error', 'transport_error']);
+const DEFAULT_RETRY_AFTER_S = 60;
+
+const retryAfterSeconds = (value) => {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.ceil(n) : DEFAULT_RETRY_AFTER_S;
+};
+
+// A 200 is trusted only when it is a well-formed Bearer grant; anything else is
+// treated as an outage on the issuer's side, not as a dead connection.
+const isWellFormed = (body) =>
+  typeof body.access_token === 'string' &&
+  body.access_token.length > 0 &&
+  typeof body.token_type === 'string' &&
+  body.token_type.toLowerCase() === 'bearer';
+
+// `phase` is 'connect' (getAccessToken) or 'refresh' (refreshAccessToken).
+const tokenResponse = (z, response, phase) => {
   const body = response.json || {};
-  if (response.status === 200 && typeof body.access_token === 'string' && body.access_token) {
-    return body;
+  if (response.status === 200 && isWellFormed(body)) return body;
+
+  const status = response.status;
+  const code = response.status === 200 ? 'malformed_response' : typeof body.error === 'string' ? body.error : '';
+  const label = code || `http_${status}`;
+  const detail = typeof body.error_description === 'string' ? ` ${body.error_description}` : '';
+
+  if (phase === 'connect') {
+    throw new z.errors.Error(
+      `Lenz could not complete the connection (${label}).${detail} Try connecting again; ` +
+        'if it keeps failing, contact Lenz support and quote this code.',
+      'OAuthConnectFailed',
+      status || 502,
+    );
   }
-  const code = typeof body.error === 'string' ? body.error : `http_${response.status}`;
-  const detail = typeof body.error_description === 'string' ? `: ${body.error_description}` : '';
-  throw new Error(`Lenz refused the token request (${code})${detail}`);
+
+  if (code === 'invalid_grant') {
+    throw new z.errors.ExpiredAuthError(
+      'Your Lenz connection is no longer valid (it may have been disconnected at lenz.io). ' +
+        'Reconnect your Lenz account.',
+    );
+  }
+  if (OPERATIONAL_ERRORS.has(code) || code === 'malformed_response') {
+    // Loud on purpose: only an operator can fix it, and every refresh for
+    // every user fails until then.
+    z.console.error(`Lenz OAuth refresh refused as misconfigured: ${label} (HTTP ${status})`);
+    throw new z.errors.Error(
+      `Lenz rejected this integration's credentials (${label}). This is not a problem with ` +
+        'your connection and reconnecting will not help; Lenz has been notified by the error ' +
+        'logs. Try again later.',
+      'OAuthMisconfigured',
+      status || 502,
+    );
+  }
+  if (BUSY_ERRORS.has(code) || status === 429 || status >= 500 || status === 0) {
+    const delay = retryAfterSeconds(response.retryAfter);
+    throw new z.errors.ThrottledError(
+      `Lenz could not refresh your sign-in right now (${label}). Retrying in ${delay}s.`,
+      delay,
+    );
+  }
+  z.console.error(`Lenz OAuth refresh failed unexpectedly: ${label} (HTTP ${status})`);
+  throw new z.errors.Error(`Lenz could not refresh your sign-in (${label}).${detail}`, 'OAuthRefreshFailed', status || 502);
 };
 
 // Minted once per grant and kept by the server; re-reading it returns the
 // same value. Failing here fails the CONNECTION, visibly, instead of a later
 // Verify run.
-const mintWebhookSecret = async (accessToken) => {
+const mintWebhookSecret = async (z, accessToken) => {
   const response = await fetchJson(WEBHOOK_SECRET_URL, {
     headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
   });
   const secret = response.json && response.json.webhook_secret;
   if (response.status !== 200 || typeof secret !== 'string' || !secret) {
-    throw new Error(
+    throw new z.errors.Error(
       `Lenz did not return a webhook signing secret (HTTP ${response.status}). ` +
         'Verify a Claim needs it to receive its result. Try connecting again.',
+      'WebhookSecretMintFailed',
+      response.status || 502,
     );
   }
   return secret;
 };
 
 const getAccessToken = async (z, bundle) => {
-  // SPIKE diagnostic: whether Zapier hands us the PKCE verifier, and under
-  // which name. Logs presence only, never the value.
-  z.console.log(
-    `[spike] getAccessToken inputData keys: ${Object.keys(bundle.inputData || {}).sort().join(',')}`,
-  );
   const form = {
     grant_type: 'authorization_code',
     code: bundle.inputData.code,
     redirect_uri: bundle.inputData.redirect_uri,
   };
+  // PKCE (`enablePkce: true`): Zapier generates the verifier and passes it
+  // here. The issuer requires S256 PKCE for every client, so a missing
+  // verifier is refused there with `invalid_request` rather than guessed at.
   if (bundle.inputData.code_verifier) {
     form.code_verifier = bundle.inputData.code_verifier;
   }
-  const body = tokenResponse(await postToken(form));
-  const webhookSecret = await mintWebhookSecret(body.access_token);
+  const body = tokenResponse(z, await postToken(form), 'connect');
+  const webhookSecret = await mintWebhookSecret(z, body.access_token);
   return {
     access_token: body.access_token,
     refresh_token: body.refresh_token,
@@ -132,10 +227,12 @@ const getAccessToken = async (z, bundle) => {
 
 const refreshAccessToken = async (z, bundle) => {
   const body = tokenResponse(
+    z,
     await postToken({
       grant_type: 'refresh_token',
       refresh_token: bundle.authData.refresh_token,
     }),
+    'refresh',
   );
   return {
     access_token: body.access_token,
