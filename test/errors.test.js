@@ -30,6 +30,7 @@ const {
   LenzError,
 } = require('lenz-io');
 const App = require('../index');
+const { DEFAULT_THROTTLE_DELAY } = require('../lib/errors');
 
 const appTester = zapier.createAppTester(App);
 
@@ -595,5 +596,47 @@ describe('non-quota 403 stays a hard error', () => {
 
     expect(err.name).not.toBe('HaltedError');
     expect(err.message).toContain('private');
+  });
+});
+
+
+// An Idempotency-Key still in flight. With replay-stable keys on Assess (#19)
+// and Ask (Lenz#425), a Zapier replay can arrive while the first attempt is
+// still running; the server answers this 409 with no `code`, and the SDK
+// leaves it a plain LenzError. It must wait and replay, not fail the run.
+describe('409 idempotency in flight → ThrottledError', () => {
+  const inFlight = () =>
+    new LenzError({
+      message: 'A request with this Idempotency-Key is already in progress.',
+      statusCode: 409,
+      body: { detail: 'A request with this Idempotency-Key is already in progress.', task_id: 'sync' },
+    });
+
+  it('replays instead of hard-failing', async () => {
+    LenzClient.mockImplementation(() => mockClient({ assess: jest.fn().mockRejectedValue(inFlight()) }));
+    const err = await captureError(App.creates.assess.operation.perform, { ...AUTH, inputData: { text: 'x' } });
+    expect(err.name).toBe('ThrottledError');
+    expect(JSON.parse(err.message).delay).toBe(DEFAULT_THROTTLE_DELAY);
+  });
+
+  it('does not promise the retry reuses the first answer', async () => {
+    LenzClient.mockImplementation(() => mockClient({ ask: { send: jest.fn().mockRejectedValue(inFlight()) } }));
+    const err = await captureError(App.creates.ask.operation.perform, {
+      ...AUTH,
+      inputData: { verificationId: 'v1', question: 'why?' },
+    });
+    expect(err.name).toBe('ThrottledError');
+    expect(JSON.parse(err.message).message).not.toMatch(/same answer|not be charged|nothing was charged/i);
+  });
+
+  // Every other 409 keeps its handling: only the exact in-flight shape replays.
+  it.each([
+    ['a 409 that carries a code', { message: 'Not ready', statusCode: 409, code: 'verification_not_ready' }],
+    ['a 409 about something else', { message: 'Nothing pending to select.', statusCode: 409 }],
+  ])('leaves %s alone', async (_name, shape) => {
+    const other = new LenzError({ ...shape, body: { detail: shape.message } });
+    LenzClient.mockImplementation(() => mockClient({ assess: jest.fn().mockRejectedValue(other) }));
+    const err = await captureError(App.creates.assess.operation.perform, { ...AUTH, inputData: { text: 'x' } });
+    expect(err.name).not.toBe('ThrottledError');
   });
 });

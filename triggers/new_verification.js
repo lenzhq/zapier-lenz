@@ -53,6 +53,9 @@ const perform = async (z, bundle) => {
     id: item.verification_id,
     ...item,
     key_finding: item.key_finding || '',
+    // On list items too (lenz-io VerificationListItem). Normalised to '' for
+    // the same reason as key_finding, and to match Verify a Claim.
+    suggested_rewrite: item.suggested_rewrite || '',
   }));
 };
 
@@ -79,6 +82,7 @@ module.exports = {
       lenz_score: 9,
       key_finding: 'Official Eiffel Tower figures confirm a current height of 330 metres.',
       executive_summary: 'Confirmed by multiple official sources.',
+      suggested_rewrite: '',
       created_at: '2026-07-14T12:00:00Z',
       modified_at: null,
       language: 'en',
@@ -94,6 +98,7 @@ module.exports = {
       // pre-date the field. Carried through by the `...item` spread above.
       { key: 'key_finding', label: 'Key Finding' },
       { key: 'executive_summary', label: 'Executive Summary' },
+      { key: 'suggested_rewrite', label: 'Suggested Rewrite (not verified)' },
       { key: 'created_at', label: 'Created At', type: 'datetime' },
     ],
   },
