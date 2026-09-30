@@ -43,6 +43,8 @@ only what the sample shows. These are the values the API actually sends:
 | `domain` | Verify a Claim | Same eight capitalised values as above, or empty. |
 | `status` | Verify a Claim | `completed`, `needs_input`, `failed`, or `processing`. Built by the integration. |
 | `reason` | Verify a Claim, when `status` is `needs_input` | `multi_claim` or `duplicate_found`. Empty otherwise. `clarification_required` was a third value until the API retired it on 2026-09-12; **Candidate Readings** is still emitted, always empty, so a Zap that maps it keeps working. |
+| `claims[].rationale`, `claims[].dissent` | Assess (Fast) | Free text, not values to filter on. `rationale` is the reasoning of a reviewer who agrees with the panel's verdict; `dissent`, when set, is the reasoning of the reviewer farthest from it. Both are reviewers' notes, not checked sources; for sourced evidence, call /verify. Empty on an `Error` row, and `dissent` is empty on most rows, so "Reviewer Dissent is not empty" is a reasonable branch. |
+| `suggested_rewrite` | Verify a Claim, New Verification Completed | Free text: a suggested rewrite of `claim` that the verification's findings support, for a person to review before using it. **It has not been verified itself.** Empty for a true claim, when no correction is established, and on verifications from before Lenz added it. |
 | `depth` | Verify a Claim, when `status` is `completed` | `standard` or `low` — the depth the verdict was **produced** with, which is not always the one you asked for. Empty on every other status, and on verdicts from before Lenz recorded it. |
 | `visibility` | Verify a Claim, when `status` is `completed` | `private`, `unlisted` or `public`. You can only *request* the first two; `public` is read back when the verdict was served from an existing verification someone made public. Empty on every other status. |
 | `language` | all four actions (input) | `en` `es` `de` `fr` `it` `pt` `nl` `sv` `da` `no` `fi` `bg`. A dropdown since 1.4.0 — it was free text, and anything outside this set fails the run. |
@@ -190,12 +192,19 @@ spends the run again for the same result.
 above — out of credits, over a cap, Lenz at capacity — that costs nothing, because
 the call is turned away before any work happens. A *timeout* is different: the
 request may have reached Lenz and be running, and there is no way to tell from the
-Zap's side. Both claim-checking actions guard against paying twice for it. Verify a
-Claim carries a per-run callback URL that keeps runs apart. Assess (Fast) sends an
-idempotency key built from the Zap, the input and the current hour, so a replay
-within the hour gets the answer Lenz already produced instead of a second panel.
-The one edge that follows: if a single Zap sends the *same* text twice on purpose
-within one hour, the second run gets the first answer rather than a fresh check.
+Zap's side. Every action that costs credits guards against paying twice for it.
+Verify a Claim carries a per-run callback URL that keeps runs apart. Assess (Fast)
+and Ask Follow-Up send an idempotency key built from the Zap, the input and the
+current time window, so a replay inside the window gets the answer Lenz already
+produced instead of running it again:
+
+| Action | Window | The edge that follows |
+|---|---|---|
+| Assess (Fast) | one hour | the same Zap sending the *same* text twice on purpose within the hour gets the first answer again |
+| Ask Follow-Up | ten minutes | the same Zap asking the *same* question of the same verification twice within ten minutes gets the first answer again. Shorter than Assess because asking a question again is normal: the answer depends on the conversation so far |
+
+A replay that lands while Lenz is still working on the first attempt waits and
+tries again, rather than failing the run.
 
 A call makes **one attempt** and lets Zapier do any waiting. The SDK used to retry
 up to four times inside one run and could sleep a stated wait of up to a minute —

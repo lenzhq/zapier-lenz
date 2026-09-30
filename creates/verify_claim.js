@@ -34,6 +34,9 @@ const SAMPLE = {
     'Sample finding shown while testing in the Zap editor — a live, turned-on Zap returns the real finding for your claim.',
   executive_summary:
     'Sample summary shown while testing in the Zap editor — a live, turned-on Zap returns the real analysis for your claim.',
+  // Empty: the sample claim is True, and a true claim has no rewrite. That is
+  // also the value a live run shows for one, so a Filter built on this holds.
+  suggested_rewrite: '',
   sources: [
     {
       source_name: 'Tour Eiffel',
@@ -111,6 +114,7 @@ const NO_VERDICT = {
   lenz_score: null,
   key_finding: '',
   executive_summary: '',
+  suggested_rewrite: '',
   sources: [],
   language: '',
   domain: '',
@@ -304,6 +308,13 @@ const performResume = async (z, bundle) => {
       lenz_score: result.lenz_score ?? null,
       key_finding: result.key_finding || '',
       executive_summary: result.executive_summary || '',
+      // A suggested rewrite of `claim` that the findings support (Lenz#916).
+      // NOT verified itself. '' for a true claim, when no correction is
+      // established, on verifications that predate the field, and from a
+      // server that predates it (the key is then absent). The API's own name;
+      // Lenz#916 called it `suggested_revision`, but the API, both SDKs and
+      // /review all send `suggested_rewrite`, and this key can never be renamed.
+      suggested_rewrite: result.suggested_rewrite || '',
       // All five keys, not just title and url. The API always sends all five
       // (lenz/api/verification_payload.py:124-133) and uses '' rather than
       // null for a missing one, so the `|| ''` here is belt-and-braces for an
@@ -493,6 +504,10 @@ module.exports = {
       // claims that pre-date the field.
       { key: 'key_finding', label: 'Key Finding' },
       { key: 'executive_summary', label: 'Executive Summary' },
+      // The label carries "not verified" because output fields cannot carry
+      // help text (PlainOutputFieldSchema rejects it), and it is the one
+      // thing a user must know before pasting this over their own sentence.
+      { key: 'suggested_rewrite', label: 'Suggested Rewrite (not verified)' },
       // Failure fields — populated only when Status is 'failed', so a
       // Filter/Paths step can branch on WHY instead of parsing prose.
       //
