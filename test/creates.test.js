@@ -1456,3 +1456,132 @@ describe('assess carries the per-claim language echo', () => {
     expect(result.claims[0].language).toBe('de');
   });
 });
+
+
+// Lenz#425. A Zapier replay of Ask after a timeout would be charged again and
+// append a second answer to the stored conversation. The key has to survive the
+// replay, and — because asking the same question again is normal on /ask —
+// expire quickly (lib/replay-key.js).
+describe('creates.ask replay idempotency key', () => {
+  const live = (over = {}) => ({
+    authData: { access_token: 'lenz_good' },
+    inputData: { verificationId: 'ab12cd34', question: 'Why 330 m?', language: 'en' },
+    meta: { zap: { id: 7 } },
+    ...over,
+  });
+  const keyOf = (client) => client.ask.send.mock.calls[0][1].idempotencyKey;
+  const replyClient = () => mockClient({ ask: { send: jest.fn().mockResolvedValue({ content: 'A.' }) } });
+
+  afterEach(() => jest.useRealTimers());
+
+  it('sends the same digest key on a replay of the same run', async () => {
+    const client = replyClient();
+    LenzClient.mockImplementation(() => client);
+    await appTester(App.creates.ask.operation.perform, live());
+    const first = keyOf(client);
+    expect(first).toMatch(/^[0-9a-f]{64}$/);
+    expect(first).not.toContain('330');
+
+    client.ask.send.mockClear();
+    await appTester(App.creates.ask.operation.perform, live());
+    expect(keyOf(client)).toBe(first);
+  });
+
+  it('differs for a different question, verification or language', async () => {
+    const client = replyClient();
+    LenzClient.mockImplementation(() => client);
+    await appTester(App.creates.ask.operation.perform, live());
+    const base = keyOf(client);
+    for (const inputData of [
+      { verificationId: 'ab12cd34', question: 'Who measured it?', language: 'en' },
+      { verificationId: 'zz99', question: 'Why 330 m?', language: 'en' },
+      { verificationId: 'ab12cd34', question: 'Why 330 m?', language: 'es' },
+    ]) {
+      client.ask.send.mockClear();
+      await appTester(App.creates.ask.operation.perform, live({ inputData }));
+      expect(keyOf(client)).not.toBe(base);
+    }
+  });
+
+  // Ten minutes, not an hour: the same question asked again later is a new
+  // question, and must get a fresh answer.
+  it('expires after ten minutes, unlike Assess', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+    const t0 = Date.UTC(2026, 8, 30, 12, 0, 0);
+    jest.setSystemTime(t0);
+    const client = replyClient();
+    LenzClient.mockImplementation(() => client);
+    await appTester(App.creates.ask.operation.perform, live());
+    const first = keyOf(client);
+
+    jest.setSystemTime(t0 + 9 * 60 * 1000);
+    client.ask.send.mockClear();
+    await appTester(App.creates.ask.operation.perform, live());
+    expect(keyOf(client)).toBe(first);
+
+    jest.setSystemTime(t0 + 11 * 60 * 1000);
+    client.ask.send.mockClear();
+    await appTester(App.creates.ask.operation.perform, live());
+    expect(keyOf(client)).not.toBe(first);
+  });
+});
+
+// Lenz#916: `suggested_rewrite`, NOT `suggested_revision` (the issue's name):
+// the API, both SDKs and /review send `suggested_rewrite`, and a Zapier key can
+// never be renamed once users map it.
+describe('suggested_rewrite', () => {
+  const resume = async (result) => {
+    const client = mockClient({ getStatus: jest.fn().mockResolvedValue({ status: 'completed', result }) });
+    LenzClient.mockImplementation(() => client);
+    return appTester(App.creates.verify_claim.operation.performResume, {
+      authData: { access_token: 'lenz_good' },
+      outputData: { task_id: 't1', status: 'processing' },
+    });
+  };
+
+  it('passes a False claim\'s rewrite through', async () => {
+    const out = await resume({
+      verification_id: 'v1',
+      claim: 'The Amazon produces 20% of the world\'s oxygen.',
+      verdict: 'False',
+      suggested_rewrite: 'The Amazon produces roughly 6-9% of the world\'s oxygen.',
+    });
+    expect(out.suggested_rewrite).toBe('The Amazon produces roughly 6-9% of the world\'s oxygen.');
+  });
+
+  // A true claim's null, and a server too old to send the key, must both
+  // leave the field present and empty so a Zap that maps it does not break.
+  it.each([
+    ['null (a true claim)', { verdict: 'True', suggested_rewrite: null }],
+    ['absent (an older server)', { verdict: 'True' }],
+  ])('is an empty string when %s', async (_name, result) => {
+    const out = await resume({ verification_id: 'v1', claim: 'x', ...result });
+    expect(out).toHaveProperty('suggested_rewrite', '');
+  });
+
+  it('is present and empty on a run that has no verdict yet', async () => {
+    const client = mockClient({ getStatus: jest.fn().mockResolvedValue({ status: 'processing' }) });
+    LenzClient.mockImplementation(() => client);
+    const out = await appTester(App.creates.verify_claim.operation.performResume, {
+      authData: { access_token: 'lenz_good' },
+      outputData: { task_id: 't1', status: 'processing' },
+    });
+    expect(out).toHaveProperty('suggested_rewrite', '');
+  });
+
+  it('is on the New Verification trigger, empty when null', async () => {
+    const client = mockClient({
+      request: jest.fn().mockResolvedValue({
+        items: [
+          { verification_id: 'a', claim: 'x', suggested_rewrite: 'y' },
+          { verification_id: 'b', claim: 'x', suggested_rewrite: null },
+        ],
+      }),
+    });
+    LenzClient.mockImplementation(() => client);
+    const rows = await appTester(App.triggers.new_verification.operation.perform, {
+      authData: { access_token: 'lenz_good' },
+    });
+    expect(rows.map((r) => r.suggested_rewrite)).toEqual(['y', '']);
+  });
+});

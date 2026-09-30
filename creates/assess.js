@@ -1,6 +1,7 @@
 'use strict';
 
-const { mapLenzError, DEFAULT_THROTTLE_DELAY, MAX_THROTTLE_DELAY } = require('../lib/errors');
+const { mapLenzError } = require('../lib/errors');
+const { replayKey, secondsToNextBucket, HOUR_MS } = require('../lib/replay-key');
 const { lenzClient, CALL_TIMEOUT_MS } = require('../client');
 const { languageField } = require('../lib/languages');
 
@@ -98,71 +99,10 @@ const shapeRow = (c) => ({
   identified_claims: Array.isArray(c.identified_claims) ? c.identified_claims : [],
 });
 
-// Width of the replay window, in ms. One hour.
-const REPLAY_BUCKET_MS = 60 * 60 * 1000;
-
-// The `Idempotency-Key` for this run — the one thing that stops a Zapier
-// replay from charging a second panel for an answer the server already gave
-// (#19).
-//
-// The problem it solves: `/assess` debits before the panel runs. When our
-// 28s abort fires on a request the server had already accepted, lib/errors.js
-// maps that to ThrottledError and Zapier REPLAYS the step — a fresh process,
-// a fresh SDK client, and so a fresh random key. The server sees a new
-// request and runs (and charges) the panel again.
-//
-// What a key needs to be: stable across the replay of ONE run, and different
-// for every other run. Zapier exposes no run id, so this derives one from the
-// three things a replay does share with its original — the Zap, the input,
-// and (near enough) the time — and hashes them so the header carries no
-// user text.
-//
-// The hour bucket is the compromise, and it is deliberate. The SDK warns
-// against a purely content-derived key: "an identical claim sent an hour
-// later is a new question, and a content-derived key would replay the first
-// answer for 24h" (its 2.12.0 changelog). Bucketing by hour cuts that 24h to
-// the window a replay actually lives in. The cost is the edge case where one
-// Zap sends the same text twice ON PURPOSE within one hour and wanted two
-// independent panels — it gets the first answer twice. Rarer, and cheaper,
-// than paying for work already received. A replay that straddles :00 gets a
-// new bucket and can still double-run; accepted rather than closed, because
-// the SDK sends one key and carrying two would mean two requests.
-//
-// `bundle.meta.zap.id` is the best per-Zap identity available, and it is
-// `@deprecated` in zapier-platform-core's types and absent from the current
-// bundle docs — so it may be missing on a live run, not only in the editor
-// and appTester. When it is, the key falls back to the input and the hour
-// alone rather than to nothing: the server scopes keys per API key already,
-// so the collision that fallback admits is "the same account assessing the
-// same text in the same hour from two different Zaps" — and those two would
-// have received the same verdict anyway. Sending no key there would make the
-// whole guard a silent no-op wherever `zap.id` is absent, with the README
-// still claiming it exists.
-//
-// `'utf8'` is not optional. `z.hash` defaults its INPUT encoding to
-// `'binary'` (latin1), which keeps only the low byte of each UTF-16 unit — so
-// `一` (U+4E00) and `伀` (U+4F00) would hash identically, and two different
-// non-Latin claims from one Zap in one hour could share a key and a verdict.
-const replayKey = (z, bundle) => {
-  const zapId = (bundle.meta && bundle.meta.zap && bundle.meta.zap.id) || '';
-  const bucket = replayBucket();
-  const text = (bundle.inputData && bundle.inputData.text) || '';
-  const language = (bundle.inputData && bundle.inputData.language) || '';
-  return z.hash('sha256', `${zapId}|${bucket}|${language}|${text}`, 'hex', 'utf8');
-};
-
-const replayBucket = () => Math.floor(Date.now() / REPLAY_BUCKET_MS);
-
-// Seconds until the NEXT bucket begins, with a margin so a replay scheduled
-// for then lands inside it and not on the boundary. Floored at the default
-// replay delay so it stays a real wait, capped at the ceiling lib/errors.js
-// uses for the same reason it does.
-const secondsToNextBucket = () => {
-  const now = Date.now();
-  const next = (Math.floor(now / REPLAY_BUCKET_MS) + 1) * REPLAY_BUCKET_MS;
-  const seconds = Math.ceil((next - now) / 1000) + 5;
-  return Math.min(Math.max(seconds, DEFAULT_THROTTLE_DELAY), MAX_THROTTLE_DELAY);
-};
+// The replay-stable Idempotency-Key (#19). Shared with creates/ask.js; the
+// reasoning, and why Assess uses a one-hour window, is in lib/replay-key.js.
+const assessKey = (z, bundle) =>
+  replayKey(z, bundle, [(bundle.inputData || {}).language, (bundle.inputData || {}).text], HOUR_MS);
 
 // Fast 3-model panel verdict (~10s) — one entry per claim found in the
 // text. Well under Zapier's 30s action timeout, so a live run is a plain
@@ -186,7 +126,7 @@ const perform = async (z, bundle) => {
       // Stable across a Zapier replay of THIS run, different for the next
       // one. See replayKey for why it is built the way it is. `undefined`
       // lets the SDK fall back to its own random per-invocation key.
-      idempotencyKey: replayKey(z, bundle),
+      idempotencyKey: assessKey(z, bundle),
       // Pinned per call, NOT left to the client-wide value. Since lenz-io
       // 2.12.0 `assess` waits `max(client timeoutMs, 45s)` unless the call
       // says otherwise — a floor chosen for scripts, where a slow panel is
@@ -243,7 +183,7 @@ const perform = async (z, bundle) => {
     // That is the server's call to make (a short TTL for such responses is
     // the clean fix, and `_finalize_200` already takes a per-response TTL);
     // until it does, this is the honest client-side delay.
-    const delay = secondsToNextBucket();
+    const delay = secondsToNextBucket(HOUR_MS);
     throw new z.errors.ThrottledError(
       `Lenz could not check this claim right now (${rows[0].error_code}) — nothing was charged. ` +
         `Retrying in ${delay}s.`,

@@ -3,8 +3,22 @@
 User-facing changes to the Lenz integration for Zapier. Build and release
 mechanics live in [README.md](README.md#building-and-pushing).
 
-## Unreleased
+## 1.5.0
 
+- New create/verify_claim and trigger/new_verification: **Suggested Rewrite
+  (not verified)**, a rewrite of the claim that the verification's findings
+  support, for a person to review before using it. It has not been verified
+  itself. Empty for a true claim, when no correction is established, and on
+  older verifications.
+- Fix create/ask: a run that waits and replays after a timeout is no longer
+  charged twice, and no longer adds the question and a second answer to the
+  stored conversation. The action sends an idempotency key built from the
+  Zap, the question and a ten-minute window. The edge: the same Zap asking
+  the same question of the same verification twice within ten minutes gets
+  the first answer again.
+- Fix create/assess and create/ask: a replay that arrives while Lenz is still
+  working on the first attempt now waits and tries again, instead of failing
+  the run.
 - New create/assess: each claim carries **Error Code**, **Hint**, **Other
   Claims Found**, **Reviewer Rationale** and **Reviewer Dissent**. A claim
   that could not be checked comes back as a row whose Verdict is `Error`, with

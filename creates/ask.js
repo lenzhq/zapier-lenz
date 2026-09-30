@@ -2,6 +2,7 @@
 
 const { mapLenzError } = require('../lib/errors');
 const { lenzClient } = require('../client');
+const { replayKey, TEN_MINUTES_MS } = require('../lib/replay-key');
 const { languageField } = require('../lib/languages');
 
 const SAMPLE = {
@@ -26,6 +27,24 @@ const SAMPLE = {
 // editor is Verify a Claim's canned placeholder — which isn't real and would
 // only ever 404. Auth is validated at connect time; the real answer comes
 // back on any live run.
+// The replay-stable Idempotency-Key (Lenz#425). Without one, a Zapier replay
+// of this step — after a timeout on a request the server had already accepted
+// — is charged again AND appends the question and a second answer to the
+// stored conversation, which every later follow-up then reads.
+//
+// Ten minutes, not Assess's hour. Asking the same question again is a normal
+// thing to do on /ask: the answer depends on the conversation so far, which is
+// why the SDK never generates or derives this key itself. So the window is
+// kept just wide enough to cover a replay (lib/errors.js waits 60 s by
+// default). The trade-off, stated plainly: one Zap asking the SAME question of
+// the SAME verification twice inside ten minutes gets the first answer back
+// the second time, and a replay that straddles a ten-minute boundary can still
+// be asked twice. See lib/replay-key.js.
+const askKey = (z, bundle) => {
+  const input = bundle.inputData || {};
+  return replayKey(z, bundle, [input.verificationId, input.language, input.question], TEN_MINUTES_MS);
+};
+
 const perform = async (z, bundle) => {
   if (bundle.meta && bundle.meta.isLoadingSample) {
     return SAMPLE;
@@ -36,6 +55,7 @@ const perform = async (z, bundle) => {
     .send(bundle.inputData.verificationId, {
       message: bundle.inputData.question,
       language: bundle.inputData.language || undefined,
+      idempotencyKey: askKey(z, bundle),
     })
     .catch((err) => mapLenzError(z, err));
   return { answer: reply.content || '' };
