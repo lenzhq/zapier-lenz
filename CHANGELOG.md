@@ -3,7 +3,7 @@
 User-facing changes to the Lenz integration for Zapier. Build and release
 mechanics live in [README.md](README.md#building-and-pushing).
 
-## Unreleased
+## 1.5.0
 
 - New create/verify_claim and trigger/new_verification: **Suggested Rewrite
   (not verified)**, a rewrite of the claim that the verification's findings
