@@ -5,6 +5,8 @@ const verifyClaim = require('./creates/verify_claim');
 const assess = require('./creates/assess');
 const extractClaims = require('./creates/extract_claims');
 const ask = require('./creates/ask');
+const reviewDraft = require('./creates/review_draft');
+const checkCitations = require('./creates/check_citations');
 
 module.exports = {
   // This is just shorthand to reference the installed dependencies you have.
@@ -36,6 +38,8 @@ module.exports = {
     [assess.key]: assess,
     [extractClaims.key]: extractClaims,
     [ask.key]: ask,
+    [reviewDraft.key]: reviewDraft,
+    [checkCitations.key]: checkCitations,
   },
 
   resources: {},

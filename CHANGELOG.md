@@ -3,6 +3,18 @@
 User-facing changes to the Lenz integration for Zapier. Build and release
 mechanics live in [README.md](README.md#building-and-pushing).
 
+## 1.6.0
+
+- New create/review_draft: **Review a Draft**, checks every factual claim in a draft,
+  deep-checks the ones that look wrong or uncertain, and returns the problems with
+  suggested fixes, in one step. Optionally checks the draft's citations too.
+- New create/check_citations: **Check Citations**, checks that each source a draft
+  links to says what the draft attributes to it.
+- Both run like Verify a Claim: the step waits for Lenz's callback (two to four
+  minutes for a review) and needs the same webhook secret on your API key, Test
+  returns an example without spending credits, and a replay of a run returns the job
+  it already started instead of paying for a second.
+
 ## 1.5.0
 
 - New create/verify_claim and trigger/new_verification: **Suggested Rewrite
