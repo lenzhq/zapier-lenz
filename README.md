@@ -25,6 +25,8 @@ This integration is not yet in Zapier's public App Directory. While private, it'
 | **Assess (Fast)** | A quick 3-model panel verdict, ~10 seconds, one entry per claim identified in the input text. Good default for lower-stakes checks. |
 | **Extract Claims** | Free — pulls the verifiable factual claims out of a block of text without checking them. Useful as a first step before running Assess or Verify a Claim on each claim individually. **Text** can also be a single public web page URL: Lenz reads the page, or a YouTube video's transcript, and extracts the claims from its first 50,000 characters. Pages behind a login (Facebook, Instagram, Threads, LinkedIn) can't be read. A URL call typically takes 5-40 seconds and a Zap step has 30, so a slow page can fail the step; for a long page, send its text instead. |
 | **Ask Follow-Up** | Asks a question grounded in the full research behind a completed **Verify a Claim** result. Requires the `verification_id` that action returns — not usable standalone. |
+| **Review a Draft** | Checks a whole draft in one step, two to four minutes: every claim is quick-checked, the ones that look wrong or uncertain are deep-checked, and the result lists the **Issues** (claim, verdict, key finding, a suggested rewrite that is *not* itself verified, and the claim's lenz.io page). **Clean** is true when nothing was wrong. Optionally checks the draft's citations too (**Citations to Check**). Costs 1 credit per claim quick-checked (up to 20) plus 10 per deep check (5 at Low; **Deep Checks** sets how many, default 5); **Credits Charged** says what it cost. Runs via Zapier's callback, like Verify a Claim. |
+| **Check Citations** | Reads each source a draft links to (links, bare URLs, DOIs, `[1]`-style references) and checks that it says what the draft attributes to it. Lists every citation with its **Finding** and the problem ones under **Citation Issues**. 1 credit per citation checked; one Lenz could not read is not charged. Runs via Zapier's callback. |
 
 Every claim-checking action returns a `passed` boolean (derived from the verdict) alongside the raw verdict and confidence — and, on Verify a Claim, the sourced citations — so you can wire a **Filter** step directly off the result — e.g. only continue the Zap when a claim passed.
 
@@ -224,14 +226,15 @@ above — out of credits, over a cap, Lenz at capacity — that costs nothing, b
 the call is turned away before any work happens. A *timeout* is different: the
 request may have reached Lenz and be running, and there is no way to tell from the
 Zap's side. Every action that costs credits guards against paying twice for it.
-Verify a Claim carries a per-run callback URL that keeps runs apart. Assess (Fast)
-and Ask Follow-Up send an idempotency key built from the Zap, the input and the
-current time window, so a replay inside the window gets the answer Lenz already
-produced instead of running it again:
+Verify a Claim carries a per-run callback URL that keeps runs apart. Assess (Fast),
+Ask Follow-Up, Review a Draft and Check Citations send an idempotency key built from
+the Zap, the input and the current time window, so a replay inside the window gets
+the answer Lenz already produced instead of running it again:
 
 | Action | Window | The edge that follows |
 |---|---|---|
 | Assess (Fast) | one hour | the same Zap sending the *same* text twice on purpose within the hour gets the first answer again |
+| Review a Draft, Check Citations | one hour | the same Zap sending the *same* draft with the same options twice within the hour gets the first review or check again, and does not pay for a second |
 | Ask Follow-Up | ten minutes | the same Zap asking the *same* question of the same verification twice within ten minutes gets the first answer again. Shorter than Assess because asking a question again is normal: the answer depends on the conversation so far |
 
 A replay that lands while Lenz is still working on the first attempt waits and

@@ -1,7 +1,12 @@
 'use strict';
 
-const { LenzError, LenzWebhooks } = require('lenz-io');
 const { mapLenzError } = require('../lib/errors');
+const {
+  parseSignedCallback,
+  requireWebhookSecretWhileTesting,
+  isWebhookSecretMissing,
+  webhookSecretMissing,
+} = require('../lib/signed-callback');
 const { lenzClient } = require('../client');
 const { languageField } = require('../lib/languages');
 
@@ -206,34 +211,10 @@ const perform = async (z, bundle) => {
 
   // Editor testing (isLoadingSample) never runs the real ~90s pipeline and
   // never spends verify credits — Zapier's recommended handling for a
-  // callback action. But rather than stubbing blindly, we make the ONE free
-  // call that costs nothing (GET /me/usage — no credits) to answer the only
-  // question the stub otherwise can't: does this key have a webhook secret?
-  // Verify a Claim REQUIRES one (it always sends a callback webhook_url, which
-  // Lenz refuses on a secret-less key). If it's missing, warn NOW at test time
-  // instead of showing a false "accepted" and only failing on the first live
-  // run. usage() also re-validates auth for free.
-  //
-  // Strict `=== false`: older servers that don't yet return the field leave it
-  // undefined, so the check is a no-op there (plain stub) — the backend field
-  // and this check can deploy in any order.
+  // callback action. It makes only the free webhook-secret check
+  // (lib/signed-callback.js) and returns the sample.
   if (bundle.meta && bundle.meta.isLoadingSample) {
-    // Mapped like every other call: this is the FIRST place a revoked key
-    // surfaces (the user clicking Test in the editor), so it's the last place
-    // that should throw a raw SDK error instead of an ExpiredAuthError.
-    const usage = await client.usage().catch((err) => mapLenzError(z, err));
-    if (usage && usage.has_webhook_secret === false) {
-      throw new z.errors.Error(
-        // Under OAuth the secret belongs to the connection (the grant), minted
-        // when the account is connected; `has_webhook_secret` reports the
-        // grant's (OAuthPrincipal.hmac_secret). The only fix is to reconnect.
-        'Verify a Claim needs this Lenz connection to have a webhook signing secret, and it ' +
-          'doesn\'t. Reconnect your Lenz account (Connect a new account) and try this step again. ' +
-          '(Assess, Extract Claims, and Ask Follow-Up work without it.)',
-        'WebhookSecretMissing',
-        422,
-      );
-    }
+    await requireWebhookSecretWhileTesting(z, client, 'Verify a Claim');
     return { ...SAMPLE };
   }
 
@@ -261,30 +242,10 @@ const perform = async (z, bundle) => {
       ...NO_VERDICT,
     }))
     .catch((err) => {
-      // Lenz rejects webhook_url on a key with no signing secret yet, tagged
-      // with this machine-readable code (public_authed.py) — turn it into a
-      // precise, actionable message instead of the raw API error text.
-      //
-      // HaltedError, not Error. This is a permanent CONFIGURATION state for
-      // this action, not a failed execution: the key has no webhook secret, so
-      // Verify cannot get its callback, and retrying cannot change that. As a
-      // hard error every scheduled run counted toward the error rate that
-      // turns a Zap off — the same auto-disable pressure the 402 branch was
-      // moved to HaltedError to avoid. The isLoadingSample pre-check above
-      // catches most of this at test time, but a secret removed after the Zap
-      // is on, or a Zap built by mapping without testing, lands here on every
-      // single run.
-      //
-      // HaltedError takes only a message — no code or status argument — so the
-      // 'WebhookSecretMissing'/422 pair the old throw carried is gone; it never
-      // reached the user anyway.
-      if (err instanceof LenzError && err.body && err.body.code === 'webhook_secret_missing') {
-        throw new z.errors.HaltedError(
-          'This Lenz connection has no webhook signing secret, so Verify a Claim cannot ' +
-            'receive its result. Reconnect your Lenz account (Connect a new account), then ' +
-            'turn this Zap back on.',
-        );
-      }
+      // A Zap built by mapping without testing, or one whose connection lost
+      // its secret, lands here on every run; the test-time check catches the
+      // rest. Halted, not failed (lib/signed-callback.js).
+      if (isWebhookSecretMissing(err)) throw webhookSecretMissing(z, 'Verify a Claim');
       return mapLenzError(z, err);
     });
 };
@@ -319,32 +280,12 @@ const perform = async (z, bundle) => {
 // `needs_input` is left to the fallback on purpose: it is not a charged
 // result, and its shape (shapeNeedsInput) is built from the status route.
 
-// Zapier hands a callback's headers with an `Http-` prefix
-// (`Http-X-Lenz-Signature`); the SDK looks `X-Lenz-Signature` up exactly, in
-// lower case or in upper case. Normalise to bare lower-case names.
-const callbackHeaders = (headers) => {
-  const out = {};
-  for (const [name, value] of Object.entries(headers || {})) {
-    out[name.toLowerCase().replace(/^http-/, '')] = String(value);
-  }
-  return out;
-};
-
 // The shaped output from the signed callback, or `{ fallback: <reason> }`.
 // The reason is logged, never the body, the signature or the secret.
 const fromSignedCallback = (bundle) => {
-  const secret = bundle.authData && bundle.authData.webhook_secret;
-  const raw = bundle.rawRequest;
-  const content = raw && typeof raw === 'object' ? raw.content : undefined;
-  if (!secret) return { fallback: 'no webhook_secret on the connection' };
-  if (typeof content !== 'string' || !content) return { fallback: 'no raw callback body' };
-
-  let event;
-  try {
-    event = new LenzWebhooks({ secret }).parse(content, callbackHeaders(raw.headers));
-  } catch (err) {
-    return { fallback: `callback rejected: ${(err && err.message) || 'unparseable'}` };
-  }
+  const parsed = parseSignedCallback(bundle);
+  if (!parsed.event) return parsed;
+  const event = parsed.event;
 
   const taskId = bundle.outputData && bundle.outputData.task_id;
   if (!taskId || event.taskId !== taskId) return { fallback: 'callback is for a different task' };
