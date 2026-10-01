@@ -5,14 +5,14 @@ mechanics live in [README.md](README.md#building-and-pushing).
 
 ## 2.1.0
 
-- New create/review_draft — **Review a Draft**: checks every factual claim in a draft,
+- New create/review_draft: **Review a Draft**, checks every factual claim in a draft,
   deep-checks the ones that look wrong or uncertain, and returns the problems with
   suggested fixes, in one step. Optionally checks the draft's citations too.
-- New create/check_citations — **Check Citations**: checks that each source a draft
+- New create/check_citations: **Check Citations**, checks that each source a draft
   links to says what the draft attributes to it.
 - Both run like Verify a Claim: the step waits for Lenz's signed callback (two to four
   minutes for a review), Test returns an example without spending credits, and a
-  replayed run returns the first result instead of paying for a second.
+  replay of a run returns the job it already started instead of paying for a second.
 
 ## 2.0.0
 

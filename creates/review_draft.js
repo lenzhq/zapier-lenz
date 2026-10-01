@@ -10,11 +10,8 @@ const {
   isWebhookSecretMissing,
   webhookSecretMissing,
 } = require('../lib/signed-callback');
-const {
-  shapeCitationIssue,
-  shapeJobFailure,
-  CITATION_ISSUE_CHILDREN,
-} = require('../lib/citations');
+const { shapeCitationIssue, CITATION_ISSUE_CHILDREN } = require('../lib/citations');
+const { NO_FAILURE, isTerminal, shapeJobFailure, optionalInteger, positiveInteger } = require('../lib/jobs');
 
 // Review a Draft: POST /review reads a whole draft, quick-checks every claim
 // in it, deep-checks the ones that look wrong or uncertain, and (when asked)
@@ -29,8 +26,6 @@ const ACTION_LABEL = 'Review a Draft';
 
 // Every key on every branch, so a Filter built on the sample behaves the same
 // on a live run whichever way the review ends (see test/schema.test.js).
-const NO_FAILURE = { error: '', failure_reason: '', failure_class: '', retryable: null };
-
 const EMPTY_RESULT = {
   outcome: '',
   clean: false,
@@ -38,6 +33,9 @@ const EMPTY_RESULT = {
   issues: [],
   citation_issue_count: 0,
   citation_issues: [],
+  citations_checked: 0,
+  citations_unchecked: 0,
+  citations_skipped: '',
   claims_checked: 0,
   deep_checks: 0,
   unchecked_claims: 0,
@@ -75,6 +73,9 @@ const SAMPLE = {
   ],
   citation_issue_count: 0,
   citation_issues: [],
+  citations_checked: 0,
+  citations_unchecked: 0,
+  citations_skipped: '',
   claims_checked: 4,
   deep_checks: 2,
   unchecked_claims: 0,
@@ -86,8 +87,6 @@ const SAMPLE = {
   message: '',
   ...NO_FAILURE,
 };
-
-const isTerminal = (status) => status === 'completed' || status === 'failed';
 
 // The issue rows (`issues[]`): only the claims Lenz found a problem with. A
 // row comes from the quick check (`source: assessment`) or from a deep check
@@ -111,6 +110,7 @@ const shapeIssue = (row) => ({
 const shapeReview = (reviewId, review) => {
   const r = review || {};
   const summary = r.summary || {};
+  const citationCounts = summary.citation_checks || {};
   const issues = (r.issues || []).map(shapeIssue);
   const citationIssues = (r.citation_issues || []).map(shapeCitationIssue);
   const status = r.status || 'queued';
@@ -124,11 +124,23 @@ const shapeReview = (reviewId, review) => {
     issues,
     citation_issue_count: citationIssues.length,
     citation_issues: citationIssues,
-    claims_checked: summary.claims_selected ?? 0,
+    citations_checked: citationCounts.checked ?? 0,
+    // Unreadable or failed citations are refunded; they are not issues.
+    citations_unchecked: (citationCounts.unchecked ?? 0) + (citationCounts.failed ?? 0),
+    // Why citations were asked for and NOT checked: url_input, switched_off
+    // or insufficient_credits. The review still completes without them, and
+    // its outcome then says nothing about citations, so Clean alone cannot
+    // tell a draft whose citations passed from one whose were never read.
+    citations_skipped: summary.citations_skipped || '',
+    // Quick checks that completed (`summary.claims_selected` also counts the
+    // ones that failed).
+    claims_checked: (summary.assessments && summary.assessments.completed) ?? 0,
     deep_checks: (summary.verifications && summary.verifications.completed) ?? 0,
-    // Claims Lenz could not check at all (`failures[]`): a review with these
-    // and no issues is `incomplete`, not clean.
-    unchecked_claims: (r.failures || []).length,
+    // Claims whose quick check failed, so Lenz has no verdict on them: a
+    // review with these and no issues is `incomplete`, not clean.
+    // `failures[]` also holds claims whose DEEP check failed after a quick
+    // verdict (stage `verification`); those were checked.
+    unchecked_claims: (r.failures || []).filter((f) => f.stage !== 'verification').length,
     // Past 50,000 characters the draft is cut, not refused.
     input_truncated: summary.input_truncated === true,
     credits_charged: (r.credits && r.credits.charged) ?? 0,
@@ -172,38 +184,46 @@ const fromSignedReview = (bundle) => {
   return { output: shapeReview(reviewId, event.review) };
 };
 
-// A blank number field is "use the server's default", never 0.
-const optionalInteger = (value) => {
-  if (value === undefined || value === null || value === '') return undefined;
-  const n = Number(value);
-  return Number.isFinite(n) ? Math.trunc(n) : undefined;
-};
-
 const reviewInput = (bundle) => {
   const input = bundle.inputData || {};
-  const maxCitations = optionalInteger(input.maxCitations);
   return {
     text: input.text,
     language: input.language || undefined,
     depth: input.depth || undefined,
+    // 0 is a real setting here (quick checks only), unlike blank.
     maxVerifications: optionalInteger(input.maxVerifications),
-    // 0 and blank both mean "do not check citations": the SDK sends the
-    // field only when it is truthy.
-    maxCitations: maxCitations > 0 ? maxCitations : undefined,
+    // 0 and blank both mean "do not check citations".
+    maxCitations: positiveInteger(input.maxCitations),
     visibility: input.visibility || undefined,
   };
 };
 
 // The replay-stable Idempotency-Key (lib/replay-key.js). Review is the most
 // expensive call this app makes, so a Zapier replay of the submit must get
-// the first review back, not start (and charge for) a second one. One hour,
-// like Assess: the same draft reviewed again within the hour is almost always
-// a replay.
-const reviewKey = (z, bundle, input) =>
+// the first review back, not start (and charge for) a second one.
+//
+// The callback URL is part of the key, and has to be: the server binds the
+// key to the whole body, `webhook_url` included (review_idempotency_body in
+// lenz/api/review.py). A new run of the same draft carries a new callback
+// URL; under the same key it would be refused (422 idempotency_body_mismatch),
+// and even if it were not, the review it returned would have called back to
+// the FIRST run's URL, leaving this one waiting for a callback that never
+// comes. A replay of the same run carries the same URL and gets the first
+// review.
+const reviewKey = (z, bundle, input, callbackUrl) =>
   replayKey(
     z,
     bundle,
-    ['review', input.text, input.language, input.depth, input.maxVerifications, input.maxCitations, input.visibility],
+    [
+      'review',
+      callbackUrl,
+      input.text,
+      input.language,
+      input.depth,
+      input.maxVerifications,
+      input.maxCitations,
+      input.visibility,
+    ],
     HOUR_MS,
   );
 
@@ -218,11 +238,12 @@ const perform = async (z, bundle) => {
   }
 
   const input = reviewInput(bundle);
+  const callbackUrl = z.generateCallbackUrl();
   return client
     .review({
       ...input,
-      webhookUrl: z.generateCallbackUrl(),
-      idempotencyKey: reviewKey(z, bundle, input),
+      webhookUrl: callbackUrl,
+      idempotencyKey: reviewKey(z, bundle, input, callbackUrl),
     })
     // What Zapier parks as outputData and, if the callback never arrives,
     // what the user sees.
@@ -340,6 +361,9 @@ module.exports = {
       },
       { key: 'citation_issue_count', label: 'Citation Issue Count', type: 'integer' },
       { key: 'citation_issues', label: 'Citation Issues', list: true, children: CITATION_ISSUE_CHILDREN },
+      { key: 'citations_checked', label: 'Citations Checked', type: 'integer' },
+      { key: 'citations_unchecked', label: 'Citations Not Checked', type: 'integer' },
+      { key: 'citations_skipped', label: 'Citations Skipped Because' },
       { key: 'claims_checked', label: 'Claims Checked', type: 'integer' },
       { key: 'deep_checks', label: 'Deep Checks Run', type: 'integer' },
       { key: 'unchecked_claims', label: 'Claims Not Checked', type: 'integer' },

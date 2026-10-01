@@ -1,6 +1,7 @@
 'use strict';
 
 const { mapLenzError } = require('../lib/errors');
+const { NO_FAILURE } = require('../lib/jobs');
 const {
   parseSignedCallback,
   requireWebhookSecretWhileTesting,
@@ -89,8 +90,8 @@ const SAMPLE = {
 // EMPTY one as different conditions ("does not exist" vs "is empty") — and the
 // Zap editor builds those filters from SAMPLE, which promises all four. Omit
 // them on the success path and a filter the user tested against the sample
-// behaves differently on a live run.
-const NO_FAILURE = { error: '', failure_reason: '', failure_class: '', retryable: null };
+// behaves differently on a live run. Shared with the other callback actions
+// (lib/jobs.js), so the four keys cannot drift apart between them.
 
 // The verdict fields as they read when there is no verdict yet, or never will
 // be. Spread into EVERY branch that is not `completed`, for the same reason as

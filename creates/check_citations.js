@@ -10,13 +10,8 @@ const {
   isWebhookSecretMissing,
   webhookSecretMissing,
 } = require('../lib/signed-callback');
-const {
-  shapeCitation,
-  shapeCitationIssue,
-  shapeJobFailure,
-  CITATION_CHILDREN,
-  CITATION_ISSUE_CHILDREN,
-} = require('../lib/citations');
+const { shapeCitation, shapeCitationIssue, CITATION_CHILDREN, CITATION_ISSUE_CHILDREN } = require('../lib/citations');
+const { NO_FAILURE, isTerminal, shapeJobFailure, positiveInteger } = require('../lib/jobs');
 
 // Check Citations: POST /citecheck reads each source a draft cites and checks
 // whether it says what the draft attributes to it. Usually seconds, but the
@@ -29,8 +24,6 @@ const {
 // a Zap step cannot express well; a draft with its links is what a Zap holds.
 
 const ACTION_LABEL = 'Check Citations';
-
-const NO_FAILURE = { error: '', failure_reason: '', failure_class: '', retryable: null };
 
 const EMPTY_RESULT = {
   outcome: '',
@@ -102,8 +95,6 @@ const SAMPLE = {
   ...NO_FAILURE,
 };
 
-const isTerminal = (status) => status === 'completed' || status === 'failed';
-
 // One shaper for the signed callback and the read by id (getCitecheck).
 const shapeCitecheck = (citecheckId, check) => {
   const c = check || {};
@@ -151,25 +142,23 @@ const fromSignedCitecheck = (bundle) => {
   return { output: shapeCitecheck(citecheckId, event.citecheck) };
 };
 
-const optionalInteger = (value) => {
-  if (value === undefined || value === null || value === '') return undefined;
-  const n = Number(value);
-  return Number.isFinite(n) ? Math.trunc(n) : undefined;
-};
-
 const citecheckInput = (bundle) => {
   const input = bundle.inputData || {};
   return {
     text: input.text,
-    maxCitations: optionalInteger(input.maxCitations),
+    // 1 to 20 on the server; 0 or blank is the default (20), not a 422.
+    maxCitations: positiveInteger(input.maxCitations),
     language: input.language || undefined,
   };
 };
 
-// Replay-stable, one hour (lib/replay-key.js): every checked citation costs a
-// credit, so a replayed submit must return the first check.
-const citecheckKey = (z, bundle, input) =>
-  replayKey(z, bundle, ['citecheck', input.text, input.maxCitations, input.language], HOUR_MS);
+// Replay-stable (lib/replay-key.js): every checked citation costs a credit,
+// so a replayed submit must return the first check. The callback URL is in
+// the key for the reason given in creates/review_draft.js: the server binds
+// the key to a body that includes `webhook_url` (check_idempotency_body in
+// lenz/api/citecheck.py).
+const citecheckKey = (z, bundle, input, callbackUrl) =>
+  replayKey(z, bundle, ['citecheck', callbackUrl, input.text, input.maxCitations, input.language], HOUR_MS);
 
 const perform = async (z, bundle) => {
   const client = lenzClient(bundle);
@@ -180,11 +169,12 @@ const perform = async (z, bundle) => {
   }
 
   const input = citecheckInput(bundle);
+  const callbackUrl = z.generateCallbackUrl();
   return client
     .citecheck({
       ...input,
-      webhookUrl: z.generateCallbackUrl(),
-      idempotencyKey: citecheckKey(z, bundle, input),
+      webhookUrl: callbackUrl,
+      idempotencyKey: citecheckKey(z, bundle, input, callbackUrl),
     })
     .then((accepted) => ({
       ...EMPTY_RESULT,
@@ -228,7 +218,7 @@ module.exports = {
         type: 'text',
         required: true,
         helpText:
-          'A draft with its sources: markdown links, bare URLs, DOIs (doi: or doi.org) or [1]-style markers with a reference list. Up to 50,000 characters. Clicking Test shows an example check so you can map the output fields; a turned-on Zap checks this draft.',
+          'A draft with its sources: markdown links, bare URLs, DOIs (doi: or doi.org) or [1]-style markers with a reference list. Up to 50,000 characters; a longer draft is refused, not cut. Clicking Test shows an example check so you can map the output fields; a turned-on Zap checks this draft.',
       },
       {
         key: 'maxCitations',
@@ -236,7 +226,7 @@ module.exports = {
         type: 'integer',
         required: false,
         helpText:
-          'The most citations to check, from 1 to 20. Leave blank for 20. Each checked citation costs 1 credit; one Lenz could not read is not charged.',
+          'The most citations to check, from 1 to 20. Leave blank (or 0) for 20. Each checked citation costs 1 credit; one Lenz could not read is not charged.',
       },
       languageField(),
     ],

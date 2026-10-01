@@ -493,3 +493,155 @@ describe('creates.check_citations', () => {
     expect(out.message).toMatch(/Citation Check ID is cc123456/);
   });
 });
+
+// ─── Review fixes: edges the first pass missed ───────────────────────────────
+
+const keysOf = (op) => op.outputFields.map((f) => f.key).sort();
+
+describe('every branch returns exactly the declared output keys', () => {
+  it('Review a Draft: parked, completed, failed and still running', async () => {
+    mockClient({ getReview: jest.fn().mockResolvedValue({ review_id: REVIEW_ID, status: 'verifying' }) });
+    const failed = { ...REVIEW, status: 'failed', failure: null };
+    const outs = [
+      await appTester(review.perform, { authData: AUTH, inputData: { text: 'x' } }),
+      await appTester(review.performResume, resumeReview(callback(reviewEvent()))),
+      await appTester(review.performResume, resumeReview(callback(reviewEvent({ event: 'review.failed', review: failed })))),
+      await appTester(review.performResume, resumeReview(undefined)),
+    ];
+    for (const out of outs) expect(Object.keys(out).sort()).toEqual(keysOf(review));
+  });
+
+  it('Check Citations: parked, completed, failed and still running', async () => {
+    mockClient({ getCitecheck: jest.fn().mockResolvedValue({ citecheck_id: CITECHECK_ID, status: 'checking' }) });
+    const failed = { ...CITECHECK, status: 'failed', failure: null };
+    const outs = [
+      await appTester(cite.perform, { authData: AUTH, inputData: { text: 'x' } }),
+      await appTester(cite.performResume, resumeCite(callback(citeEvent()))),
+      await appTester(cite.performResume, resumeCite(callback(citeEvent({ event: 'citecheck.failed', citecheck: failed })))),
+      await appTester(cite.performResume, resumeCite(undefined)),
+    ];
+    for (const out of outs) expect(Object.keys(out).sort()).toEqual(keysOf(cite));
+  });
+});
+
+describe('Review a Draft edges', () => {
+  it('0 deep checks is sent as 0 (quick checks only), not left to the default', async () => {
+    const client = mockClient();
+    await appTester(review.perform, { authData: AUTH, inputData: { text: 'x', maxVerifications: '0', visibility: 'unlisted' } });
+
+    const sent = client.review.mock.calls[0][0];
+    expect(sent.maxVerifications).toBe(0);
+    expect(sent.visibility).toBe('unlisted');
+  });
+
+  it('a value that is not a number is left to the server default', async () => {
+    const client = mockClient();
+    await appTester(review.perform, { authData: AUTH, inputData: { text: 'x', maxVerifications: 'abc' } });
+
+    expect(client.review.mock.calls[0][0].maxVerifications).toBeUndefined();
+  });
+
+  it('reads by id when the callback review has no status', async () => {
+    const client = mockClient({ getReview: jest.fn().mockResolvedValue(REVIEW) });
+    await appTester(review.performResume, resumeReview(callback(reviewEvent({ review: { review_id: REVIEW_ID } }))));
+
+    expect(client.getReview).toHaveBeenCalledWith(REVIEW_ID);
+  });
+
+  it('a failed review with no failure block still reads as failed', async () => {
+    mockClient();
+    const failed = { ...REVIEW, status: 'failed', outcome: null, issues: [], citation_issues: [], failure: null };
+    const out = await appTester(
+      review.performResume,
+      resumeReview(callback(reviewEvent({ event: 'review.failed', status: 'failed', review: failed }))),
+    );
+
+    expect(out).toMatchObject({ status: 'failed', error: 'The job failed.', failure_reason: '', failure_class: '', retryable: null });
+  });
+
+  it('says when citations were asked for and not checked, and counts only claims with no verdict', async () => {
+    mockClient();
+    const skipped = {
+      ...REVIEW,
+      summary: {
+        ...REVIEW.summary,
+        assessments: { completed: 3, failed: 1 },
+        citations_skipped: 'insufficient_credits',
+        citation_checks: { checked: 0, unchecked: 0, failed: 0 },
+      },
+      failures: [
+        { claim_index: 2, stage: 'assessment' },
+        { claim_index: 3, stage: 'verification' },
+      ],
+    };
+    const out = await appTester(review.performResume, resumeReview(callback(reviewEvent({ review: skipped }))));
+
+    expect(out).toMatchObject({ citations_skipped: 'insufficient_credits', claims_checked: 3, unchecked_claims: 1 });
+  });
+
+  it('two runs of the same draft get different keys, because each has its own callback URL', async () => {
+    // The app tester hands every run the same echo URL, so perform is called
+    // with a minimal z whose callback URL changes per run, as Zapier's does.
+    // Under one key the second run would be refused (422
+    // idempotency_body_mismatch): the server binds the key to webhook_url too.
+    const client = mockClient();
+    const zFor = (url) => ({
+      generateCallbackUrl: () => url,
+      hash: (alg, str, enc, inEnc) => crypto.createHash(alg).update(str, inEnc).digest(enc),
+      errors: zapier.errors,
+      console,
+    });
+    const bundle = { authData: AUTH, inputData: { text: 'Same draft.' }, meta: { zap: { id: 7 } } };
+    await review.perform(zFor('https://hooks.zapier.com/a'), bundle);
+    await review.perform(zFor('https://hooks.zapier.com/a'), bundle);
+    await review.perform(zFor('https://hooks.zapier.com/b'), bundle);
+
+    const keys = client.review.mock.calls.map(([input]) => input.idempotencyKey);
+    expect(keys[0]).toBe(keys[1]);
+    expect(keys[2]).not.toBe(keys[0]);
+  });
+});
+
+describe('Check Citations edges', () => {
+  it('0 or blank citations is the default (20), never a 422', async () => {
+    const client = mockClient();
+    await appTester(cite.perform, { authData: AUTH, inputData: { text: 'x', maxCitations: '0', language: 'fr' } });
+    await appTester(cite.perform, { authData: AUTH, inputData: { text: 'x', maxCitations: '' } });
+
+    expect(client.citecheck.mock.calls[0][0]).toMatchObject({ maxCitations: undefined, language: 'fr' });
+    expect(client.citecheck.mock.calls[1][0].maxCitations).toBeUndefined();
+  });
+
+  it('sends the same key for a replay of the same run, a different one for another draft', async () => {
+    const client = mockClient();
+    const run = (text) => appTester(cite.perform, { authData: AUTH, inputData: { text }, meta: { zap: { id: 7 } } });
+    await run('Draft one.');
+    await run('Draft one.');
+    await run('Draft two.');
+
+    const keys = client.citecheck.mock.calls.map(([input]) => input.idempotencyKey);
+    expect(keys[0]).toBe(keys[1]);
+    expect(keys[2]).not.toBe(keys[0]);
+  });
+
+  it('while testing: says so when the connection has no webhook secret', async () => {
+    mockClient({ usage: jest.fn().mockResolvedValue({ has_webhook_secret: false }) });
+    const err = await capture(cite.perform, { authData: AUTH, inputData: { text: 'x' }, meta: { isLoadingSample: true } });
+
+    expect(err.message).toMatch(/Check Citations needs this Lenz connection to have a webhook signing secret/);
+  });
+
+  it('reads by id when the callback check has no status', async () => {
+    const client = mockClient({ getCitecheck: jest.fn().mockResolvedValue(CITECHECK) });
+    await appTester(cite.performResume, resumeCite(callback(citeEvent({ citecheck: { citecheck_id: CITECHECK_ID } }))));
+
+    expect(client.getCitecheck).toHaveBeenCalledWith(CITECHECK_ID);
+  });
+
+  it('maps an error reading the check', async () => {
+    mockClient({ getCitecheck: jest.fn().mockRejectedValue(new LenzError({ message: 'Forbidden', statusCode: 403 })) });
+    const err = await capture(cite.performResume, resumeCite(undefined));
+
+    expect(err.message).toMatch(/Forbidden/);
+  });
+});
