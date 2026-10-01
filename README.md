@@ -179,7 +179,7 @@ You'll need a Lenz API key:
 ### What happens when something goes wrong
 
 Zapier turns a Zap off after enough failed runs, so which failures *count* matters
-more than it looks. Since 1.5.0:
+more than it looks. Since 1.6.0:
 
 | Condition | What Zapier does | Counts as an error? |
 |---|---|---|
