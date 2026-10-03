@@ -85,7 +85,9 @@ const CALL_TIMEOUT_MS = 28000;
 // User-Agent — the attribution above only holds if it's applied everywhere.
 const lenzClient = (bundle) =>
   new Lenz({
-    apiKey: bundle.authData.apiKey,
+    // The OAuth access token. The SDK sends whatever it is given here as
+    // `Authorization: Bearer <value>`, so an OAuth token needs no SDK change.
+    apiKey: bundle.authData.access_token,
     fetch: fetchAsZapier,
     maxRetries: 0,
     timeoutMs: CALL_TIMEOUT_MS,

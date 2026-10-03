@@ -39,7 +39,7 @@ describe('creates.verify_claim', () => {
     LenzClient.mockImplementation(() => client);
 
     const bundle = {
-      authData: { apiKey: 'lenz_good' },
+      authData: { access_token: 'lenz_good' },
       inputData: { claim: 'The Eiffel Tower is 330 metres tall.' },
     };
     const result = await appTester(App.creates.verify_claim.operation.perform, bundle);
@@ -63,7 +63,7 @@ describe('creates.verify_claim', () => {
     LenzClient.mockImplementation(() => client);
 
     const bundle = {
-      authData: { apiKey: 'lenz_good' },
+      authData: { access_token: 'lenz_good' },
       inputData: { claim: 'A different claim.' },
       meta: { isLoadingSample: true },
     };
@@ -89,13 +89,13 @@ describe('creates.verify_claim', () => {
     LenzClient.mockImplementation(() => client);
 
     const bundle = {
-      authData: { apiKey: 'lenz_nosecret' },
+      authData: { access_token: 'lenz_nosecret' },
       inputData: { claim: 'A claim.' },
       meta: { isLoadingSample: true },
     };
 
     await expect(appTester(App.creates.verify_claim.operation.perform, bundle)).rejects.toThrow(
-      /webhook secret/i,
+      /reconnect your Lenz account/i,
     );
     expect(client.verify).not.toHaveBeenCalled();
   });
@@ -109,7 +109,7 @@ describe('creates.verify_claim', () => {
     LenzClient.mockImplementation(() => client);
 
     const bundle = {
-      authData: { apiKey: 'lenz_good' },
+      authData: { access_token: 'lenz_good' },
       inputData: { claim: 'A claim.' },
       meta: { isLoadingSample: true },
     };
@@ -129,12 +129,12 @@ describe('creates.verify_claim', () => {
     LenzClient.mockImplementation(() => client);
 
     const bundle = {
-      authData: { apiKey: 'lenz_good' },
+      authData: { access_token: 'lenz_good' },
       inputData: { claim: 'The Eiffel Tower is 330 metres tall.' },
     };
 
     await expect(appTester(App.creates.verify_claim.operation.perform, bundle)).rejects.toThrow(
-      /generate webhook secret/i,
+      /reconnect your Lenz account/i,
     );
   });
 
@@ -143,7 +143,7 @@ describe('creates.verify_claim', () => {
     const client = mockClient({ verify: jest.fn().mockRejectedValue(apiError) });
     LenzClient.mockImplementation(() => client);
 
-    const bundle = { authData: { apiKey: 'lenz_good' }, inputData: { claim: '' } };
+    const bundle = { authData: { access_token: 'lenz_good' }, inputData: { claim: '' } };
 
     await expect(appTester(App.creates.verify_claim.operation.perform, bundle)).rejects.toThrow('Text is required.');
   });
@@ -167,7 +167,7 @@ describe('creates.verify_claim', () => {
     LenzClient.mockImplementation(() => client);
 
     const bundle = {
-      authData: { apiKey: 'lenz_good' },
+      authData: { access_token: 'lenz_good' },
       outputData: { task_id: 'task_123', status: 'processing' },
     };
     const result = await appTester(App.creates.verify_claim.operation.performResume, bundle);
@@ -201,7 +201,7 @@ describe('creates.verify_claim', () => {
     LenzClient.mockImplementation(() => client);
 
     const bundle = {
-      authData: { apiKey: 'lenz_good' },
+      authData: { access_token: 'lenz_good' },
       outputData: { task_id: 'task_123', status: 'processing' },
     };
     const result = await appTester(App.creates.verify_claim.operation.performResume, bundle);
@@ -215,7 +215,7 @@ describe('creates.verify_claim', () => {
     });
     LenzClient.mockImplementation(() => client);
 
-    const bundle = { authData: { apiKey: 'lenz_good' }, outputData: { task_id: 'task_123' } };
+    const bundle = { authData: { access_token: 'lenz_good' }, outputData: { task_id: 'task_123' } };
     const result = await appTester(App.creates.verify_claim.operation.performResume, bundle);
 
     expect(result).toMatchObject({ status: 'needs_input', reason: 'multi_claim' });
@@ -225,7 +225,7 @@ describe('creates.verify_claim', () => {
   // VERIFY_DEPTH_COSTS in lenz/billing.py is {standard: 10, low: 5}.
   describe('depth and visibility', () => {
     const SUBMIT = {
-      authData: { apiKey: 'lenz_good' },
+      authData: { access_token: 'lenz_good' },
       inputData: { claim: 'The Eiffel Tower is 330 metres tall.' },
     };
 
@@ -270,7 +270,7 @@ describe('creates.verify_claim', () => {
       LenzClient.mockImplementation(() => client);
 
       const result = await appTester(App.creates.verify_claim.operation.performResume, {
-        authData: { apiKey: 'lenz_good' },
+        authData: { access_token: 'lenz_good' },
         outputData: { task_id: 'task_123' },
       });
 
@@ -287,7 +287,7 @@ describe('creates.verify_claim', () => {
       LenzClient.mockImplementation(() => client);
 
       const result = await appTester(App.creates.verify_claim.operation.performResume, {
-        authData: { apiKey: 'lenz_good' },
+        authData: { access_token: 'lenz_good' },
         outputData: { task_id: 'task_123' },
       });
 
@@ -306,7 +306,7 @@ describe('creates.verify_claim', () => {
       );
 
       const result = await appTester(App.creates.verify_claim.operation.performResume, {
-        authData: { apiKey: 'lenz_good' },
+        authData: { access_token: 'lenz_good' },
         outputData: { task_id: 'task_123' },
       });
 
@@ -348,7 +348,7 @@ describe('creates.verify_claim', () => {
   // message and the data was dropped. Shapes here mirror the server
   // (lenz/api/public_authed.py, /verify/status) exactly.
   describe('needs_input, keyed on reason', () => {
-    const RESUME = { authData: { apiKey: 'lenz_good' }, outputData: { task_id: 'task_123' } };
+    const RESUME = { authData: { access_token: 'lenz_good' }, outputData: { task_id: 'task_123' } };
     const NEEDS_INPUT_KEYS = [
       'reason',
       'message',
@@ -476,7 +476,7 @@ describe('creates.verify_claim', () => {
         mockClient({ verify: jest.fn().mockResolvedValue({ task_id: 'task_123' }) }),
       );
       const result = await appTester(App.creates.verify_claim.operation.perform, {
-        authData: { apiKey: 'lenz_good' },
+        authData: { access_token: 'lenz_good' },
         inputData: { claim: 'The Eiffel Tower is 330 metres tall.' },
       });
       for (const key of [...NEEDS_INPUT_KEYS, 'error', 'failure_reason', 'failure_class', 'retryable']) {
@@ -497,7 +497,7 @@ describe('creates.verify_claim', () => {
     });
     LenzClient.mockImplementation(() => client);
 
-    const bundle = { authData: { apiKey: 'lenz_good' }, outputData: { task_id: 'task_123' } };
+    const bundle = { authData: { access_token: 'lenz_good' }, outputData: { task_id: 'task_123' } };
     const result = await appTester(App.creates.verify_claim.operation.performResume, bundle);
 
     expect(result).toMatchObject({
@@ -515,7 +515,7 @@ describe('creates.verify_claim', () => {
     });
     LenzClient.mockImplementation(() => client);
 
-    const bundle = { authData: { apiKey: 'lenz_good' }, outputData: { task_id: 'task_123' } };
+    const bundle = { authData: { access_token: 'lenz_good' }, outputData: { task_id: 'task_123' } };
     const result = await appTester(App.creates.verify_claim.operation.performResume, bundle);
 
     expect(result).toMatchObject({
@@ -537,7 +537,7 @@ describe('creates.verify_claim', () => {
   ])('performResume returns the failure fields EMPTY, not missing, on %s', async (_label, body) => {
     LenzClient.mockImplementation(() => mockClient({ getStatus: jest.fn().mockResolvedValue(body) }));
 
-    const bundle = { authData: { apiKey: 'lenz_good' }, outputData: { task_id: 'task_123' } };
+    const bundle = { authData: { access_token: 'lenz_good' }, outputData: { task_id: 'task_123' } };
     const result = await appTester(App.creates.verify_claim.operation.performResume, bundle);
 
     for (const key of ['error', 'failure_reason', 'failure_class', 'retryable']) {
@@ -558,7 +558,7 @@ describe('creates.verify_claim', () => {
       mockClient({ getStatus: jest.fn().mockResolvedValue({ status: 'processing' }) }),
     );
 
-    const bundle = { authData: { apiKey: 'lenz_good' }, outputData: { task_id: 'task_123' } };
+    const bundle = { authData: { access_token: 'lenz_good' }, outputData: { task_id: 'task_123' } };
     const result = await appTester(App.creates.verify_claim.operation.performResume, bundle);
 
     expect(result.status).toBe('processing');
@@ -580,7 +580,7 @@ describe('creates.assess', () => {
     });
     LenzClient.mockImplementation(() => client);
 
-    const bundle = { authData: { apiKey: 'lenz_good' }, inputData: { text: 'A and B' } };
+    const bundle = { authData: { access_token: 'lenz_good' }, inputData: { text: 'A and B' } };
     const result = await appTester(App.creates.assess.operation.perform, bundle);
 
     expect(result.status).toBe('ok');
@@ -596,7 +596,7 @@ describe('creates.assess', () => {
     });
     LenzClient.mockImplementation(() => client);
 
-    const bundle = { authData: { apiKey: 'lenz_good' }, inputData: { text: 'huh?' } };
+    const bundle = { authData: { access_token: 'lenz_good' }, inputData: { text: 'huh?' } };
     const result = await appTester(App.creates.assess.operation.perform, bundle);
 
     expect(result).toMatchObject({ status: 'no_claim', message: 'No claim found.' });
@@ -606,7 +606,7 @@ describe('creates.assess', () => {
     const client = mockClient({ assess: jest.fn() });
     LenzClient.mockImplementation(() => client);
 
-    const bundle = { authData: { apiKey: 'lenz_good' }, inputData: { text: 'A' }, meta: { isLoadingSample: true } };
+    const bundle = { authData: { access_token: 'lenz_good' }, inputData: { text: 'A' }, meta: { isLoadingSample: true } };
     const result = await appTester(App.creates.assess.operation.perform, bundle);
 
     expect(result.status).toBe('ok');
@@ -629,7 +629,7 @@ describe('creates.assess', () => {
     });
     LenzClient.mockImplementation(() => client);
 
-    const bundle = { authData: { apiKey: 'lenz_good' }, inputData: { text: 'vague' } };
+    const bundle = { authData: { access_token: 'lenz_good' }, inputData: { text: 'vague' } };
     const result = await appTester(App.creates.assess.operation.perform, bundle);
 
     expect(result.status).toBe('no_claim');
@@ -673,7 +673,7 @@ describe('creates.assess', () => {
     });
     LenzClient.mockImplementation(() => client);
 
-    const bundle = { authData: { apiKey: 'lenz_good' }, inputData: { text: 'x' } };
+    const bundle = { authData: { access_token: 'lenz_good' }, inputData: { text: 'x' } };
     const result = await appTester(App.creates.assess.operation.perform, bundle);
 
     expect(result.status).toBe('ok');
@@ -705,7 +705,7 @@ describe('creates.assess', () => {
   // derived from what the replay shares with its original.
   describe('replay idempotency key', () => {
     const live = (over = {}) => ({
-      authData: { apiKey: 'lenz_good' },
+      authData: { access_token: 'lenz_good' },
       inputData: { text: 'The tower is tall.', language: 'en' },
       meta: { zap: { id: 12345 } },
       ...over,
@@ -815,7 +815,7 @@ describe('creates.assess', () => {
         LenzClient.mockImplementation(() => client);
 
         const err = await captureCreateError(App.creates.assess.operation.perform, {
-          authData: { apiKey: 'lenz_good' },
+          authData: { access_token: 'lenz_good' },
           inputData: { text: 'A and B' },
         });
 
@@ -839,7 +839,7 @@ describe('creates.assess', () => {
 
       const before = Date.now();
       const err = await captureCreateError(App.creates.assess.operation.perform, {
-        authData: { apiKey: 'lenz_good' },
+        authData: { access_token: 'lenz_good' },
         inputData: { text: 'A' },
         meta: { zap: { id: 1 } },
       });
@@ -872,7 +872,7 @@ describe('creates.assess', () => {
       LenzClient.mockImplementation(() => client);
 
       const result = await appTester(App.creates.assess.operation.perform, {
-        authData: { apiKey: 'lenz_good' },
+        authData: { access_token: 'lenz_good' },
         inputData: { text: 'A and B' },
       });
 
@@ -892,7 +892,7 @@ describe('creates.assess', () => {
       LenzClient.mockImplementation(() => client);
 
       const result = await appTester(App.creates.assess.operation.perform, {
-        authData: { apiKey: 'lenz_good' },
+        authData: { access_token: 'lenz_good' },
         inputData: { text: 'hello' },
       });
 
@@ -913,7 +913,7 @@ describe('creates.assess', () => {
     LenzClient.mockImplementation(() => client);
 
     return appTester(App.creates.assess.operation.perform, {
-      authData: { apiKey: 'lenz_good' },
+      authData: { access_token: 'lenz_good' },
       inputData: { text: 'A' },
     }).then((result) => {
       for (const key of declared) {
@@ -933,7 +933,7 @@ describe('creates.assess', () => {
     LenzClient.mockImplementation(() => client);
 
     await appTester(App.creates.assess.operation.perform, {
-      authData: { apiKey: 'lenz_good' },
+      authData: { access_token: 'lenz_good' },
       inputData: { text: 'A' },
     });
 
@@ -949,7 +949,7 @@ describe('creates.extract_claims', () => {
     });
     LenzClient.mockImplementation(() => client);
 
-    const bundle = { authData: { apiKey: 'lenz_good' }, inputData: { text: 'A' } };
+    const bundle = { authData: { access_token: 'lenz_good' }, inputData: { text: 'A' } };
     const result = await appTester(App.creates.extract_claims.operation.perform, bundle);
 
     expect(result).toMatchObject({ status: 'ready', claim: 'A' });
@@ -959,7 +959,7 @@ describe('creates.extract_claims', () => {
     const client = mockClient({ extract: jest.fn() });
     LenzClient.mockImplementation(() => client);
 
-    const bundle = { authData: { apiKey: 'lenz_good' }, inputData: { text: 'A' }, meta: { isLoadingSample: true } };
+    const bundle = { authData: { access_token: 'lenz_good' }, inputData: { text: 'A' }, meta: { isLoadingSample: true } };
     const result = await appTester(App.creates.extract_claims.operation.perform, bundle);
 
     expect(result.status).toBe('ready');
@@ -977,7 +977,7 @@ describe('creates.extract_claims', () => {
     LenzClient.mockImplementation(() => client);
 
     await appTester(App.creates.extract_claims.operation.perform, {
-      authData: { apiKey: 'lenz_good' },
+      authData: { access_token: 'lenz_good' },
       inputData: { text: 'A' },
     });
 
@@ -1003,7 +1003,7 @@ describe('creates.extract_claims', () => {
   // truncating — a silently shortened focus would return a subset of the
   // claims with nothing to show it happened.
   describe('focus', () => {
-    const AUTH_X = { authData: { apiKey: 'lenz_good' } };
+    const AUTH_X = { authData: { access_token: 'lenz_good' } };
 
     it('sends the focus when given one', async () => {
       const client = mockClient({
@@ -1215,7 +1215,7 @@ describe('creates.ask', () => {
     LenzClient.mockImplementation(() => client);
 
     const bundle = {
-      authData: { apiKey: 'lenz_good' },
+      authData: { access_token: 'lenz_good' },
       inputData: { verificationId: 'ab12cd34', question: 'Why?' },
     };
     const result = await appTester(App.creates.ask.operation.perform, bundle);
@@ -1229,7 +1229,7 @@ describe('creates.ask', () => {
     LenzClient.mockImplementation(() => client);
 
     const bundle = {
-      authData: { apiKey: 'lenz_good' },
+      authData: { access_token: 'lenz_good' },
       inputData: { verificationId: 'ab12cd34', question: 'Why?' },
       meta: { isLoadingSample: true },
     };
@@ -1333,7 +1333,7 @@ describe('every performResume branch emits every key the sample promises', () =>
   const resumeWith = async (status) => {
     LenzClient.mockImplementation(() => mockClient({ getStatus: jest.fn().mockResolvedValue(status) }));
     return appTester(App.creates.verify_claim.operation.performResume, {
-      authData: { apiKey: 'lenz_good' },
+      authData: { access_token: 'lenz_good' },
       outputData: { task_id: 'task_123' },
     });
   };
@@ -1358,7 +1358,7 @@ describe('every performResume branch emits every key the sample promises', () =>
       mockClient({ verify: jest.fn().mockResolvedValue({ task_id: 'task_123' }) }),
     );
     const result = await appTester(App.creates.verify_claim.operation.perform, {
-      authData: { apiKey: 'lenz_good' },
+      authData: { access_token: 'lenz_good' },
       inputData: { claim: 'The Eiffel Tower is 330 metres tall.' },
     });
     expect(SAMPLE_KEYS.filter((k) => !(k in result))).toEqual([]);
@@ -1395,7 +1395,7 @@ describe('the completed verdict carries what the API actually sends', () => {
       mockClient({ getStatus: jest.fn().mockResolvedValue(status) }),
     );
     return appTester(App.creates.verify_claim.operation.performResume, {
-      authData: { apiKey: 'lenz_good' },
+      authData: { access_token: 'lenz_good' },
       outputData: { task_id: 'task_123' },
     });
   };
@@ -1450,7 +1450,7 @@ describe('assess carries the per-claim language echo', () => {
       }),
     );
     const result = await appTester(App.creates.assess.operation.perform, {
-      authData: { apiKey: 'lenz_good' },
+      authData: { access_token: 'lenz_good' },
       inputData: { text: 'x' },
     });
     expect(result.claims[0].language).toBe('de');

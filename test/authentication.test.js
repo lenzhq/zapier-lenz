@@ -30,7 +30,7 @@ describe('custom auth', () => {
     });
     LenzClient.mockImplementation(() => client);
 
-    const bundle = { authData: { apiKey: 'lenz_good' } };
+    const bundle = { authData: { access_token: 'lenz_good' } };
     const response = await appTester(App.authentication.test, bundle);
 
     expect(response.plan).toBe('plus');
@@ -50,15 +50,16 @@ describe('custom auth', () => {
     });
     LenzClient.mockImplementation(() => client);
 
-    const bundle = { authData: { apiKey: 'lenz_bad' } };
+    const bundle = { authData: { access_token: 'lenz_bad' } };
     const err = await appTester(App.authentication.test, bundle).then(
       () => null,
       (e) => e,
     );
 
+    // 2.0.0 is OAuth: a 401 means the access token expired, so Zapier is told
+    // to refresh and retry. A grant that is really dead fails the refresh.
     expect(err).not.toBeNull();
-    expect(err.name).toBe('ExpiredAuthError');
-    expect(err.message).toMatch(/reconnect/i);
+    expect(err.name).toBe('RefreshAuthError');
   });
 
   // A 403 is a different problem — a private verification or an IP block — and
@@ -72,7 +73,7 @@ describe('custom auth', () => {
     });
     LenzClient.mockImplementation(() => client);
 
-    const err = await appTester(App.authentication.test, { authData: { apiKey: 'lenz_x' } }).then(
+    const err = await appTester(App.authentication.test, { authData: { access_token: 'lenz_x' } }).then(
       () => null,
       (e) => e,
     );
@@ -88,7 +89,7 @@ describe('custom auth', () => {
     const client = mockClient({ usage: jest.fn().mockRejectedValue(transport) });
     LenzClient.mockImplementation(() => client);
 
-    const err = await appTester(App.authentication.test, { authData: { apiKey: 'lenz_x' } }).then(
+    const err = await appTester(App.authentication.test, { authData: { access_token: 'lenz_x' } }).then(
       () => null,
       (e) => e,
     );
