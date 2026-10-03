@@ -371,6 +371,13 @@ describe('capacity / provider outage (503) → ThrottledError', () => {
     expect(JSON.parse(err.message).message).toContain('providers');
   });
 
+  it('handles citations_unavailable (/citecheck) the same way, in its own words', async () => {
+    const err = await capture503(capacityError({ code: 'citations_unavailable', body: { retry_after: 300 } }));
+    expect(err.name).toBe('ThrottledError');
+    expect(JSON.parse(err.message).delay).toBe(300);
+    expect(JSON.parse(err.message).message).toContain('Citation checking is temporarily unavailable');
+  });
+
   it('defaults the wait when the body states none', async () => {
     const err = await capture503(capacityError({ body: {} }));
     expect(err.name).toBe('ThrottledError');
@@ -627,6 +634,20 @@ describe('409 idempotency in flight → ThrottledError', () => {
     });
     expect(err.name).toBe('ThrottledError');
     expect(JSON.parse(err.message).message).not.toMatch(/same answer|not be charged|nothing was charged/i);
+  });
+
+  // /review and /citecheck say the same thing with a code, whatever the
+  // message reads.
+  it('replays a coded idempotency_conflict too', async () => {
+    const coded = new LenzError({
+      message: 'Still being created.',
+      statusCode: 409,
+      code: 'idempotency_conflict',
+      body: { code: 'idempotency_conflict', review_id: null },
+    });
+    LenzClient.mockImplementation(() => mockClient({ assess: jest.fn().mockRejectedValue(coded) }));
+    const err = await captureError(App.creates.assess.operation.perform, { ...AUTH, inputData: { text: 'x' } });
+    expect(err.name).toBe('ThrottledError');
   });
 
   // Every other 409 keeps its handling: only the exact in-flight shape replays.

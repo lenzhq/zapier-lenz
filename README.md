@@ -25,8 +25,10 @@ This integration is not yet in Zapier's public App Directory. While private, it'
 | **Assess (Fast)** | A quick 3-model panel verdict, ~10 seconds, one entry per claim identified in the input text. Good default for lower-stakes checks. |
 | **Extract Claims** | Free — pulls the verifiable factual claims out of a block of text without checking them. Useful as a first step before running Assess or Verify a Claim on each claim individually. **Text** can also be a single public web page URL: Lenz reads the page, or a YouTube video's transcript, and extracts the claims from its first 50,000 characters. Pages behind a login (Facebook, Instagram, Threads, LinkedIn) can't be read. A URL call typically takes 5-40 seconds and a Zap step has 30, so a slow page can fail the step; for a long page, send its text instead. |
 | **Ask Follow-Up** | Asks a question grounded in the full research behind a completed **Verify a Claim** result. Requires the `verification_id` that action returns — not usable standalone. |
+| **Review a Draft** | Checks a whole draft in one step, two to four minutes: every claim is quick-checked, the ones that look wrong or uncertain are deep-checked, and the result lists the **Issues** (claim, verdict, key finding, a suggested rewrite that is *not* itself verified, and the claim's lenz.io page). **Clean** is true when nothing was wrong. Optionally checks the draft's citations too (**Citations to Check**). Costs 1 credit per claim quick-checked (up to 20) plus 10 per deep check (5 at Low; **Deep Checks** sets how many, default 5); **Credits Charged** says what it cost. Runs via Zapier's callback, like Verify a Claim. |
+| **Check Citations** | Reads each source a draft links to (links, bare URLs, DOIs, `[1]`-style references) and checks that it says what the draft attributes to it. Lists every citation with its **Finding** and the problem ones under **Citation Issues**. 1 credit per citation checked; one Lenz could not read is not charged. Runs via Zapier's callback. |
 
-Every claim-checking action returns a `passed` boolean (derived from the verdict) alongside the raw verdict and confidence — and, on Verify a Claim, the sourced citations — so you can wire a **Filter** step directly off the result — e.g. only continue the Zap when a claim passed.
+Verify a Claim and Assess (Fast) return a `passed` boolean (derived from the verdict) alongside the raw verdict and confidence — and, on Verify a Claim, the sourced citations — so you can wire a **Filter** step directly off the result — e.g. only continue the Zap when a claim passed. Review a Draft and Check Citations return `clean` instead: true only when the job finished and found nothing wrong.
 
 ### Values to filter on
 
@@ -47,10 +49,16 @@ only what the sample shows. These are the values the API actually sends:
 | `suggested_rewrite` | Verify a Claim, New Verification Completed | Free text: a suggested rewrite of `claim` that the verification's findings support, for a person to review before using it. **It has not been verified itself.** Empty for a true claim, when no correction is established, and on verifications from before Lenz added it. |
 | `depth` | Verify a Claim, when `status` is `completed` | `standard` or `low` — the depth the verdict was **produced** with, which is not always the one you asked for. Empty on every other status, and on verdicts from before Lenz recorded it. |
 | `visibility` | Verify a Claim, when `status` is `completed` | `private`, `unlisted` or `public`. You can only *request* the first two; `public` is read back when the verdict was served from an existing verification someone made public. Empty on every other status. |
-| `language` | all four actions (input) | `en` `es` `de` `fr` `it` `pt` `nl` `sv` `da` `no` `fi` `bg`. A dropdown since 1.4.0 — it was free text, and anything outside this set fails the run. |
+| `status` | Review a Draft | `completed` or `failed` once it ends. `queued`, `assessing` or `verifying` means Zapier resumed the step before the review ended; **Message** then says so. Filter on `completed`. |
+| `status` | Check Citations | `completed` or `failed`; `queued` or `checking` means it had not ended yet (see **Message**). |
+| `outcome` | Review a Draft, Check Citations | `clean`, `issues_found`, `incomplete` (some checks failed and nothing wrong was found in the rest) or `unchecked`. Empty until the job ends. |
+| `issues[].source` (**Checked By**) | Review a Draft | `assessment` (the quick check) or `verification` (a deep check, which also has a **Key Finding** and a **Lenz Page**). |
+| `citations_skipped` | Review a Draft | Why citations you asked for were **not** checked: `url_input`, `switched_off` or `insufficient_credits`. Empty otherwise. When set, **Clean** says nothing about the citations. |
+| `finding` | Check Citations, Review a Draft (citation rows) | `supported`, `partly_supported`, `contradicted`, `unsupported`, `not_found`, `metadata_mismatch` and more: an open set. To decide whether a citation is a problem, use **Is Issue** or the **Citation Issues** list, not the finding's name. |
+| `language` | Assess (Fast), Extract Claims, Verify a Claim, Ask Follow-Up, Review a Draft, Check Citations (input) | `en` `es` `de` `fr` `it` `pt` `nl` `sv` `da` `no` `fi` `bg`. A dropdown since 1.4.0 — it was free text, and anything outside this set fails the run. |
 
-Every field in the table above, and every other field Verify a Claim declares, is
-**present on every result** — empty when it does not apply, never missing. Zapier treats
+Every field in the table above, and every other field Verify a Claim, Review a Draft and
+Check Citations declare, is **present on every result** — empty when it does not apply, never missing. Zapier treats
 "does not exist" and "is empty" as different conditions, so this is what lets a Filter you
 built against the sample behave the same on a live run. `Passed` and `Lenz Score` are
 empty rather than `false`/`0` on a result with no verdict, since nothing was checked.
@@ -193,7 +201,7 @@ when 2.0.0 ships; Zaps still using it then will stop.
 ## Usage
 
 - **Verify a Claim takes ~90 seconds.** The Zap step will show as "waiting" while the pipeline runs — this is expected, not a stuck Zap.
-- **Verify a Claim** needs the connection's webhook signing secret, which is fetched automatically when you connect. There is nothing to set up.
+- **Verify a Claim**, **Review a Draft** and **Check Citations** need the connection's webhook signing secret, which is fetched automatically when you connect. There is nothing to set up.
 - For **Ask Follow-Up**, chain it directly after **Verify a Claim** in the same Zap, mapping its `verification_id` output into the Ask step's Verification ID field.
 
 ### What happens when something goes wrong
@@ -205,10 +213,10 @@ more than it looks. Since 1.5.0:
 |---|---|---|
 | Out of credits (402) | Halts the run with a top-up link | No |
 | Daily `/extract` cap (429) | Waits the stated time and replays | No |
-| Lenz at capacity, or providers down (503) | Waits the stated time and replays | No |
+| Lenz at capacity, providers down, or citation checking unavailable (503) | Waits the stated time and replays | No |
 | Assess (Fast): every claim came back `Error` with `upstream_unavailable` or `timeout` | Waits until the next hour begins and replays — Error rows are free, so nothing was charged. The wait is tied to the hour because the replay key is; a sooner replay would be handed the same stored rows | No |
 | Network drop, or a 5xx naming no reason | Waits 60s and replays | No |
-| No webhook secret on the connection (Verify a Claim) | Halts: reconnect your Lenz account | No |
+| No webhook secret on the connection (Verify a Claim, Review a Draft, Check Citations) | Halts: reconnect your Lenz account | No |
 | Focus over 300 characters (Extract Claims) | Halts with instructions | No |
 | Sign-in expired (401) | Refreshes the sign-in and retries | No |
 | Sign-in revoked at lenz.io | Prompts you to reconnect | No |
@@ -224,10 +232,13 @@ above — out of credits, over a cap, Lenz at capacity — that costs nothing, b
 the call is turned away before any work happens. A *timeout* is different: the
 request may have reached Lenz and be running, and there is no way to tell from the
 Zap's side. Every action that costs credits guards against paying twice for it.
-Verify a Claim carries a per-run callback URL that keeps runs apart. Assess (Fast)
-and Ask Follow-Up send an idempotency key built from the Zap, the input and the
-current time window, so a replay inside the window gets the answer Lenz already
-produced instead of running it again:
+Verify a Claim carries a per-run callback URL that keeps runs apart. Review a Draft
+and Check Citations build an idempotency key from that same per-run callback URL and
+their input, so a replay of a run gets the review or check Lenz already started,
+while a new run of the same draft starts its own. Assess (Fast) and Ask Follow-Up
+send an idempotency key built from the Zap, the input and the current time window,
+so a replay inside the window gets the answer Lenz already produced instead of
+running it again:
 
 | Action | Window | The edge that follows |
 |---|---|---|
@@ -325,6 +336,8 @@ unzip -l build/build.zip | head
 * [n8n-nodes-lenz](https://github.com/lenzhq/n8n-nodes-lenz) — the equivalent integration for n8n
 
 ## Version history
+
+From 1.4.0 on, see [CHANGELOG.md](CHANGELOG.md).
 
 * **1.3.0** — Lenz replaced its six per-endpoint quotas with **one credit pool** per account. The out-of-credits `HaltedError` now names the shortfall in credits — the cost of the call that was refused beside the balance that refused it — instead of only saying the balance is spent. That is the difference between a top-up and a plan change, and the user reads this message in the Zap history with no other context. Wording throughout follows the pool: credits are no longer per endpoint, so a `verify` no longer spends "a verify credit". `/extract` costs no credits at all and keeps its own daily fair-use cap, which still maps to a `ThrottledError` and replays. Reads `creditBalance` (the pool) rather than the deprecated `creditsRemaining`, which aliases `remaining` and is in the capability's unit, not credits. Requires `lenz-io` ≥ 2.9.0, the first version to carry `creditBalance` and `cost` on the quota error.
 * **1.2.2** — A failed verification now returns `failure_reason`, `failure_class` (closed set: `upstream_unavailable` / `insufficient_evidence` / `invalid_input` / `cancelled` / `internal`) and `retryable` as mappable output fields, so a Filter or Paths step can branch on *why* it failed instead of parsing the error prose. Capacity refusals (HTTP 503 with `code: capacity` or `upstream_unavailable`, sent when Lenz is shedding load or its model providers are down) become a `ThrottledError` carrying the server's stated wait — Zapier replays instead of hard-failing, for the same reason a spent balance halts: a self-resolving condition must not count against the Zap's error budget and get it auto-disabled. All four failure fields are present-but-empty on a successful run rather than absent, because Zapier's Filter treats a missing field and an empty one as different conditions. And a callback that arrives before the pipeline settles now reports its real status (`processing`) instead of `failed` — calling it a failure would have sent `retryable: null` about a verification that was still running and about to succeed.
