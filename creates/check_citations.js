@@ -222,11 +222,15 @@ module.exports = {
       },
       {
         key: 'maxCitations',
-        label: 'Citations to Check',
+        // A maximum, and blank is "all of them": the label says so, because
+        // "Citations to Check" read as a field that had to be filled in.
+        // 20 is the API's per-request ceiling (max_citations), not ours.
+        label: 'Maximum Citations to Check',
         type: 'integer',
         required: false,
+        placeholder: '20',
         helpText:
-          'The most citations to check, from 1 to 20. Leave blank (or 0) for 20. Each checked citation costs 1 credit; one Lenz could not read is not charged.',
+          'Leave blank to check all the citations in the draft, up to 20, the most one check reads. Enter a smaller number to check only the first ones. If the draft has more than 20, Citation Limit Reached is true; check the rest in a second step. Each checked citation costs 1 credit; one Lenz could not read is not charged.',
       },
       languageField(),
     ],

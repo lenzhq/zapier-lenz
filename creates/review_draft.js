@@ -315,11 +315,13 @@ module.exports = {
       },
       {
         key: 'maxCitations',
-        label: 'Citations to Check',
+        // Off unless asked, unlike Check Citations: here blank skips them.
+        label: 'Maximum Citations to Check',
         type: 'integer',
         required: false,
+        placeholder: '0',
         helpText:
-          'Also check that the sources the draft links to say what it claims they say: up to this many citations, from 1 to 20, at 1 credit each. Leave blank or 0 to skip. For a citation check on its own, use Check Citations.',
+          'Also check that the sources the draft links to say what it claims they say. Leave blank or 0 to skip. Enter 20 to check all of them (20 is the most one review reads), or a smaller number to check only the first ones. 1 credit per checked citation. For a citation check on its own, use Check Citations.',
       },
       {
         key: 'visibility',
