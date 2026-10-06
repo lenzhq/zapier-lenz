@@ -11,7 +11,7 @@ const {
   webhookSecretMissing,
 } = require('../lib/signed-callback');
 const { shapeCitation, shapeCitationIssue, CITATION_CHILDREN, CITATION_ISSUE_CHILDREN } = require('../lib/citations');
-const { NO_FAILURE, isTerminal, shapeJobFailure, positiveInteger } = require('../lib/jobs');
+const { NO_FAILURE, isTerminal, shapeJobFailure, citationLimit } = require('../lib/jobs');
 
 // Check Citations: POST /citecheck reads each source a draft cites and checks
 // whether it says what the draft attributes to it. Usually seconds, but the
@@ -146,8 +146,8 @@ const citecheckInput = (bundle) => {
   const input = bundle.inputData || {};
   return {
     text: input.text,
-    // 1 to 20 on the server; 0 or blank is the default (20), not a 422.
-    maxCitations: positiveInteger(input.maxCitations),
+    // 1 to 20 on the server: 0 or blank is the default (20), more is 20.
+    maxCitations: citationLimit(input.maxCitations),
     language: input.language || undefined,
   };
 };
@@ -230,7 +230,7 @@ module.exports = {
         required: false,
         placeholder: '20',
         helpText:
-          'Leave blank to check all the citations in the draft, up to 20, the most one check reads. Enter a smaller number to check only the first ones. If the draft has more than 20, Citation Limit Reached is true; check the rest in a second step. Each checked citation costs 1 credit; one Lenz could not read is not charged.',
+          'Leave blank to check up to 20 citations, the most one check takes; a larger number counts as 20. Enter a smaller number to check only the first ones in the draft. A link used twice counts twice. If the draft has more citations than this number, Citation Limit Reached is true and the rest are not checked. Each checked citation costs 1 credit; one Lenz could not read is not charged.',
       },
       languageField(),
     ],

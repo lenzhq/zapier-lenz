@@ -11,7 +11,7 @@ const {
   webhookSecretMissing,
 } = require('../lib/signed-callback');
 const { shapeCitationIssue, CITATION_ISSUE_CHILDREN } = require('../lib/citations');
-const { NO_FAILURE, isTerminal, shapeJobFailure, optionalInteger, positiveInteger } = require('../lib/jobs');
+const { NO_FAILURE, isTerminal, shapeJobFailure, optionalInteger, citationLimit } = require('../lib/jobs');
 
 // Review a Draft: POST /review reads a whole draft, quick-checks every claim
 // in it, deep-checks the ones that look wrong or uncertain, and (when asked)
@@ -193,7 +193,7 @@ const reviewInput = (bundle) => {
     // 0 is a real setting here (quick checks only), unlike blank.
     maxVerifications: optionalInteger(input.maxVerifications),
     // 0 and blank both mean "do not check citations".
-    maxCitations: positiveInteger(input.maxCitations),
+    maxCitations: citationLimit(input.maxCitations),
     visibility: input.visibility || undefined,
   };
 };
@@ -321,7 +321,7 @@ module.exports = {
         required: false,
         placeholder: '0',
         helpText:
-          'Also check that the sources the draft links to say what it claims they say. Leave blank or 0 to skip. Enter 20 to check all of them (20 is the most one review reads), or a smaller number to check only the first ones. 1 credit per checked citation. For a citation check on its own, use Check Citations.',
+          'Also check that the sources the draft links to say what it claims they say. Leave blank or 0 to skip. Enter a number to check up to that many, the first ones in the draft: 20 at most, and a larger number counts as 20. A draft with more citations than that has the rest left unchecked; a link used twice counts twice. 1 credit per checked citation. For a citation check on its own, use Check Citations.',
       },
       {
         key: 'visibility',

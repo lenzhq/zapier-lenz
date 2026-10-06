@@ -645,3 +645,23 @@ describe('Check Citations edges', () => {
     expect(err.message).toMatch(/Forbidden/);
   });
 });
+
+// ─── Maximum Citations to Check: a number above 20 is 20 ────────────────────
+
+describe('a citation limit above the 20 one run takes counts as 20', () => {
+  it('Check Citations: 50 is sent as 20, blank and 0 as the default', async () => {
+    const client = mockClient();
+    for (const value of ['50', '20', '', '0']) {
+      await appTester(cite.perform, { authData: AUTH, inputData: { text: 'x', maxCitations: value } });
+    }
+    expect(client.citecheck.mock.calls.map(([input]) => input.maxCitations)).toEqual([20, 20, undefined, undefined]);
+  });
+
+  it('Review a Draft: 100 is sent as 20, 5 as 5, blank skips citations', async () => {
+    const client = mockClient();
+    for (const value of ['100', '5', '']) {
+      await appTester(review.perform, { authData: AUTH, inputData: { text: 'x', maxCitations: value } });
+    }
+    expect(client.review.mock.calls.map(([input]) => input.maxCitations)).toEqual([20, 5, undefined]);
+  });
+});
