@@ -104,7 +104,7 @@ const shapeRow = (c) => ({
 const assessKey = (z, bundle) =>
   replayKey(z, bundle, [(bundle.inputData || {}).language, (bundle.inputData || {}).text], HOUR_MS);
 
-// Fast 3-model panel verdict (~10s) — one entry per claim found in the
+// Fast 3-model panel verdict (~15s) — one entry per claim found in the
 // text. Well under Zapier's 30s action timeout, so a live run is a plain
 // sync call. Editor testing (isLoadingSample) returns stubbed sample data and
 // makes NO real call, so a user never spends credits just for clicking "Test
@@ -204,7 +204,7 @@ module.exports = {
   display: {
     label: 'Assess (Fast)',
     description:
-      'Checks a claim and returns a verdict for it, in about 10 seconds. Several claims in one input are each assessed separately. A claim that could not be checked comes back as an "Error" row with an Error Code saying why and a Hint saying what to send instead.',
+      'Checks a claim and returns a verdict for it, in about 15 seconds. Several claims in one input are each assessed separately. A claim that could not be checked comes back as an "Error" row with an Error Code saying why and a Hint saying what to send instead.',
   },
   operation: {
     inputFields: [
