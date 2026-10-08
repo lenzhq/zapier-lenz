@@ -3,7 +3,20 @@
 User-facing changes to the Lenz integration for Zapier. Build and release
 mechanics live in [README.md](README.md#building-and-pushing).
 
-## Unreleased
+## 2.3.0
+
+- Update: the app now asks the Lenz API for its 2026-10-11 response version, on every
+  request it makes. Signed callbacks for Verify a Claim, Review a Draft and Check
+  Citations arrive in that version too. **No output changes**: every action and the
+  trigger give the same fields, with the same values, as before. A failed assessment
+  row still reads `Error` with confidence `low`, a check that found nothing to verify
+  still reads `no_claim` / `not_a_claim`, Extract Claims still gives Primary Claim and
+  Identified Claims, and New Verification Completed still gives `modified_at`.
+  Two things read differently, both from the API itself: the sentence in Verify a
+  Claim's Error field on a failure read from the status route is the API's current
+  wording, and an extraction that lists a claim now always has status `ready`.
+
+## 2.2.0
 
 - Update: the actions can now also read the newer response shape of the Lenz API
   (failure blocks, rows with a status instead of an `Error` verdict, an extraction as

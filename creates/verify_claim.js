@@ -317,14 +317,25 @@ const fromSignedCallback = (bundle) => {
   return { fallback: `event ${event.event || 'unknown'} is read from the status route` };
 };
 
-// A failed verification, from the signed callback in either shape. The nested
-// payload carries `failure: { code, detail, ... }` (on the verification, or at
-// the top level); the flat one carries the failure code alone in `error`.
-// The flat payload has no sentence, so `error` keeps reading as the code there.
+// A failed verification, from the signed callback in either shape, read into
+// what this output has always given for a failed callback. The earlier
+// (flat) payload carries the failure CODE in `error` and no `failure_reason`;
+// the newer one nests a `failure: { code, detail, ... }` block on the
+// verification. Both read the same: `error` is the code (`not_a_claim` for
+// "nothing checkable"), `failure_reason` stays empty as it always has on
+// this path, and the class and retryable flag come from the block.
 const failedFromCallback = (event, nested) => {
   const raw = event.raw || {};
   const block = (nested && nested.failure) || raw.failure;
-  if (isObject(block)) return failedFromBody({ failure: block });
+  if (isObject(block)) {
+    const f = readFailure({ failure: block });
+    return {
+      error: outputCode(f.code, 'not_a_claim'),
+      failure_reason: '',
+      failure_class: f.failureClass,
+      retryable: f.retryable,
+    };
+  }
   return {
     error: event.error,
     failure_reason: raw.failure_reason,

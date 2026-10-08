@@ -4,6 +4,20 @@ const { mapLenzError } = require('../lib/errors');
 const { lenzClient } = require('../client');
 const { modifiedAtFrom } = require('../lib/shapes');
 
+// A list item as this trigger has always emitted it. The newer response shape
+// says `completed_at` where the earlier one said `modified_at` (set only when
+// the completion fell on a later UTC day than the creation, else null); the
+// item takes the earlier key, computed by that rule, in the same place.
+const asEarlierItem = (item) => {
+  if (!item || typeof item !== 'object' || !('completed_at' in item) || 'modified_at' in item) return item;
+  const out = {};
+  for (const [key, value] of Object.entries(item)) {
+    if (key === 'completed_at') out.modified_at = modifiedAtFrom(item);
+    else out[key] = value;
+  }
+  return out;
+};
+
 // The API defaults to 20 per page and caps at 100
 // (`page_size = min(max(page_size, 1), 100)` in lenz/api/public_authed.py).
 // Zapier polls this trigger every 1-15 minutes and only ever reads page 1, so
@@ -50,16 +64,13 @@ const perform = async (z, bundle) => {
   // only bites if a future/older server omits it — but a field that is ''
   // on one surface and undefined on the other silently breaks a Zap that
   // maps it.
-  return result.items.map((item) => ({
+  return result.items.map(asEarlierItem).map((item) => ({
     id: item.verification_id,
     ...item,
     key_finding: item.key_finding || '',
     // On list items too (lenz-io VerificationListItem). Normalised to '' for
     // the same reason as key_finding, and to match Verify a Claim.
     suggested_rewrite: item.suggested_rewrite || '',
-    // Items that carry `completed_at` and no `modified_at` get the key this
-    // trigger has always emitted, computed as the earlier field was.
-    ...(item.completed_at && !('modified_at' in item) ? { modified_at: modifiedAtFrom(item) } : {}),
   }));
 };
 

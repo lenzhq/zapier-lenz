@@ -52,21 +52,32 @@ const SAMPLE = {
   message: '',
 };
 
-// An extraction as the output has always had it. The response this app asks
-// for passes through untouched. One response can carry a list instead
-// (`claims: [{ claim, positions }]`, with status `no_checkable_claim`); it is
-// read into the same keys so nothing is missing: `claim` is the first claim,
-// `identified_claims` the full list when more than one was found and `[]`
-// for one, and status reads `not_a_claim` for "nothing checkable".
+// An extraction as the output has always had it. The newer response shape
+// lists the claims as `claims: [{ claim, positions }]` and says
+// `no_checkable_claim`; it is read into exactly the keys the earlier shape
+// gave, and the list itself is not passed on:
+//   claim              the first claim, '' for none
+//   identified_claims  every claim when more than one was found, else []
+//   candidate_claims   always []
+//   locations          [{ claim, positions }] when every claim was located,
+//                      else null (this action never asks for locations)
+//   status             `not_a_claim` for "nothing checkable"
+// An earlier-shape response (it has `claim`) passes through untouched.
 const shapeExtraction = (result) => {
-  if (!Array.isArray(result.claims)) return { ...result };
-  const texts = result.claims.filter(isObject).map((c) => c.claim || '');
-  const out = { ...result };
-  out.claim = result.claim ?? texts[0] ?? '';
-  out.identified_claims = result.identified_claims ?? (texts.length > 1 ? texts : []);
-  out.candidate_claims = result.candidate_claims ?? [];
-  out.locations = result.locations ?? null;
-  if (result.status === NO_CHECKABLE_CLAIM) out.status = 'not_a_claim';
+  if (!Array.isArray(result.claims) || 'claim' in result) return { ...result };
+  const items = result.claims.filter(isObject);
+  const texts = items.map((c) => c.claim || '');
+  const located = items.length > 0 && items.every((c) => Array.isArray(c.positions));
+  const out = {
+    status: result.status === NO_CHECKABLE_CLAIM ? 'not_a_claim' : result.status,
+    claim: texts[0] ?? '',
+    identified_claims: texts.length > 1 ? texts : [],
+    candidate_claims: [],
+    ...result,
+  };
+  delete out.claims;
+  out.status = result.status === NO_CHECKABLE_CLAIM ? 'not_a_claim' : result.status;
+  out.locations = located ? items.map((c) => ({ claim: c.claim || '', positions: c.positions })) : null;
   return out;
 };
 

@@ -4,7 +4,15 @@ const { mapLenzError } = require('../lib/errors');
 const { replayKey, secondsToNextBucket, HOUR_MS } = require('../lib/replay-key');
 const { lenzClient, CALL_TIMEOUT_MS } = require('../client');
 const { languageField } = require('../lib/languages');
-const { isObject, NO_CHECKABLE_CLAIM, outputCode, isNothingCheckable, readFailure } = require('../lib/shapes');
+const {
+  isObject,
+  NO_CHECKABLE_CLAIM,
+  outputCode,
+  isNothingCheckable,
+  readFailure,
+  ASSESS_NO_CLAIM_MESSAGE,
+  ASSESS_COMPOUND_HINT,
+} = require('../lib/shapes');
 
 function isPassingVerdict(verdict) {
   return verdict === 'True' || verdict === 'Mostly True';
@@ -85,13 +93,25 @@ const rowErrorCode = (c) => {
 const moreClaims = (c) =>
   Array.isArray(c.more_claims) ? c.more_claims : Array.isArray(c.identified_claims) ? c.identified_claims : [];
 
+// A row in the newer shape: it says `status` and never `error_code`.
+const isStatusRow = (c) => typeof c.status === 'string' && !('error_code' in c);
+
+// What a row's hint has always read: the failure's hint on a failed row; on a
+// verdict row whose input held more claims, the sentence pointing at them.
+// Earlier-shape rows carry their own `hint` and are read as sent.
+const rowHint = (c) => {
+  if (!isStatusRow(c)) return c.hint || '';
+  if (isObject(c.failure)) return c.failure.hint || '';
+  return moreClaims(c).length > 0 ? ASSESS_COMPOUND_HINT : '';
+};
+
 const shapeRow = (c) => ({
   claim: c.claim || '',
-  // A row with `status: failed` and no verdict reads `verdict: "Error"`, the
-  // value an earlier-shape failed row carries. Earlier-shape rows are read
-  // exactly as sent.
+  // A failed row (`status: failed`, no verdict) reads `verdict: "Error"` and
+  // `confidence: "low"`, the values a failed row has always had in this
+  // output. Earlier-shape rows are read exactly as sent.
   verdict: c.status === 'failed' && !c.verdict ? 'Error' : c.verdict || null,
-  confidence: c.confidence || null,
+  confidence: c.status === 'failed' && !c.verdict ? 'low' : c.confidence || null,
   passed: isPassingVerdict(c.verdict),
   // Null on all but one path. The API only fills this when the verdict
   // came from an existing full verification it can serve to this caller
@@ -114,7 +134,7 @@ const shapeRow = (c) => ({
   error_code: rowErrorCode(c),
   // One sentence on what to send next. On every Error row, and on a verdict
   // row whose input held more claims than the one assessed.
-  hint: c.hint || (isObject(c.failure) && c.failure.hint) || '',
+  hint: rowHint(c),
   // The OTHER claims found in this input that were not assessed — a compound
   // input is assessed on its main claim. Send these as their own steps to
   // check the rest. `more_claims` is the newer name for `identified_claims`.
@@ -162,11 +182,15 @@ const perform = async (z, bundle) => {
     .catch((err) => mapLenzError(z, err));
 
   if (!result.claims || result.claims.length === 0) {
-    // The sentence is `failure.detail`, or `error` in the earlier shape.
-    const failure = readFailure(result);
+    // The earlier shape says why in `error`; the newer one in a `failure`
+    // block, whose answer to "no claim at all" this output has always worded
+    // as ASSESS_NO_CLAIM_MESSAGE.
     return {
       status: 'no_claim',
-      message: failure.detail || result.error || 'No verifiable factual claim was detected.',
+      message:
+        result.error ||
+        (isObject(result.failure) ? ASSESS_NO_CLAIM_MESSAGE : '') ||
+        'No verifiable factual claim was detected.',
       not_a_claim: true,
       // Deprecated on the API, always empty; see NO_ERROR.
       candidate_claims: [],
