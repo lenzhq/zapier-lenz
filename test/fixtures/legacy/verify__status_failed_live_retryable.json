@@ -1,0 +1,9 @@
+{
+  "status": "failed",
+  "task_id": "fa50185e37ad61160dbe4a785cdf7286",
+  "error": "Pipeline stopped at: adjudication_failed",
+  "failure_reason": "adjudication_failed",
+  "failure_class": "upstream_unavailable",
+  "retryable": true,
+  "docs_url": "https://lenz.io/docs/errors#upstream-unavailable"
+}

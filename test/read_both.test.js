@@ -1,16 +1,23 @@
-/* globals describe, it, expect, jest */
+/* globals describe, it, expect, jest, beforeAll */
 
-// Every field the app reads, against BOTH response shapes of the Lenz API.
+// What each action does with the two response shapes the Lenz API can send.
 //
-// `test/fixtures/legacy/*.json` are the bodies the API has always sent;
-// `test/fixtures/dated/*.json` are the same responses in the dated shape
-// (`failure` blocks, `status: failed` rows, `claims` on an extraction,
-// `completed_at`, ...). Each case runs the same action code over both and
-// expects the SAME output, because a saved Zap maps and filters on the output
-// and must not notice which shape arrived. Run-specific values in the
-// fixtures were replaced with realistic ones.
+// This release keeps sending the version header it has always sent, so what
+// reaches the app today is the earlier ("legacy") shape. Two promises:
+//
+//  1. Legacy responses: every output is exactly what the app produced before
+//     it learned a second shape, plus one added boolean, `not_a_claim`, on
+//     Assess and Extract Claims. `test/fixtures/oracle/frozen.json` holds the
+//     outputs of the code as published (run by test/helpers/oracle.js over
+//     every recorded response in test/fixtures/legacy); the first block replays
+//     it against the current code.
+//  2. Canonical responses (the newer shape, test/fixtures/canonical): the
+//     actions do not fail and every output key is present with a sensible
+//     value. The output is NOT promised to equal the legacy output; that comes
+//     with a later release that sends the newer version header.
+//
+// Fixtures are recorded API responses with run-specific values replaced.
 
-const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const zapier = require('zapier-platform-core');
@@ -22,31 +29,14 @@ jest.mock('lenz-io', () => {
 
 const { Lenz: LenzClient } = require('lenz-io');
 const App = require('../index');
+const { runAll, loadFixture, signed, AUTH, TASK_ID } = require('./helpers/oracle');
 
 const appTester = zapier.createAppTester(App);
-
-const SHAPES = ['legacy', 'dated'];
-const fx = (shape, name) =>
-  JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', shape, `${name}.json`), 'utf-8'));
-const clone = (o) => JSON.parse(JSON.stringify(o));
-
-const SECRET = 'whsec_test';
-const AUTH = { access_token: 'lat_good', webhook_secret: SECRET };
-const TASK_ID = '2f8b2e2b6a4a4e6c9e8f9a6c3f4b2a1c';
 
 const mockClient = (over = {}) => {
   const client = { assess: jest.fn(), extract: jest.fn(), getStatus: jest.fn(), request: jest.fn(), ...over };
   LenzClient.mockImplementation(() => client);
   return client;
-};
-
-const sign = (body) =>
-  `sha256=${crypto.createHmac('sha256', SECRET).update(Buffer.from(body, 'utf-8')).digest('hex')}`;
-
-// A signed callback as Zapier hands it over.
-const signed = (payload) => {
-  const content = JSON.stringify({ ...payload, delivered_at: new Date().toISOString() });
-  return { content, headers: { 'Http-Content-Type': 'application/json', 'Http-X-Lenz-Signature': sign(content) } };
 };
 
 const capture = (fn, bundle) =>
@@ -55,232 +45,276 @@ const capture = (fn, bundle) =>
     (e) => e,
   );
 
-// ─── Assess ─────────────────────────────────────────────────────────────────
+const clone = (o) => JSON.parse(JSON.stringify(o));
 
-describe.each(SHAPES)('creates.assess reads the %s shape', (shape) => {
-  const assess = App.creates.assess.operation;
-  const run = async (name, edit) => {
-    const body = fx(shape, name);
-    if (edit) edit(body);
-    mockClient({ assess: jest.fn().mockResolvedValue(body) });
-    return appTester(assess.perform, { authData: AUTH, inputData: { text: 'x' } });
-  };
+const FROZEN = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'oracle', 'frozen.json'), 'utf-8'));
+const ADDED = 'not_a_claim';
 
-  it('a text with nothing checkable', async () => {
-    const out = await run('assess__single_no_claim');
-    expect(out).toMatchObject({ status: 'no_claim', not_a_claim: true, claims: [], candidate_claims: [] });
-    expect(out.message).toMatch(/\S/);
+// ─── 1. Legacy responses: unchanged outputs ─────────────────────────────────
+
+describe('legacy responses give the outputs the app has always given', () => {
+  let current;
+  beforeAll(async () => {
+    current = await runAll({ App, appTester, LenzClient, jest, shape: 'legacy' });
   });
 
-  it('one checked claim', async () => {
-    const out = await run('assess__single_one_claim');
-    expect(out).toMatchObject({ status: 'ok', not_a_claim: false, message: '', candidate_claims: [] });
-    expect(out.claims).toHaveLength(1);
-    expect(out.claims[0]).toMatchObject({
-      verdict: 'True',
-      passed: true,
-      error_code: '',
-      hint: '',
-      identified_claims: [],
-    });
+  it('covers every recorded response', () => {
+    expect(Object.keys(current).sort()).toEqual(Object.keys(FROZEN).sort());
+    expect(Object.keys(FROZEN).length).toBeGreaterThan(100);
   });
 
-  it('rows with no verdict read as Error / low / no_claim, and say nothing is checkable', async () => {
-    const out = await run('assess__list_all_error_rows');
-    expect(out.status).toBe('ok');
-    expect(out.not_a_claim).toBe(true);
-    expect(out.claims.map((c) => [c.verdict, c.confidence, c.passed, c.error_code])).toEqual([
-      ['Error', 'low', false, 'no_claim'],
-      ['Error', 'low', false, 'no_claim'],
-    ]);
-    expect(out.claims[0].hint).toMatch(/Send one factual claim/);
-    expect(out.claims[0].identified_claims).toEqual([]);
-  });
-
-  it('a mixed wave keeps the verdict row and names each cause', async () => {
-    const out = await run('assess__list_mixed_rows');
-    expect(out.not_a_claim).toBe(false);
-    expect(out.claims.map((c) => [c.verdict, c.error_code])).toEqual([
-      ['True', ''],
-      ['Error', 'no_claim'],
-      ['Error', 'upstream_unavailable'],
-      ['Error', 'framing_failed'],
-    ]);
-    expect(out.claims[2].hint).toMatch(/Retry it; nothing was charged/);
-  });
-
-  it('the claims a compound item held back', async () => {
-    const out = await run('assess__list_compound_item');
-    expect(out.claims[0].identified_claims).toEqual(['Second claim.', 'Third claim.']);
-    expect(out.claims[0].hint).toMatch(/main claim only/);
-    expect(out.claims[1].identified_claims).toEqual([]);
-  });
-
-  it('replays when every row is a transient failure, nothing charged', async () => {
-    const err = await capture(assess.perform, {
-      authData: AUTH,
-      inputData: { text: 'x' },
-      ...(() => {
-        const body = fx(shape, 'assess__list_mixed_rows');
-        body.claims = body.claims.filter((c) => c.claim === 'vendor is down');
-        mockClient({ assess: jest.fn().mockResolvedValue(body) });
-        return {};
-      })(),
-    });
-    expect(err.name).toBe('ThrottledError');
-    expect(JSON.parse(err.message).message).toMatch(/upstream_unavailable.*nothing was charged/);
-  });
-
-  it('answers a mixed wave with a transient row instead of replaying', async () => {
-    const out = await run('assess__list_mixed_rows');
-    expect(out.status).toBe('ok');
-  });
-
-  it('does not replay a row that will not change (framing_failed)', async () => {
-    const body = fx(shape, 'assess__list_mixed_rows');
-    body.claims = body.claims.filter((c) => c.claim === 'cannot frame');
-    mockClient({ assess: jest.fn().mockResolvedValue(body) });
-    const out = await appTester(assess.perform, { authData: AUTH, inputData: { text: 'x' } });
-    expect(out.claims[0]).toMatchObject({ verdict: 'Error', error_code: 'framing_failed' });
+  it('matches the frozen outputs, serialized, plus not_a_claim on Assess and Extract Claims', () => {
+    const mismatches = [];
+    for (const [name, frozen] of Object.entries(FROZEN)) {
+      const got = clone(current[name]);
+      if ((name.startsWith('assess__') || name.startsWith('extract__')) && !got.__error) {
+        expect(typeof got[ADDED]).toBe('boolean');
+        delete got[ADDED];
+      }
+      if (JSON.stringify(got) !== JSON.stringify(frozen)) mismatches.push(name);
+    }
+    expect(mismatches).toEqual([]);
   });
 });
 
-describe('creates.assess: a failed row replays on status alone', () => {
+// not_a_claim says whether the API found nothing to check.
+describe('not_a_claim', () => {
   const assess = App.creates.assess.operation;
+  const extract = App.creates.extract_claims.operation;
+  const runAssess = (body) => {
+    mockClient({ assess: jest.fn().mockResolvedValue(body) });
+    return appTester(assess.perform, { authData: AUTH, inputData: { text: 'x' } });
+  };
+  const runExtract = (body) => {
+    mockClient({ extract: jest.fn().mockResolvedValue(body) });
+    return appTester(extract.perform, { authData: AUTH, inputData: { text: 'x' } });
+  };
 
-  it('a dated row with status failed and a transient failure code', async () => {
-    mockClient({
-      assess: jest.fn().mockResolvedValue({
-        status: 'error',
-        claims: [
-          {
-            claim: 'x',
-            status: 'failed',
-            verdict: null,
-            confidence: null,
-            more_claims: [],
-            failure: { code: 'timeout', detail: 'Out of time.', hint: 'Retry.', failure_class: 'upstream_unavailable', retryable: true },
-          },
-        ],
-        failure: null,
-        more_claims: [],
-      }),
-    });
-    const err = await capture(assess.perform, { authData: AUTH, inputData: { text: 'x' } });
-    expect(err.name).toBe('ThrottledError');
+  it('assess: true with no rows, and when every row has no checkable claim', async () => {
+    expect((await runAssess(loadFixture('legacy', 'assess__single_no_claim'))).not_a_claim).toBe(true);
+    expect((await runAssess(loadFixture('legacy', 'assess__list_all_error_rows'))).not_a_claim).toBe(true);
+    expect((await runAssess(loadFixture('canonical', 'assess__list_all_error_rows'))).not_a_claim).toBe(true);
   });
 
-  it('a dated top-level status of no_checkable_claim with no rows', async () => {
-    mockClient({
-      assess: jest
-        .fn()
-        .mockResolvedValue({ status: 'no_checkable_claim', claims: [], failure: { code: 'no_checkable_claim', detail: 'Nothing to check.' }, more_claims: [] }),
+  it('assess: false when a row has a verdict, or the failures are something else', async () => {
+    expect((await runAssess(loadFixture('legacy', 'assess__single_one_claim'))).not_a_claim).toBe(false);
+    expect((await runAssess(loadFixture('legacy', 'assess__list_mixed_rows'))).not_a_claim).toBe(false);
+    expect((await runAssess(loadFixture('canonical', 'assess__list_mixed_rows'))).not_a_claim).toBe(false);
+  });
+
+  it('extract: true for not_a_claim, false otherwise, in both shapes', async () => {
+    for (const shape of ['legacy', 'canonical']) {
+      expect((await runExtract(loadFixture(shape, 'extract__not_a_claim'))).not_a_claim).toBe(true);
+      expect((await runExtract(loadFixture(shape, 'extract__ready_several_claims'))).not_a_claim).toBe(false);
+      expect((await runExtract(loadFixture(shape, 'extract__no_match_with_focus'))).not_a_claim).toBe(false);
+    }
+  });
+
+  it('is declared on both actions and on both samples', () => {
+    expect(assess.outputFields.some((f) => f.key === ADDED && f.type === 'boolean')).toBe(true);
+    expect(extract.outputFields.some((f) => f.key === ADDED && f.type === 'boolean')).toBe(true);
+    expect(assess.sample[ADDED]).toBe(false);
+    expect(extract.sample[ADDED]).toBe(false);
+  });
+});
+
+// ─── 2. Canonical responses: no failure, every key present ──────────────────
+
+describe('canonical responses', () => {
+  let legacy;
+  let canonical;
+  beforeAll(async () => {
+    legacy = await runAll({ App, appTester, LenzClient, jest, shape: 'legacy' });
+    canonical = await runAll({ App, appTester, LenzClient, jest, shape: 'canonical' });
+  });
+
+  const keysOf = (v) => (Array.isArray(v) ? keysOf(v[0] || {}) : Object.keys(v || {}));
+
+  it('every recorded response is read', () => {
+    expect(Object.keys(canonical).sort()).toEqual(Object.keys(legacy).sort());
+  });
+
+  it('never fail where the legacy response does not', () => {
+    const failed = Object.entries(canonical)
+      .filter(([, out]) => out.__error)
+      .map(([name, out]) => `${name}: ${out.__error.name}`);
+    const legacyFailed = Object.entries(legacy)
+      .filter(([, out]) => out.__error)
+      .map(([name, out]) => `${name}: ${out.__error.name}`);
+    expect(failed).toEqual(legacyFailed);
+  });
+
+  it('carry every output key a legacy response does', () => {
+    const missing = [];
+    for (const [name, out] of Object.entries(canonical)) {
+      if (out.__error || legacy[name].__error) continue;
+      const have = new Set(keysOf(out));
+      for (const key of keysOf(legacy[name])) if (!have.has(key)) missing.push(`${name}: ${key}`);
+      if (out.claims && legacy[name].claims && out.claims[0] && legacy[name].claims[0]) {
+        const rowHave = new Set(Object.keys(out.claims[0]));
+        for (const key of Object.keys(legacy[name].claims[0])) {
+          if (!rowHave.has(key)) missing.push(`${name}: claims[].${key}`);
+        }
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it('carry no undefined value', () => {
+    const undef = [];
+    const walk = (v, where) => {
+      if (v === undefined) undef.push(where);
+      else if (Array.isArray(v)) v.forEach((x, i) => walk(x, `${where}[${i}]`));
+      else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) walk(x, `${where}.${k}`);
+    };
+    for (const [name, out] of Object.entries(canonical)) walk(out, name);
+    expect(undef).toEqual([]);
+  });
+});
+
+// ─── Targeted behaviour ─────────────────────────────────────────────────────
+
+describe('creates.assess rows', () => {
+  const assess = App.creates.assess.operation;
+  const run = (body) => {
+    mockClient({ assess: jest.fn().mockResolvedValue(body) });
+    return appTester(assess.perform, { authData: AUTH, inputData: { text: 'x' } });
+  };
+  const failedRow = (code) => ({
+    claim: 'x',
+    language: 'en',
+    status: 'failed',
+    verdict: null,
+    confidence: null,
+    verification_url: null,
+    rationale: null,
+    dissent: null,
+    suggested_rewrite: null,
+    more_claims: [],
+    failure: { code, detail: 'Detail.', hint: 'Hint.', failure_class: 'upstream_unavailable', retryable: true },
+  });
+  const errorRow = (code, over = {}) => ({
+    claim: 'x',
+    language: 'en',
+    verdict: 'Error',
+    confidence: 'low',
+    error_code: code,
+    hint: 'Hint.',
+    identified_claims: [],
+    ...over,
+  });
+
+  it('keeps a legacy Error row as sent: a null confidence stays null, an empty hint stays empty', async () => {
+    const out = await run({ claims: [errorRow('no_claim', { confidence: null, hint: '' })] });
+    expect(out.claims[0]).toMatchObject({ verdict: 'Error', confidence: null, hint: '', error_code: 'no_claim' });
+  });
+
+  it('keeps a legacy verdict row without a hint with an empty one', async () => {
+    const out = await run({
+      claims: [{ claim: 'x', verdict: 'True', confidence: 'high', identified_claims: ['y'], hint: null }],
     });
-    const out = await appTester(assess.perform, { authData: AUTH, inputData: { text: 'x' } });
+    expect(out.claims[0]).toMatchObject({ hint: '', identified_claims: ['y'] });
+  });
+
+  it('replays when every row is a transient legacy Error row', async () => {
+    const thrown = await capture(assess.perform, {
+      authData: AUTH,
+      inputData: { text: 'x' },
+      ...(mockClient({ assess: jest.fn().mockResolvedValue({ claims: [errorRow('upstream_unavailable')] }) }) && {}),
+    });
+    expect(thrown.name).toBe('ThrottledError');
+    expect(JSON.parse(thrown.message).message).toMatch(/upstream_unavailable.*nothing was charged/);
+  });
+
+  it.each(['upstream_unavailable', 'timeout'])('replays when every row is a failed row (%s)', async (code) => {
+    mockClient({ assess: jest.fn().mockResolvedValue({ status: 'error', claims: [failedRow(code)], more_claims: [] }) });
+    const thrown = await capture(assess.perform, { authData: AUTH, inputData: { text: 'x' } });
+    expect(thrown.name).toBe('ThrottledError');
+  });
+
+  it('does not replay a mixed wave, or a failure that will not change', async () => {
+    const mixed = await run({
+      claims: [errorRow('upstream_unavailable'), { claim: 'y', verdict: 'True', confidence: 'high' }],
+    });
+    expect(mixed.status).toBe('ok');
+    const framing = await run({ status: 'error', claims: [failedRow('framing_failed')] });
+    expect(framing.claims[0]).toMatchObject({ verdict: 'Error', error_code: 'framing_failed' });
+  });
+
+  it('reads a failed row: verdict Error, the cause and hint from its failure block', async () => {
+    const out = await run({
+      status: 'no_checkable_claim',
+      claims: [failedRow('no_checkable_claim')],
+      failure: null,
+      more_claims: [],
+    });
+    expect(out.claims[0]).toMatchObject({
+      verdict: 'Error',
+      confidence: null,
+      passed: false,
+      error_code: 'no_claim',
+      hint: 'Hint.',
+      identified_claims: [],
+    });
+    expect(out.not_a_claim).toBe(true);
+    expect(out.status).toBe('ok');
+  });
+
+  it('reads more_claims as the other claims found', async () => {
+    const out = await run({
+      status: 'ok',
+      claims: [{ claim: 'x', status: 'completed', verdict: 'False', confidence: 'high', more_claims: ['a', 'b'], failure: null }],
+    });
+    expect(out.claims[0].identified_claims).toEqual(['a', 'b']);
+  });
+
+  it('reads the sentence of an answer with no rows from its failure block', async () => {
+    const out = await run({
+      status: 'no_checkable_claim',
+      claims: [],
+      failure: { code: 'no_checkable_claim', detail: 'Nothing to check.' },
+      more_claims: [],
+    });
     expect(out).toMatchObject({ status: 'no_claim', not_a_claim: true, message: 'Nothing to check.' });
   });
 });
 
-// ─── Extract Claims ─────────────────────────────────────────────────────────
-
-describe.each(SHAPES)('creates.extract_claims reads the %s shape', (shape) => {
+describe('creates.extract_claims reads the list form', () => {
   const extract = App.creates.extract_claims.operation;
-  const run = async (name) => {
-    mockClient({ extract: jest.fn().mockResolvedValue(fx(shape, name)) });
+  const run = (body) => {
+    mockClient({ extract: jest.fn().mockResolvedValue(body) });
     return appTester(extract.perform, { authData: AUTH, inputData: { text: 'x' } });
   };
 
   it('several claims', async () => {
-    const out = await run('extract__ready_several_claims');
+    const out = await run(loadFixture('canonical', 'extract__ready_several_claims'));
     expect(out).toMatchObject({
       status: 'ready',
-      not_a_claim: false,
       claim: 'Alpha rose 5% in 2024.',
       identified_claims: ['Alpha rose 5% in 2024.', 'Beta fell 3% last year.'],
       candidate_claims: [],
+      locations: null,
       message: '',
     });
-    expect(out.claims.map((c) => c.claim)).toEqual(['Alpha rose 5% in 2024.', 'Beta fell 3% last year.']);
   });
 
-  it('one claim leaves identified_claims empty', async () => {
-    const out = await run('extract__ready_one_claim');
-    expect(out.status).toBe('ready');
-    expect(out.claim).toMatch(/\S/);
-    expect(out.identified_claims).toEqual([]);
-    expect(out.claims).toHaveLength(1);
-    expect(out.claims[0].claim).toBe(out.claim);
-  });
-
-  it('nothing checkable keeps the status not_a_claim', async () => {
-    const out = await run('extract__not_a_claim');
-    expect(out).toMatchObject({ status: 'not_a_claim', not_a_claim: true, claim: '', identified_claims: [], claims: [] });
-  });
-
-  it('no_match under a Focus', async () => {
-    const out = await run('extract__no_match_with_focus');
-    expect(out.status).toBe('no_match');
-    expect(out.not_a_claim).toBe(false);
-    expect(out.message).toMatch(/none of them fall within your Focus/);
+  it('one claim leaves identified_claims empty; none keeps status not_a_claim', async () => {
+    const one = await run(loadFixture('canonical', 'extract__ready_one_claim'));
+    expect(one.identified_claims).toEqual([]);
+    expect(one.claim).toMatch(/\S/);
+    const none = await run(loadFixture('canonical', 'extract__not_a_claim'));
+    expect(none).toMatchObject({ status: 'not_a_claim', claim: '', identified_claims: [], not_a_claim: true });
   });
 });
 
-// ─── Verify a Claim ─────────────────────────────────────────────────────────
-
-describe.each(SHAPES)('creates.verify_claim reads the %s shape', (shape) => {
+describe('creates.verify_claim reads the failure block and the nested callback', () => {
   const verify = App.creates.verify_claim.operation;
   const resume = (extra = {}) => ({ authData: AUTH, outputData: { task_id: TASK_ID }, ...extra });
-  const viaStatus = async (name) => {
-    mockClient({ getStatus: jest.fn().mockResolvedValue(fx(shape, name)) });
+  const poll = (name) => {
+    mockClient({ getStatus: jest.fn().mockResolvedValue(loadFixture('canonical', name)) });
     return appTester(verify.performResume, resume());
   };
-
-  it('a completed poll', async () => {
-    const out = await viaStatus('verify__status_completed');
-    expect(out).toMatchObject({ status: 'completed', passed: true, verdict: 'True', error: '', failure_reason: '' });
-    expect(out.verification_id).toMatch(/\S/);
-  });
-
-  it('a failed poll: stage, class and retryable', async () => {
-    const out = await viaStatus('verify__status_failed_live');
-    expect(out).toMatchObject({
-      status: 'failed',
-      failure_reason: 'research_empty',
-      failure_class: 'insufficient_evidence',
-      retryable: false,
-    });
-    expect(out.error).toMatch(/\S/);
-    expect(out.verdict).toBeNull();
-  });
-
-  it('a failed poll from the stored record', async () => {
-    const out = await viaStatus('verify__status_failed_durable');
-    expect(out).toMatchObject({ failure_reason: 'conclusion_failed', failure_class: 'internal', retryable: false });
-    expect(out.error).toMatch(/\S/);
-  });
-
-  it('nothing checkable keeps failure_reason not_a_claim', async () => {
-    const out = await viaStatus('verify__status_not_a_claim');
-    expect(out).toMatchObject({ status: 'failed', failure_reason: 'not_a_claim', failure_class: 'invalid_input', retryable: false });
-    expect(out.error).toMatch(/\S/);
-  });
-
-  it('needs_input options read as Claims Found with a text key', async () => {
-    const out = await viaStatus('verify__status_needs_input');
-    expect(out.status).toBe('needs_input');
-    expect(out.reason).toBe('multi_claim');
-    expect(out.claims).toEqual([
-      { text: 'The Earth is round.', domain: 'Science' },
-      { text: 'Water boils at 100C at sea level.', domain: 'Science' },
-    ]);
-  });
-});
-
-// The signed callback. The earlier payload is flat (`result`, `error`); the
-// enveloped one nests the same body a poll returns under `verification`.
-describe('creates.verify_claim reads the signed callback in both shapes', () => {
-  const verify = App.creates.verify_claim.operation;
-  const bundle = (payload) => ({ authData: AUTH, outputData: { task_id: TASK_ID }, rawRequest: signed(payload) });
+  // The enveloped callback: the same body a poll returns, under `verification`.
   const envelope = (event, verification) => ({
     event,
     event_id: 'evt_0123456789abcdef01234567',
@@ -291,66 +325,58 @@ describe('creates.verify_claim reads the signed callback in both shapes', () => 
     attempt: 1,
   });
 
-  it('completed, flat', async () => {
-    const out = await appTester(verify.performResume, bundle(fx('legacy', 'webhook__verification_completed')));
-    expect(out).toMatchObject({ status: 'completed', passed: false, verdict: 'False' });
+  it('a failed poll: sentence, stage, class and retryable', async () => {
+    const out = await poll('verify__status_failed_live');
+    expect(out).toMatchObject({
+      status: 'failed',
+      failure_reason: 'research_empty',
+      failure_class: 'insufficient_evidence',
+      retryable: false,
+    });
+    expect(out.error).toMatch(/\S/);
   });
 
-  it('completed, nested', async () => {
-    const poll = fx('dated', 'verify__status_completed');
-    const out = await appTester(verify.performResume, bundle(envelope('verification.completed', poll)));
-    expect(out).toMatchObject({ status: 'completed', passed: true, verdict: 'True', verification_id: poll.result.verification_id });
+  it('nothing checkable reads failure_reason not_a_claim', async () => {
+    expect(await poll('verify__status_not_a_claim')).toMatchObject({
+      failure_reason: 'not_a_claim',
+      failure_class: 'invalid_input',
+    });
   });
 
-  it('failed, flat: the code stays in error, as before', async () => {
-    const out = await appTester(verify.performResume, bundle(fx('legacy', 'webhook__verification_failed_not_a_claim')));
-    expect(out).toMatchObject({ status: 'failed', error: 'not_a_claim', failure_class: 'invalid_input', retryable: false });
+  it('needs_input options read as Claims Found with a text key', async () => {
+    const out = await poll('verify__status_needs_input');
+    expect(out.claims).toEqual([
+      { text: 'The Earth is round.', domain: 'Science' },
+      { text: 'Water boils at 100C at sea level.', domain: 'Science' },
+    ]);
   });
 
-  it('failed, nested: the sentence is error, the earlier code is failure_reason', async () => {
-    const poll = fx('dated', 'verify__status_not_a_claim');
-    const out = await appTester(verify.performResume, bundle(envelope('verification.failed', poll)));
+  it('a nested completed callback', async () => {
+    const body = loadFixture('canonical', 'verify__status_completed');
+    const out = await appTester(
+      verify.performResume,
+      resume({ rawRequest: signed(envelope('verification.completed', { ...body, task_id: TASK_ID })) }),
+    );
+    expect(out).toMatchObject({ status: 'completed', verification_id: body.result.verification_id, verdict: body.result.verdict });
+  });
+
+  it('a nested failed callback', async () => {
+    const body = loadFixture('canonical', 'verify__status_not_a_claim');
+    const out = await appTester(
+      verify.performResume,
+      resume({ rawRequest: signed(envelope('verification.failed', { ...body, task_id: TASK_ID })) }),
+    );
     expect(out).toMatchObject({
       status: 'failed',
       failure_reason: 'not_a_claim',
       failure_class: 'invalid_input',
       retryable: false,
     });
-    expect(out.error).toBe(poll.failure.detail);
-  });
-
-  it('failed with a retryable cause, nested', async () => {
-    const poll = fx('dated', 'verify__status_failed_live');
-    poll.failure = { ...poll.failure, code: 'framing_failed', failure_class: 'upstream_unavailable', retryable: true };
-    const out = await appTester(verify.performResume, bundle(envelope('verification.failed', poll)));
-    expect(out).toMatchObject({ failure_reason: 'framing_failed', failure_class: 'upstream_unavailable', retryable: true });
-  });
-
-  it('failed, flat, with a retryable cause', async () => {
-    const out = await appTester(verify.performResume, bundle(fx('legacy', 'webhook__verification_failed_upstream_unavailable')));
-    expect(out).toMatchObject({ error: 'framing_failed', failure_class: 'upstream_unavailable', retryable: true });
+    expect(out.error).toBe(body.failure.detail);
   });
 });
 
-// ─── New Verification Completed ─────────────────────────────────────────────
-
-describe.each(SHAPES)('triggers.new_verification reads the %s shape', (shape) => {
-  const trigger = App.triggers.new_verification.operation;
-  const run = (items) => {
-    mockClient({ request: jest.fn().mockResolvedValue({ items, total: items.length, page: 1, page_size: 100 }) });
-    return appTester(trigger.perform, { authData: AUTH });
-  };
-
-  it('a listed verification carries both completion keys', async () => {
-    const [item] = await run(fx(shape, 'verify__list_200').items);
-    expect(item).toMatchObject({ id: item.verification_id, claim: 'The Earth is round.' });
-    expect(item).toHaveProperty('modified_at');
-    expect(item).toHaveProperty('completed_at');
-    expect(item.suggested_rewrite).toBe('');
-  });
-});
-
-describe('triggers.new_verification: completion time across the two names', () => {
+describe('triggers.new_verification', () => {
   const trigger = App.triggers.new_verification.operation;
   const run = (item) => {
     mockClient({ request: jest.fn().mockResolvedValue({ items: [item], total: 1, page: 1, page_size: 100 }) });
@@ -358,168 +384,54 @@ describe('triggers.new_verification: completion time across the two names', () =
   };
   const base = { verification_id: 'ab12cd34', claim: 'A', verdict: 'True' };
 
-  it('completed_at on a later UTC day than created_at is also modified_at', async () => {
-    const out = await run({ ...base, created_at: '2026-10-07T23:59:00Z', completed_at: '2026-10-08T00:02:00Z' });
-    expect(out).toMatchObject({ completed_at: '2026-10-08T00:02:00Z', modified_at: '2026-10-08T00:02:00Z' });
+  it('passes modified_at through as sent, null included, and adds no completed_at', async () => {
+    const later = await run({ ...base, created_at: '2026-10-07T10:00:00Z', modified_at: '2026-10-08T09:00:00Z' });
+    expect(later.modified_at).toBe('2026-10-08T09:00:00Z');
+    expect(later).not.toHaveProperty('completed_at');
+    const same = await run({ ...base, created_at: '2026-10-08T10:00:00Z', modified_at: null });
+    expect(same.modified_at).toBeNull();
+    expect(same).not.toHaveProperty('completed_at');
   });
 
-  it('completed_at on the day of creation leaves modified_at null, as before', async () => {
-    const out = await run({ ...base, created_at: '2026-10-08T08:00:00Z', completed_at: '2026-10-08T17:30:00Z' });
-    expect(out).toMatchObject({ completed_at: '2026-10-08T17:30:00Z', modified_at: null });
-  });
-
-  it('an earlier-shape item keeps its modified_at and reads it as completed_at', async () => {
-    const out = await run({ ...base, created_at: '2026-10-07T10:00:00Z', modified_at: '2026-10-08T09:00:00Z' });
-    expect(out).toMatchObject({ completed_at: '2026-10-08T09:00:00Z', modified_at: '2026-10-08T09:00:00Z' });
-  });
-
-  it('an earlier-shape item with a null modified_at stays null', async () => {
-    const out = await run({ ...base, created_at: '2026-10-08T10:00:00Z', modified_at: null });
-    expect(out).toMatchObject({ completed_at: null, modified_at: null });
+  it('an item with completed_at gets modified_at by the earlier rule: a later UTC day only', async () => {
+    const later = await run({ ...base, created_at: '2026-10-07T23:59:00Z', completed_at: '2026-10-08T00:02:00Z' });
+    expect(later.modified_at).toBe('2026-10-08T00:02:00Z');
+    const same = await run({ ...base, created_at: '2026-10-08T08:00:00Z', completed_at: '2026-10-08T17:30:00Z' });
+    expect(same.modified_at).toBeNull();
   });
 });
 
-// ─── Review a Draft and Check Citations ─────────────────────────────────────
-
-describe.each(SHAPES)('creates.review_draft reads the %s shape', (shape) => {
+describe('Review a Draft and Check Citations', () => {
   const review = App.creates.review_draft.operation;
+  const check = App.creates.check_citations.operation;
 
-  it('a review of nothing checkable fails as no_claim', async () => {
-    const body = fx(shape, 'review__get_failed_no_claim');
+  it.each([
+    ['citecheck__get_text_limit_reached', true],
+    ['citecheck__get_text_limit_exactly_at_limit', false],
+  ])('the citation limit in %s, in both shapes', async (name, reached) => {
+    for (const shape of ['legacy', 'canonical']) {
+      const body = loadFixture(shape, name);
+      mockClient({ getCitecheck: jest.fn().mockResolvedValue(body) });
+      const out = await appTester(check.performResume, { authData: {}, outputData: { citecheck_id: body.citecheck_id } });
+      expect(out.citation_limit_reached).toBe(reached);
+    }
+  });
+
+  it('a canonical failed review: no_claim and the hint', async () => {
+    const body = loadFixture('canonical', 'review__get_failed_no_claim');
     mockClient({ getReview: jest.fn().mockResolvedValue(body) });
-    const out = await appTester(review.performResume, {
-      authData: {},
-      outputData: { review_id: body.review_id },
-    });
+    const out = await appTester(review.performResume, { authData: {}, outputData: { review_id: body.review_id } });
     expect(out).toMatchObject({ status: 'failed', failure_reason: 'no_claim', failure_class: 'invalid_input', retryable: false });
     expect(out.error).toMatch(/Send one factual claim/);
   });
 
-  it('a review where every claim failed keeps its code and counts them', async () => {
-    const body = fx(shape, 'review__get_failed_every_assessment_failed');
-    mockClient({ getReview: jest.fn().mockResolvedValue(body) });
-    const out = await appTester(review.performResume, { authData: {}, outputData: { review_id: body.review_id } });
-    expect(out).toMatchObject({
-      outcome: 'incomplete',
-      failure_reason: 'assessment_failed',
-      failure_class: 'upstream_unavailable',
-      retryable: true,
-      unchecked_claims: 2,
-    });
-  });
-
-  it('the signed failed callback', async () => {
-    const payload = fx(shape, 'webhook__review_failed');
-    const out = await appTester(review.performResume, {
-      authData: AUTH,
-      outputData: { review_id: payload.review_id },
-      rawRequest: signed(payload),
-    });
-    expect(out).toMatchObject({ status: 'failed', failure_reason: 'no_claim', failure_class: 'invalid_input', retryable: false });
-  });
-
-  it('the signed completed callback', async () => {
-    const payload = fx(shape, 'webhook__review_completed');
-    const out = await appTester(review.performResume, {
-      authData: AUTH,
-      outputData: { review_id: payload.review_id },
-      rawRequest: signed(payload),
-    });
-    expect(out.status).toBe('completed');
-    expect(out.error).toBe('');
-    expect(out.failure_reason).toBe('');
-  });
-
-  it.each([
-    ['review__get_citations_limit_reached', true],
-    ['review__get_citations_limit_exactly_at_limit', false],
-  ])('the citation limit in %s', async (name, reached) => {
-    const body = fx(shape, name);
-    mockClient({ getReview: jest.fn().mockResolvedValue(body) });
-    const out = await appTester(review.performResume, { authData: {}, outputData: { review_id: body.review_id } });
-    expect(out.citations_checked).toBe(body.summary.citation_checks.checked);
-    expect(out.error).toBe('');
-    // Review a Draft does not output the limit flag; its counts must not move.
-    expect(out).not.toHaveProperty('citation_limit_reached');
-    expect(reached).toBe(Boolean(body.summary.citation_limit_exceeded ?? body.summary.citation_limit_reached));
-  });
-});
-
-describe.each(SHAPES)('creates.check_citations reads the %s shape', (shape) => {
-  const check = App.creates.check_citations.operation;
-  const resumeById = async (name) => {
-    const body = fx(shape, name);
-    mockClient({ getCitecheck: jest.fn().mockResolvedValue(body) });
-    return appTester(check.performResume, { authData: {}, outputData: { citecheck_id: body.citecheck_id } });
-  };
-
-  it('no citations to check', async () => {
-    const out = await resumeById('citecheck__get_failed_no_citations');
-    expect(out).toMatchObject({ status: 'failed', failure_reason: 'no_citations', failure_class: 'invalid_input', retryable: false });
-    expect(out.error).toMatch(/no citation to check/);
-  });
-
-  it('a transient failure', async () => {
-    const out = await resumeById('citecheck__get_failed_upstream_unavailable');
-    expect(out).toMatchObject({ status: 'failed', failure_class: 'upstream_unavailable', retryable: true });
-    expect(out.failure_reason).toMatch(/\S/);
-  });
-
-  it('issues found', async () => {
-    const out = await resumeById('citecheck__get_completed_issues_found');
-    expect(out).toMatchObject({ status: 'completed', error: '', citation_limit_reached: false });
-    expect(out.citation_issue_count).toBeGreaterThan(0);
-  });
-
-  it('the citation limit: found more than the limit reads as reached', async () => {
-    expect((await resumeById('citecheck__get_text_limit_reached')).citation_limit_reached).toBe(true);
-  });
-
-  it('the citation limit: exactly at the limit does not', async () => {
-    expect((await resumeById('citecheck__get_text_limit_exactly_at_limit')).citation_limit_reached).toBe(false);
-  });
-
-  it('the signed failed callback', async () => {
-    const payload = fx(shape, 'webhook__citecheck_failed');
-    const out = await appTester(check.performResume, {
-      authData: AUTH,
-      outputData: { citecheck_id: payload.citecheck_id },
-      rawRequest: signed(payload),
-    });
-    expect(out).toMatchObject({ status: 'failed', failure_reason: 'no_citations', retryable: false });
-  });
-
-  it('the signed completed callback', async () => {
-    const payload = fx(shape, 'webhook__citecheck_completed');
-    const out = await appTester(check.performResume, {
-      authData: AUTH,
-      outputData: { citecheck_id: payload.citecheck_id },
-      rawRequest: signed(payload),
-    });
-    expect(out.status).toBe('completed');
-  });
-});
-
-describe('a failure block read from either spelling', () => {
-  const { shapeJobFailure } = require('../lib/jobs');
-
-  it('maps the dated no_checkable_claim back to no_claim, hint first', () => {
+  it('a failure block read from either spelling', () => {
+    const { shapeJobFailure } = require('../lib/jobs');
     expect(
       shapeJobFailure({ code: 'no_checkable_claim', detail: 'Nothing.', hint: 'Send a claim.', failure_class: 'invalid_input', retryable: false }),
     ).toEqual({ error: 'Send a claim.', failure_reason: 'no_claim', failure_class: 'invalid_input', retryable: false });
-  });
-
-  it('falls back to the sentence, then the code, when there is no hint', () => {
     expect(shapeJobFailure({ code: 'timeout', detail: 'Out of time.' }).error).toBe('Out of time.');
     expect(shapeJobFailure({ failure_reason: 'timeout' }).error).toBe('timeout');
     expect(shapeJobFailure(null)).toEqual({ error: 'The job failed.', failure_reason: '', failure_class: '', retryable: null });
   });
-});
-
-// Unused-fixture guard: every fixture file is read by a case above, so a
-// fixture that stops being exercised is noticed.
-it('has the same fixtures for both shapes', () => {
-  const names = (shape) => fs.readdirSync(path.join(__dirname, 'fixtures', shape)).sort();
-  expect(names('dated')).toEqual(names('legacy'));
-  expect(clone(names('legacy')).length).toBeGreaterThan(0);
 });

@@ -1,0 +1,11 @@
+{
+  "status": "processing",
+  "task_id": "fa50185e37ad61160dbe4a785cdf7286",
+  "progress": {
+    "step": "research",
+    "index": 2,
+    "total": 5,
+    "elapsed_seconds": "1200",
+    "poll_after_seconds": 5
+  }
+}

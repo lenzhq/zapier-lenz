@@ -82,21 +82,16 @@ const rowErrorCode = (c) => {
   return outputCode(f.code || c.error_code || '', 'no_claim');
 };
 
-// The sentence a verdict row carries when its input held more claims than the
-// one assessed. The earlier shape sends it as `hint`; the dated one sends the
-// list alone, so the same words are supplied here.
-const MORE_CLAIMS_HINT =
-  'Assessed the main claim only. Send identified_claims as their own items to check the rest.';
-
 const moreClaims = (c) =>
   Array.isArray(c.more_claims) ? c.more_claims : Array.isArray(c.identified_claims) ? c.identified_claims : [];
 
 const shapeRow = (c) => ({
   claim: c.claim || '',
-  // A failed row reads `verdict: "Error"`, `confidence: "low"` here in either
-  // shape: the values a saved Zap already branches on.
-  verdict: isFailedRow(c) ? 'Error' : c.verdict || null,
-  confidence: isFailedRow(c) ? c.confidence || 'low' : c.confidence || null,
+  // A row with `status: failed` and no verdict reads `verdict: "Error"`, the
+  // value an earlier-shape failed row carries. Earlier-shape rows are read
+  // exactly as sent.
+  verdict: c.status === 'failed' && !c.verdict ? 'Error' : c.verdict || null,
+  confidence: c.confidence || null,
   passed: isPassingVerdict(c.verdict),
   // Null on all but one path. The API only fills this when the verdict
   // came from an existing full verification it can serve to this caller
@@ -119,7 +114,7 @@ const shapeRow = (c) => ({
   error_code: rowErrorCode(c),
   // One sentence on what to send next. On every Error row, and on a verdict
   // row whose input held more claims than the one assessed.
-  hint: c.hint || (isObject(c.failure) && c.failure.hint) || (moreClaims(c).length > 0 ? MORE_CLAIMS_HINT : ''),
+  hint: c.hint || (isObject(c.failure) && c.failure.hint) || '',
   // The OTHER claims found in this input that were not assessed — a compound
   // input is assessed on its main claim. Send these as their own steps to
   // check the rest. `more_claims` is the newer name for `identified_claims`.

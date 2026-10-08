@@ -40,12 +40,6 @@ const SAMPLE = {
     'The Eiffel Tower was completed in 1889.',
   ],
   candidate_claims: [],
-  // The same claims as `identified_claims`, as `{ claim, positions }` items.
-  // `positions` is null unless the API located the claim in the text.
-  claims: [
-    { claim: 'The Eiffel Tower is 330 metres tall.', positions: null },
-    { claim: 'The Eiffel Tower was completed in 1889.', positions: null },
-  ],
   // True when `status` is `not_a_claim`: nothing in the text can be checked.
   not_a_claim: false,
   domain: 'Science',
@@ -58,34 +52,21 @@ const SAMPLE = {
   message: '',
 };
 
-// The extraction in the output's own vocabulary, from either response shape.
-//
-//   dated:    claims: [{ claim, positions }], status `no_checkable_claim`
-//   earlier:  claim, identified_claims, candidate_claims, locations, status
-//             `not_a_claim`
-//
-// Every key is present whichever arrived, with the values it has always had:
-// `claim` is the most check-worthy claim, `identified_claims` the complete
-// list when more than one was found and `[]` for one, `status` keeps
-// `not_a_claim` for "nothing checkable". `claims` is added in both.
+// An extraction as the output has always had it. The response this app asks
+// for passes through untouched. One response can carry a list instead
+// (`claims: [{ claim, positions }]`, with status `no_checkable_claim`); it is
+// read into the same keys so nothing is missing: `claim` is the first claim,
+// `identified_claims` the full list when more than one was found and `[]`
+// for one, and status reads `not_a_claim` for "nothing checkable".
 const shapeExtraction = (result) => {
+  if (!Array.isArray(result.claims)) return { ...result };
+  const texts = result.claims.filter(isObject).map((c) => c.claim || '');
   const out = { ...result };
-  const items = Array.isArray(result.claims)
-    ? result.claims.filter(isObject).map((c) => ({ claim: c.claim || '', positions: c.positions ?? null }))
-    : null;
-  const texts = items
-    ? items.map((c) => c.claim)
-    : Array.isArray(result.identified_claims) && result.identified_claims.length > 0
-      ? result.identified_claims
-      : result.claim
-        ? [result.claim]
-        : [];
-  out.claims = items || texts.map((claim) => ({ claim, positions: null }));
   out.claim = result.claim ?? texts[0] ?? '';
   out.identified_claims = result.identified_claims ?? (texts.length > 1 ? texts : []);
   out.candidate_claims = result.candidate_claims ?? [];
+  out.locations = result.locations ?? null;
   if (result.status === NO_CHECKABLE_CLAIM) out.status = 'not_a_claim';
-  out.not_a_claim = out.status === 'not_a_claim';
   return out;
 };
 
@@ -187,7 +168,13 @@ const perform = (z, bundle) => {
       // `||` rather than an overwrite: today ExtractOut carries no `message`
       // of its own, but if the API ever adds one (say, explaining a
       // `not_a_claim`) it must not be silently blanked by the spread below.
-      return { ...shapeExtraction(result || {}), message: message || (result && result.message) || '' };
+      const shaped = shapeExtraction(result || {});
+      return {
+        ...shaped,
+        message: message || (result && result.message) || '',
+        // True when nothing in the text can be checked.
+        not_a_claim: shaped.status === 'not_a_claim',
+      };
     })
     .catch((err) => mapLenzError(z, err));
 };
