@@ -59,7 +59,7 @@ const perform = async (z, bundle) => {
     suggested_rewrite: item.suggested_rewrite || '',
     // Items that carry `completed_at` and no `modified_at` get the key this
     // trigger has always emitted, computed as the earlier field was.
-    ...('modified_at' in item ? {} : { modified_at: modifiedAtFrom(item) }),
+    ...(item.completed_at && !('modified_at' in item) ? { modified_at: modifiedAtFrom(item) } : {}),
   }));
 };
 

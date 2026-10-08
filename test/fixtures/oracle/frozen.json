@@ -2709,6 +2709,36 @@
       "language": "en"
     }
   ],
+  "verify__list_200_no_timestamps": [
+    {
+      "id": "97f4229f",
+      "verification_id": "97f4229f",
+      "claim": "The Earth is round.",
+      "domain": "Science",
+      "entities": [],
+      "verdict": "True",
+      "confidence": "high",
+      "lenz_score": 9,
+      "key_finding": "The Earth is approximately spherical in shape.",
+      "executive_summary": "The claim is verified.",
+      "suggested_rewrite": "",
+      "language": "en"
+    },
+    {
+      "id": "6946e8ea",
+      "verification_id": "6946e8ea",
+      "claim": "The Earth is round.",
+      "domain": "Science",
+      "entities": [],
+      "verdict": "True",
+      "confidence": "high",
+      "lenz_score": 9,
+      "key_finding": "The Earth is approximately spherical in shape.",
+      "executive_summary": "The claim is verified.",
+      "suggested_rewrite": "",
+      "language": "en"
+    }
+  ],
   "verify__list_clamped_200": [],
   "verify__list_empty_200": [],
   "verify__list_page2_200": [
