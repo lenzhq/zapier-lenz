@@ -12,9 +12,11 @@ mechanics live in [README.md](README.md#building-and-pushing).
   row still reads `Error` with confidence `low`, a check that found nothing to verify
   still reads `no_claim` / `not_a_claim`, Extract Claims still gives Primary Claim and
   Identified Claims, and New Verification Completed still gives `modified_at`.
-  Two things read differently, both from the API itself: the sentence in Verify a
+  Three things read differently, all from the API itself: the sentence in Verify a
   Claim's Error field on a failure read from the status route is the API's current
-  wording, and an extraction that lists a claim now always has status `ready`.
+  wording; an extraction that lists a claim now always has status `ready`; and on
+  Review a Draft, a review of a draft kept under zero retention that found nothing
+  checkable gives the standard hint in Error, where it gave `no_claim`.
 
 ## 2.2.0
 

@@ -71,3 +71,6 @@ typings/
 .next
 
 .pnpm-store/
+
+# Local scratch (review output, copied reference data). Never committed.
+tmp/

@@ -436,7 +436,8 @@ describe('Review a Draft and Check Citations', () => {
     expect(
       shapeJobFailure({ code: 'no_checkable_claim', detail: 'Nothing.', hint: 'Send a claim.', failure_class: 'invalid_input', retryable: false }),
     ).toEqual({ error: 'Send a claim.', failure_reason: 'no_claim', failure_class: 'invalid_input', retryable: false });
-    expect(shapeJobFailure({ code: 'timeout', detail: 'Out of time.' }).error).toBe('Out of time.');
+    // No hint: the code, as the earlier shape always read; `detail` alone is not used.
+    expect(shapeJobFailure({ code: 'timeout', detail: 'Out of time.' }).error).toBe('timeout');
     expect(shapeJobFailure({ failure_reason: 'timeout' }).error).toBe('timeout');
     expect(shapeJobFailure(null)).toEqual({ error: 'The job failed.', failure_reason: '', failure_class: '', retryable: null });
   });

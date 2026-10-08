@@ -17,7 +17,7 @@ const json = (status, body) =>
 const NOT_EXPECTED = { detail: 'Not found.', code: 'not_found' };
 
 // The action, its bundle, and the body the network returns, per fixture family.
-const plan = (App, name, body) => {
+const plan = (App, name, body, shape) => {
   const ops = App.creates;
   if (name.startsWith('assess__')) {
     return { fn: ops.assess.operation.perform, bundle: { authData: AUTH, inputData: { text: 'x' } }, reply: body };
@@ -38,22 +38,25 @@ const plan = (App, name, body) => {
   if (name.startsWith('review__get')) {
     return {
       fn: ops.review_draft.operation.performResume,
-      bundle: { authData: {}, outputData: { review_id: body.review_id } },
+      bundle: { authData: AUTH, outputData: { review_id: body.review_id } },
       reply: body,
     };
   }
   if (name.startsWith('citecheck__get')) {
     return {
       fn: ops.check_citations.operation.performResume,
-      bundle: { authData: {}, outputData: { citecheck_id: body.citecheck_id } },
+      bundle: { authData: AUTH, outputData: { citecheck_id: body.citecheck_id } },
       reply: body,
     };
   }
   if (name.startsWith('webhook__verification')) {
+    // A needs_input callback is always read from the status route; it reads
+    // the recorded needs_input poll of the same version.
+    const needsInput = name.includes('needs_input');
     return {
       fn: ops.verify_claim.operation.performResume,
       bundle: { authData: AUTH, outputData: { task_id: body.task_id }, rawRequest: signed(body) },
-      reply: null,
+      reply: needsInput ? { ...loadFixture(shape, 'verify__status_needs_input'), task_id: body.task_id } : null,
     };
   }
   if (name.startsWith('webhook__review')) {
@@ -83,7 +86,7 @@ const runWire = async ({ App, appTester, jest, shape }) => {
   try {
     for (const name of fixtureNames(shape)) {
       const body = loadFixture(shape, name);
-      const p = plan(App, name, body);
+      const p = plan(App, name, body, shape);
       if (!p) continue;
       globalThis.fetch = jest.fn(async (url, init = {}) => {
         calls.push({ fixture: name, url: String(url), headers: new Headers(init.headers || {}) });
@@ -93,6 +96,11 @@ const runWire = async ({ App, appTester, jest, shape }) => {
         outputs[name] = await appTester(p.fn, p.bundle);
       } catch (err) {
         outputs[name] = describeError(err);
+      }
+      // A read that never reached the network compared nothing: every
+      // fixture that answers a read must have been fetched.
+      if (p.reply && !calls.some((c) => c.fixture === name)) {
+        throw new Error(`${shape}/${name}: the action never made its read`);
       }
     }
   } finally {

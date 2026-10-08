@@ -197,6 +197,19 @@ describe('reads: one output for one result, whichever version', () => {
     expect(reads.map((c) => c.url)).toEqual(['https://lenz.io/api/v1/reviews/8fdbfca6']);
   });
 
+  it('every read reached the network, signed in', () => {
+    for (const run of [legacy, canonical]) {
+      const reads = Object.keys(run.outputs).filter((n) => !n.startsWith('webhook__'));
+      const fetched = new Set(run.calls.map((c) => c.fixture));
+      expect(reads.filter((n) => !fetched.has(n))).toEqual([]);
+      expect(reads.filter((n) => run.outputs[n].__error)).toEqual([]);
+      expect(run.calls.filter((c) => c.headers.get('authorization') !== `Bearer ${AUTH.access_token}`)).toEqual([]);
+    }
+    expect(Object.keys(canonical.outputs).filter((n) => /^(review|citecheck)__get/.test(n)).length).toBeGreaterThan(
+      30,
+    );
+  });
+
   it('names the version on every read', () => {
     const calls = [...legacy.calls, ...canonical.calls];
     expect(calls.length).toBeGreaterThan(50);
@@ -230,6 +243,7 @@ const ACTION_FOR = {
   errors__payment_required_verify: 'verify',
   errors__payment_required_ask: 'ask',
   review__402_no_credits: 'review',
+  review__402_no_credits_exhausted: 'review',
   citecheck__402_no_credits: 'citecheck',
   errors__rate_limited_extract: 'extract',
   review__429_review_in_flight: 'review',
@@ -299,5 +313,85 @@ describe('calls an action starts: the same answer or error, whichever version', 
     const legacyOut = await run('legacy');
     const canonicalOut = await run('canonical');
     expect(canonicalOut).toEqual(legacyOut);
+  });
+});
+
+// Targeted cases the recorded responses do not cover.
+describe('values the newer shape carries differently', () => {
+  let originalFetch;
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+  });
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  // A citation refusal in the newer shape states the balance only as
+  // `remaining`, counted in credits on these two calls.
+  it.each([
+    ['review', 'review_draft'],
+    ['citecheck', 'check_citations'],
+  ])('%s: an out-of-credits refusal still names the balance', async (_label, key) => {
+    globalThis.fetch = jest.fn().mockResolvedValue(
+      json(402, {
+        detail: 'No remaining credits for citation checks.',
+        code: 'no_credits',
+        docs_url: 'https://lenz.io/docs/errors#quota',
+        upgrade_url: 'https://lenz.io/plans',
+        remaining: 7,
+        cost: 9,
+      }),
+    );
+    const err = await appTester(App.creates[key].operation.perform, { authData: AUTH, inputData: { text: 'x' } }).then(
+      () => null,
+      (e) => e,
+    );
+    expect(err.name).toBe('HaltedError');
+    expect(err.message).toContain('This call costs 9 credits and you have 7 left.');
+  });
+
+  it('a verify refusal does not read `remaining` (checks, not credits) as the balance', async () => {
+    globalThis.fetch = jest
+      .fn()
+      .mockResolvedValue(json(402, { detail: 'No remaining claim checks.', code: 'no_credits', remaining: 3, cost: 10 }));
+    const err = await appTester(App.creates.verify_claim.operation.perform, {
+      authData: AUTH,
+      inputData: { claim: 'x' },
+    }).then(
+      () => null,
+      (e) => e,
+    );
+    expect(err.message).toContain('This call costs 10 credits.');
+    expect(err.message).not.toContain('left');
+  });
+
+  describe('a failed review or citation check reads its error as it always has', () => {
+    const { shapeJobFailure } = require('../lib/jobs');
+    const block = (over) => ({
+      code: 'timeout',
+      detail: 'The check did not finish inside its time budget.',
+      hint: null,
+      failure_class: 'upstream_unavailable',
+      retryable: true,
+      docs_url: 'https://lenz.io/docs/errors#upstream-unavailable',
+      ...over,
+    });
+
+    it('no hint: the code', () => {
+      expect(shapeJobFailure(block({})).error).toBe('timeout');
+      expect(shapeJobFailure({ failure_reason: 'timeout', hint: null }).error).toBe('timeout');
+    });
+
+    it('a hint: the hint', () => {
+      expect(shapeJobFailure(block({ hint: 'Retry.' })).error).toBe('Retry.');
+    });
+
+    it('assessment_failed: the sentence the earlier hint opened with, then the hint', () => {
+      const f = block({ code: 'assessment_failed', detail: 'No claim could be assessed.', hint: 'Retry it.' });
+      expect(shapeJobFailure(f).error).toBe('No claim could be assessed. Retry it.');
+      expect(shapeJobFailure({ ...f, hint: null }).error).toBe('No claim could be assessed.');
+      // An earlier-shape block is read as sent.
+      expect(shapeJobFailure({ failure_reason: 'assessment_failed', hint: 'Retry it.' }).error).toBe('Retry it.');
+    });
   });
 });
