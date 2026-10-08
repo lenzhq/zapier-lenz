@@ -3,6 +3,7 @@
 const { mapLenzError } = require('../lib/errors');
 const { lenzClient, CALL_TIMEOUT_MS } = require('../client');
 const { languageField } = require('../lib/languages');
+const { isObject, NO_CHECKABLE_CLAIM } = require('../lib/shapes');
 
 // `perform` returns the API's response untouched, so every value here has to
 // be one the API actually sends — the editor builds Filter and Paths steps
@@ -39,6 +40,14 @@ const SAMPLE = {
     'The Eiffel Tower was completed in 1889.',
   ],
   candidate_claims: [],
+  // The same claims as `identified_claims`, as `{ claim, positions }` items.
+  // `positions` is null unless the API located the claim in the text.
+  claims: [
+    { claim: 'The Eiffel Tower is 330 metres tall.', positions: null },
+    { claim: 'The Eiffel Tower was completed in 1889.', positions: null },
+  ],
+  // True when `status` is `not_a_claim`: nothing in the text can be checked.
+  not_a_claim: false,
   domain: 'Science',
   key_entities: [{ name: 'Eiffel Tower', type: 'place' }],
   presumed_intent: 'Sharing factual details about a landmark.',
@@ -47,6 +56,37 @@ const SAMPLE = {
   // Empty on every path except `no_match`, where it says why the list is
   // empty. Present here because outputFields declares it.
   message: '',
+};
+
+// The extraction in the output's own vocabulary, from either response shape.
+//
+//   dated:    claims: [{ claim, positions }], status `no_checkable_claim`
+//   earlier:  claim, identified_claims, candidate_claims, locations, status
+//             `not_a_claim`
+//
+// Every key is present whichever arrived, with the values it has always had:
+// `claim` is the most check-worthy claim, `identified_claims` the complete
+// list when more than one was found and `[]` for one, `status` keeps
+// `not_a_claim` for "nothing checkable". `claims` is added in both.
+const shapeExtraction = (result) => {
+  const out = { ...result };
+  const items = Array.isArray(result.claims)
+    ? result.claims.filter(isObject).map((c) => ({ claim: c.claim || '', positions: c.positions ?? null }))
+    : null;
+  const texts = items
+    ? items.map((c) => c.claim)
+    : Array.isArray(result.identified_claims) && result.identified_claims.length > 0
+      ? result.identified_claims
+      : result.claim
+        ? [result.claim]
+        : [];
+  out.claims = items || texts.map((claim) => ({ claim, positions: null }));
+  out.claim = result.claim ?? texts[0] ?? '';
+  out.identified_claims = result.identified_claims ?? (texts.length > 1 ? texts : []);
+  out.candidate_claims = result.candidate_claims ?? [];
+  if (result.status === NO_CHECKABLE_CLAIM) out.status = 'not_a_claim';
+  out.not_a_claim = out.status === 'not_a_claim';
+  return out;
 };
 
 // Free — pulls the verifiable factual claims out of a block of text without
@@ -147,7 +187,7 @@ const perform = (z, bundle) => {
       // `||` rather than an overwrite: today ExtractOut carries no `message`
       // of its own, but if the API ever adds one (say, explaining a
       // `not_a_claim`) it must not be silently blanked by the spread below.
-      return { ...result, message: message || (result && result.message) || '' };
+      return { ...shapeExtraction(result || {}), message: message || (result && result.message) || '' };
     })
     .catch((err) => mapLenzError(z, err));
 };
@@ -190,6 +230,7 @@ module.exports = {
     outputFields: [
       { key: 'status', label: 'Status' },
       { key: 'claim', label: 'Primary Claim' },
+      { key: 'not_a_claim', label: 'Nothing Checkable', type: 'boolean' },
       { key: 'domain', label: 'Domain' },
       // Present on EVERY path — filled on `no_match` to say why the list is
       // empty, `''` otherwise — never absent. Declared so it is offerable in

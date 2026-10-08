@@ -2,6 +2,7 @@
 
 const { mapLenzError } = require('../lib/errors');
 const { lenzClient } = require('../client');
+const { completionTimes } = require('../lib/shapes');
 
 // The API defaults to 20 per page and caps at 100
 // (`page_size = min(max(page_size, 1), 100)` in lenz/api/public_authed.py).
@@ -56,6 +57,10 @@ const perform = async (z, bundle) => {
     // On list items too (lenz-io VerificationListItem). Normalised to '' for
     // the same reason as key_finding, and to match Verify a Claim.
     suggested_rewrite: item.suggested_rewrite || '',
+    // `completed_at` is when the check finished (rerun-aware); `modified_at`
+    // is the earlier name for it, null when that was the day it was created.
+    // Both keys are on every item, whichever the API sent.
+    ...completionTimes(item),
   }));
 };
 
@@ -85,6 +90,7 @@ module.exports = {
       suggested_rewrite: '',
       created_at: '2026-07-14T12:00:00Z',
       modified_at: null,
+      completed_at: '2026-07-14T12:01:30Z',
       language: 'en',
     },
     outputFields: [
@@ -100,6 +106,7 @@ module.exports = {
       { key: 'executive_summary', label: 'Executive Summary' },
       { key: 'suggested_rewrite', label: 'Suggested Rewrite (not verified)' },
       { key: 'created_at', label: 'Created At', type: 'datetime' },
+      { key: 'completed_at', label: 'Completed At', type: 'datetime' },
     ],
   },
 };

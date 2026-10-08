@@ -3,6 +3,23 @@
 User-facing changes to the Lenz integration for Zapier. Build and release
 mechanics live in [README.md](README.md#building-and-pushing).
 
+## Unreleased
+
+- Update: every action reads both response shapes the Lenz API can send, so the same
+  Zap works whichever one it gets. Nothing a Zap can see changes: output keys and
+  values stay as they were (`no_claim` and `not_a_claim` statuses and codes, `Error`
+  rows with `low` confidence, `identified_claims`, `modified_at`, `candidate_claims`,
+  the `text` key on Claims Found), so existing Zaps keep working without edits.
+- New create/assess and create/extract_claims: **Nothing Checkable**, a true/false
+  field that is true when nothing in the text can be checked. Status keeps its values.
+- New create/extract_claims: **Claims**, every claim as a `claim` / `positions` item
+  (`positions` is empty unless Lenz located the claim in the text).
+- New trigger/new_verification: **Completed At**. Modified At stays, and is still
+  empty when the check finished on the day it was created.
+- Update create/assess: a quick check that comes back with a failed row for a cause
+  that clears on its own (a provider outage or a timeout), on every row, is replayed
+  by Zapier as before, in either shape.
+
 ## 2.1.0
 
 - New create/review_draft: **Review a Draft**, checks every factual claim in a draft,
