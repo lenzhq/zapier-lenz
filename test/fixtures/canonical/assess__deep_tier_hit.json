@@ -1,0 +1,20 @@
+{
+  "status": "ok",
+  "claims": [
+    {
+      "claim": "Water boils at 100C.",
+      "language": "en",
+      "status": "completed",
+      "verdict": "True",
+      "confidence": "high",
+      "verification_url": "https://lenz.io/api/v1/verifications/4e89d81a",
+      "rationale": "The claim is verified.",
+      "dissent": null,
+      "suggested_rewrite": null,
+      "more_claims": [],
+      "failure": null
+    }
+  ],
+  "failure": null,
+  "more_claims": []
+}

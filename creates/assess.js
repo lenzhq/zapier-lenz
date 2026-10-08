@@ -4,6 +4,7 @@ const { mapLenzError } = require('../lib/errors');
 const { replayKey, secondsToNextBucket, HOUR_MS } = require('../lib/replay-key');
 const { lenzClient, CALL_TIMEOUT_MS } = require('../client');
 const { languageField } = require('../lib/languages');
+const { isObject, NO_CHECKABLE_CLAIM, outputCode, isNothingCheckable, readFailure } = require('../lib/shapes');
 
 function isPassingVerdict(verdict) {
   return verdict === 'True' || verdict === 'Mostly True';
@@ -31,7 +32,11 @@ function isPassingVerdict(verdict) {
 // it is a declared output that existing Zaps may map, and the server still
 // sends the key. Removing it would be a breaking change for a field that
 // costs nothing to carry.
-const NO_ERROR = { message: '', candidate_claims: [] };
+//
+// `not_a_claim` is true when the API says nothing in the input can be checked:
+// no rows at all, or (either shape) every row has no checkable claim. It sits
+// beside `status`, which keeps its own values.
+const NO_ERROR = { message: '', not_a_claim: false, candidate_claims: [] };
 
 // Every per-row key, present on every row. A verdict row has the verdict
 // fields filled and the error fields empty; an Error row (`verdict: "Error"`)
@@ -66,9 +71,26 @@ const SAMPLE = {
   ],
 };
 
+// A row with no verdict, in either shape: `status: failed` with a null verdict
+// and a `failure` block, or `verdict: "Error"` with `error_code` and `hint`.
+const isFailedRow = (c) => c.status === 'failed' || c.verdict === 'Error';
+
+// The cause of a failed row, spelled as this output always has: `no_claim`
+// for "nothing checkable". An open set; new causes pass through.
+const rowErrorCode = (c) => {
+  const f = readFailure({ failure: isObject(c.failure) ? c.failure : null });
+  return outputCode(f.code || c.error_code || '', 'no_claim');
+};
+
+const moreClaims = (c) =>
+  Array.isArray(c.more_claims) ? c.more_claims : Array.isArray(c.identified_claims) ? c.identified_claims : [];
+
 const shapeRow = (c) => ({
   claim: c.claim || '',
-  verdict: c.verdict || null,
+  // A row with `status: failed` and no verdict reads `verdict: "Error"`, the
+  // value an earlier-shape failed row carries. Earlier-shape rows are read
+  // exactly as sent.
+  verdict: c.status === 'failed' && !c.verdict ? 'Error' : c.verdict || null,
   confidence: c.confidence || null,
   passed: isPassingVerdict(c.verdict),
   // Null on all but one path. The API only fills this when the verdict
@@ -89,14 +111,14 @@ const shapeRow = (c) => ({
   // branch on the ones you know and let the rest fall through. Today:
   // `no_claim`, `framing_failed`, `upstream_unavailable`, `timeout`. Error
   // rows are free.
-  error_code: c.error_code || '',
+  error_code: rowErrorCode(c),
   // One sentence on what to send next. On every Error row, and on a verdict
   // row whose input held more claims than the one assessed.
-  hint: c.hint || '',
+  hint: c.hint || (isObject(c.failure) && c.failure.hint) || '',
   // The OTHER claims found in this input that were not assessed — a compound
   // input is assessed on its main claim. Send these as their own steps to
-  // check the rest.
-  identified_claims: Array.isArray(c.identified_claims) ? c.identified_claims : [],
+  // check the rest. `more_claims` is the newer name for `identified_claims`.
+  identified_claims: moreClaims(c),
 });
 
 // The replay-stable Idempotency-Key (#19). Shared with creates/ask.js; the
@@ -140,9 +162,12 @@ const perform = async (z, bundle) => {
     .catch((err) => mapLenzError(z, err));
 
   if (!result.claims || result.claims.length === 0) {
+    // The sentence is `failure.detail`, or `error` in the earlier shape.
+    const failure = readFailure(result);
     return {
       status: 'no_claim',
-      message: result.error || 'No verifiable factual claim was detected.',
+      message: failure.detail || result.error || 'No verifiable factual claim was detected.',
+      not_a_claim: true,
       // Deprecated on the API, always empty; see NO_ERROR.
       candidate_claims: [],
       claims: [],
@@ -150,6 +175,10 @@ const perform = async (z, bundle) => {
   }
 
   const rows = result.claims.map(shapeRow);
+  const nothingCheckable =
+    result.status === NO_CHECKABLE_CLAIM ||
+    result.status === 'not_a_claim' ||
+    rows.every((r) => r.verdict === 'Error' && isNothingCheckable(r.error_code));
 
   // A transient failure can arrive INSIDE a 200, as rows: `upstream_unavailable`
   // (a provider was down) and `timeout` (the call ran out of budget before this
@@ -169,7 +198,7 @@ const perform = async (z, bundle) => {
   // "Nothing was charged" is safe to say here for the reason it is safe on the
   // typed-503 branch: the server produced these rows, and it produces an Error
   // row instead of charging.
-  if (rows.every((r) => r.verdict === 'Error' && TRANSIENT_ROW_CODES.has(r.error_code))) {
+  if (result.claims.every((c) => isFailedRow(c) && TRANSIENT_ROW_CODES.has(rowErrorCode(c)))) {
     // Into the NEXT hour bucket, not the default 60s — because of the key.
     // The server stores every 200 under its Idempotency-Key for 24h, and
     // this all-Error response IS a 200. A replay 60s later would carry the
@@ -194,6 +223,7 @@ const perform = async (z, bundle) => {
   return {
     status: 'ok',
     ...NO_ERROR,
+    not_a_claim: nothingCheckable,
     claims: rows,
   };
 };
@@ -226,6 +256,9 @@ module.exports = {
     outputFields: [
       { key: 'status', label: 'Status' },
       { key: 'message', label: 'Message' },
+      // True when nothing in the input can be checked (no rows, or every row
+      // has no checkable claim). Status is unchanged: `ok` or `no_claim`.
+      { key: 'not_a_claim', label: 'Nothing Checkable', type: 'boolean' },
       // Declared because it is still emitted (always empty) and a Zap built
       // before the API retired it may map it. Dropping the declaration
       // would not break that Zap, but declaring it keeps the sample and the

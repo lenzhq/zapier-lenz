@@ -1,0 +1,12 @@
+{
+  "status": "failed",
+  "task_id": "fa50185e37ad61160dbe4a785cdf7286",
+  "failure": {
+    "code": "no_checkable_claim",
+    "detail": "No claim in the input could be checked against public evidence.",
+    "hint": "No factual statement that can be checked against evidence was found in the input. Send one factual claim, or run the text through /extract to enumerate its claims.",
+    "failure_class": "invalid_input",
+    "retryable": false,
+    "docs_url": "https://lenz.io/docs/errors#invalid-input"
+  }
+}

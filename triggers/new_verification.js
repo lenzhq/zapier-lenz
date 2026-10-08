@@ -2,6 +2,7 @@
 
 const { mapLenzError } = require('../lib/errors');
 const { lenzClient } = require('../client');
+const { modifiedAtFrom } = require('../lib/shapes');
 
 // The API defaults to 20 per page and caps at 100
 // (`page_size = min(max(page_size, 1), 100)` in lenz/api/public_authed.py).
@@ -56,6 +57,9 @@ const perform = async (z, bundle) => {
     // On list items too (lenz-io VerificationListItem). Normalised to '' for
     // the same reason as key_finding, and to match Verify a Claim.
     suggested_rewrite: item.suggested_rewrite || '',
+    // Items that carry `completed_at` and no `modified_at` get the key this
+    // trigger has always emitted, computed as the earlier field was.
+    ...(item.completed_at && !('modified_at' in item) ? { modified_at: modifiedAtFrom(item) } : {}),
   }));
 };
 

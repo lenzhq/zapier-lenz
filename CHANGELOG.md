@@ -3,6 +3,18 @@
 User-facing changes to the Lenz integration for Zapier. Build and release
 mechanics live in [README.md](README.md#building-and-pushing).
 
+## Unreleased
+
+- Update: the actions can now also read the newer response shape of the Lenz API
+  (failure blocks, rows with a status instead of an `Error` verdict, an extraction as
+  a list of claims, `completed_at`). This version still asks for the shape it always
+  has, so nothing changes for existing Zaps: every output is exactly what it was.
+  For the newer shape the actions do not fail and every output key is present, but the
+  values are not promised to match what the current shape gives; that comes with a
+  later version that asks for the newer shape.
+- New create/assess and create/extract_claims: **Nothing Checkable**, a true/false
+  field that is true when nothing in the text can be checked. Status keeps its values.
+
 ## 2.1.0
 
 - New create/review_draft: **Review a Draft**, checks every factual claim in a draft,

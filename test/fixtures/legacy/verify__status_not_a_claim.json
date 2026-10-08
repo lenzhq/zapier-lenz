@@ -1,0 +1,10 @@
+{
+  "status": "failed",
+  "task_id": "fa50185e37ad61160dbe4a785cdf7286",
+  "error": "Not a verifiable claim.",
+  "failure_reason": "not_a_claim",
+  "failure_class": "invalid_input",
+  "retryable": false,
+  "docs_url": "https://lenz.io/docs/errors#invalid-input",
+  "hint": "The input is a greeting, not a statement that can be checked. Send one factual claim, or run the text through /extract to enumerate its claims."
+}

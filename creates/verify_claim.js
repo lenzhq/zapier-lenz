@@ -2,6 +2,7 @@
 
 const { mapLenzError } = require('../lib/errors');
 const { NO_FAILURE } = require('../lib/jobs');
+const { isObject, readFailure, outputCode } = require('../lib/shapes');
 const {
   parseSignedCallback,
   requireWebhookSecretWhileTesting,
@@ -161,7 +162,9 @@ const NO_INPUT_NEEDED = {
 // per-item in the editor.
 function shapeNeedsInput(status) {
   const reason = status.reason || '';
-  const claims = (status.claims || []).map((c) => ({ text: c.text || '', domain: c.domain || '' }));
+  // Each option is `{ claim, domain }`, or `{ text, domain }` in the earlier
+  // shape. The output keeps `text`.
+  const claims = (status.claims || []).map((c) => ({ text: c.claim || c.text || '', domain: c.domain || '' }));
   const candidates = (status.candidates || []).map((text) => ({ text: String(text || '') }));
   const similar = (status.similar_claims || []).map((s) => ({
     verification_id: s.verification_id || '',
@@ -291,24 +294,56 @@ const fromSignedCallback = (bundle) => {
   const taskId = bundle.outputData && bundle.outputData.task_id;
   if (!taskId || event.taskId !== taskId) return { fallback: 'callback is for a different task' };
 
+  // The verification itself is `result` in the flat payload and the `result`
+  // of the nested `verification` object in the enveloped one.
+  const nested = isObject(event.raw && event.raw.verification) ? event.raw.verification : null;
+
   if (event.event === 'verification.completed') {
-    const result = event.result;
-    if (!result || typeof result !== 'object' || Object.keys(result).length === 0) {
+    const flat = event.result;
+    const result =
+      flat && typeof flat === 'object' && Object.keys(flat).length > 0
+        ? flat
+        : nested && isObject(nested.result)
+          ? nested.result
+          : null;
+    if (!result || Object.keys(result).length === 0) {
       return { fallback: 'completed callback carried no result' };
     }
     return { output: shapeCompleted(taskId, result) };
   }
   if (event.event === 'verification.failed') {
-    return {
-      output: shapeFailed(taskId, {
-        error: event.error,
-        failure_reason: event.raw && event.raw.failure_reason,
-        failure_class: event.failureClass,
-        retryable: event.retryable,
-      }),
-    };
+    return { output: shapeFailed(taskId, failedFromCallback(event, nested)) };
   }
   return { fallback: `event ${event.event || 'unknown'} is read from the status route` };
+};
+
+// A failed verification, from the signed callback in either shape. The nested
+// payload carries `failure: { code, detail, ... }` (on the verification, or at
+// the top level); the flat one carries the failure code alone in `error`.
+// The flat payload has no sentence, so `error` keeps reading as the code there.
+const failedFromCallback = (event, nested) => {
+  const raw = event.raw || {};
+  const block = (nested && nested.failure) || raw.failure;
+  if (isObject(block)) return failedFromBody({ failure: block });
+  return {
+    error: event.error,
+    failure_reason: raw.failure_reason,
+    failure_class: event.failureClass,
+    retryable: event.retryable,
+  };
+};
+
+// A failed status body (poll or detail), in either shape, as the pieces
+// `shapeFailed` takes. `failure_reason` keeps the earlier spelling of the
+// "nothing checkable" code.
+const failedFromBody = (body) => {
+  const f = readFailure(body);
+  return {
+    error: f.detail,
+    failure_reason: outputCode(f.code, 'not_a_claim'),
+    failure_class: f.failureClass,
+    retryable: f.retryable,
+  };
 };
 
 // Both the callback and getStatus() build `result` with the same server
@@ -413,7 +448,7 @@ const performResume = async (z, bundle) => {
   }
 
   if (status.status === 'failed') {
-    return shapeFailed(bundle.outputData.task_id, status);
+    return shapeFailed(bundle.outputData.task_id, failedFromBody(status));
   }
 
   // Anything else: Lenz's callback fired before the pipeline reached a terminal
