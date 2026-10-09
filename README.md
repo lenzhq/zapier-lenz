@@ -96,9 +96,15 @@ when this was a free-text box described only as "ISO 639-1", typing `English`, `
 any unsupported code failed **every** run of that Zap with nothing in the editor to say
 why. If you have an existing Zap with a hand-typed value, re-pick it from the dropdown.
 
-**It sets the language of the answer, not of your input.** Lenz never inspects what
-language your text is in; this field alone decides what comes back. Reading it the other
-way round is the easy mistake, and it quietly changes the output.
+**It sets the language of the answer, not of your input.** A language code describes the
+answer, never your text; reading it the other way round is the easy mistake, and it
+quietly changes the output.
+
+**`auto` on Assess, Verify a Claim and Ask Follow-Up.** To get the answer in the language
+of your text, enter `auto` as a custom value in the Language field (the dropdown lists the
+twelve codes only). On Ask Follow-Up it means the language of the claim being discussed.
+A code you pick always wins, and Extract Claims, Review a Draft and Check Citations do not
+accept `auto`.
 
 **Blank means two different things.** On Verify a Claim, Assess and Extract Claims a blank
 field means English. On **Ask Follow-Up** it means *the language the verification is stored
