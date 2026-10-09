@@ -3,7 +3,7 @@
 const { mapLenzError } = require('../lib/errors');
 const { replayKey, secondsToNextBucket, HOUR_MS } = require('../lib/replay-key');
 const { lenzClient, CALL_TIMEOUT_MS } = require('../client');
-const { languageField } = require('../lib/languages');
+const { languageField, LANGUAGE_HELP_TEXT_AUTO } = require('../lib/languages');
 const { isObject, NO_CHECKABLE_CLAIM, outputCode, isNothingCheckable, readFailure } = require('../lib/shapes');
 
 function isPassingVerdict(verdict) {
@@ -249,7 +249,7 @@ module.exports = {
         helpText:
           'The claim to check. If it contains several claims, each is assessed separately. Up to 10,000 characters; longer input is cut off without warning, so send a long document to Extract Claims first.',
       },
-      languageField(),
+      languageField(LANGUAGE_HELP_TEXT_AUTO),
     ],
     perform,
     sample: SAMPLE,

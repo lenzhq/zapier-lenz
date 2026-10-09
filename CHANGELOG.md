@@ -5,6 +5,11 @@ mechanics live in [README.md](README.md#building-and-pushing).
 
 ## Unreleased
 
+- Update: the Language field's help text on Assess, Verify a Claim and Ask Follow-Up
+  now mentions `auto`, which answers in the language of the text (on Ask Follow-Up, the
+  language of the claim being discussed). Enter it as a custom value; the dropdown and
+  what the actions send are unchanged. Do not release this version until the Lenz API
+  accepts `auto`.
 - Update: the actions can now also read the newer response shape of the Lenz API
   (failure blocks, rows with a status instead of an `Error` verdict, an extraction as
   a list of claims, `completed_at`). This version still asks for the shape it always
