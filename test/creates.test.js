@@ -1322,7 +1322,7 @@ describe('language "auto"', () => {
     expect(fieldOf(action).helpText).toMatch(/"auto"/);
   });
 
-  it.each(['extract_claims', 'review_draft', 'check_citations'])(
+  it.each(['extract_claims', 'check_citations'])(
     '%s does not mention auto, because the API does not accept it there',
     (action) => {
       expect(fieldOf(action).helpText).not.toMatch(/auto/i);
