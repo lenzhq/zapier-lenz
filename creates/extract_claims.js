@@ -55,20 +55,18 @@ const SAMPLE = {
   message: '',
 };
 
-// An extraction as the output has always had it. The newer response shape
-// lists the claims as `claims: [{ claim, positions }]` and says
-// `no_checkable_claim`; it is read into exactly the keys the earlier shape
-// gave, and the list itself is not passed on:
+// An extraction as the output has always had it. The API lists the claims as
+// `claims: [{ claim, positions }]` and says `no_checkable_claim`; that is read
+// into the keys this output has always given, and the list itself is not
+// passed on:
 //   claim              the first claim, '' for none
 //   identified_claims  every claim when more than one was found, else []
 //   candidate_claims   always []
 //   locations          [{ claim, positions }] when every claim was located,
 //                      else null (this action never asks for locations)
 //   status             `not_a_claim` for "nothing checkable"
-// An earlier-shape response (it has `claim`) passes through untouched.
 const shapeExtraction = (result) => {
-  if (!Array.isArray(result.claims) || 'claim' in result) return { ...result };
-  const items = result.claims.filter(isObject);
+  const items = (Array.isArray(result.claims) ? result.claims : []).filter(isObject);
   const texts = items.map((c) => c.claim || '');
   const located = items.length > 0 && items.every((c) => Array.isArray(c.positions));
   const out = {
