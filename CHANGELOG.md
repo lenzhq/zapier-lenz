@@ -11,6 +11,10 @@ mechanics live in [README.md](README.md#building-and-pushing).
   language of the claim being discussed). Enter it as a custom value; the dropdown and
   what the actions send are unchanged. Do not release this version until the Lenz API
   accepts `auto`.
+- Update: docs only. Review a Draft accepts `auto` in the Language field too (the review comes
+  back in the language of the draft, one language for the whole review); the README now says so.
+  Extract Claims and Check Citations still do not accept it. Nothing the action sends changes.
+  Takes effect once the Lenz API accepts `auto` on Review a Draft.
 - Update: the actions can now also read the newer response shape of the Lenz API
   (failure blocks, rows with a status instead of an `Error` verdict, an extraction as
   a list of claims, `completed_at`). This version still asks for the shape it always

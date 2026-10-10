@@ -100,11 +100,12 @@ why. If you have an existing Zap with a hand-typed value, re-pick it from the dr
 answer, never your text; reading it the other way round is the easy mistake, and it
 quietly changes the output.
 
-**`auto` on Assess, Verify a Claim and Ask Follow-Up.** To get the answer in the language
-of your text, enter `auto` as a custom value in the Language field (the dropdown lists the
-twelve codes only). On Ask Follow-Up it means the language of the claim being discussed.
-A code you pick always wins, and Extract Claims, Review a Draft and Check Citations do not
-accept `auto`.
+**`auto` on Assess, Verify a Claim, Ask Follow-Up and Review a Draft.** To get the answer in
+the language of your text, enter `auto` as a custom value in the Language field (the dropdown
+lists the twelve codes only). On Ask Follow-Up it means the language of the claim being
+discussed; on Review a Draft the review comes back in the language of the draft, one language
+for the whole review. A code you pick always wins, and Extract Claims and Check Citations do
+not accept `auto`.
 
 **Blank means two different things.** On Verify a Claim, Assess and Extract Claims a blank
 field means English. On **Ask Follow-Up** it means *the language the verification is stored
