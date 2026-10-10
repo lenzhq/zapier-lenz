@@ -5,6 +5,7 @@ mechanics live in [README.md](README.md#building-and-pushing).
 
 ## Unreleased
 
+- Update: Reviewer Dissent is deprecated: the Lenz API no longer returns it, so the field is always empty. It stays so existing Zaps keep working; a Zap that branches on it being non-empty will no longer take that branch.
 - Update: the Language field's help text on Assess, Verify a Claim and Ask Follow-Up
   now mentions `auto`, which answers in the language of the text (on Ask Follow-Up, the
   language of the claim being discussed). Enter it as a custom value; the dropdown and
