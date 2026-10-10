@@ -334,13 +334,15 @@ const callback = (payload, { secret = SECRET, headerName = 'Http-X-Lenz-Signatur
   };
 };
 
-const completed = (over = {}) => ({
+// The callback nests the verification, the body a poll returns, under
+// `verification`.
+const completed = ({ result = RESULT, ...over } = {}) => ({
   event: 'verification.completed',
   task_id: TASK,
   status: 'completed',
   delivered_at: new Date().toISOString(),
   verification_id: 'ab12cd34',
-  result: RESULT,
+  verification: { status: 'completed', task_id: over.task_id || TASK, result },
   ...over,
 });
 
@@ -381,17 +383,26 @@ describe('performResume reads the signed callback', () => {
     expect(out.status).toBe('completed');
   });
 
-  it('shapes a failed callback the same way the status route does', async () => {
+  // As a failed callback has always read: the code in `error`, no
+  // failure_reason on this path.
+  it('shapes a failed callback from its failure block', async () => {
     const client = mockStatusClient({ status: 'processing' });
     const failed = {
       event: 'verification.failed',
       task_id: TASK,
       status: 'failed',
       delivered_at: new Date().toISOString(),
-      error: 'No sources found.',
-      failure_reason: 'research',
-      failure_class: 'insufficient_evidence',
-      retryable: false,
+      verification: {
+        status: 'failed',
+        task_id: TASK,
+        failure: {
+          code: 'research',
+          detail: 'No sources found.',
+          hint: null,
+          failure_class: 'insufficient_evidence',
+          retryable: false,
+        },
+      },
     };
 
     const out = await appTester(App.creates.verify_claim.operation.performResume, resumeBundle(callback(failed)));
@@ -399,8 +410,8 @@ describe('performResume reads the signed callback', () => {
     expect(client.getStatus).not.toHaveBeenCalled();
     expect(out).toMatchObject({
       status: 'failed',
-      error: 'No sources found.',
-      failure_reason: 'research',
+      error: 'research',
+      failure_reason: '',
       failure_class: 'insufficient_evidence',
       retryable: false,
       verdict: null,

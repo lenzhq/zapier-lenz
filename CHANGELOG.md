@@ -3,6 +3,14 @@
 User-facing changes to the Lenz integration for Zapier. Build and release
 mechanics live in [README.md](README.md#building-and-pushing).
 
+## 2.4.0
+
+- Update: internal only. The actions read only the Lenz API's 2026-10-11 response shape,
+  the one 2.3.0 already asks for; the code that also read the earlier (2026-05-13) shape
+  is gone. **No output changes**: for every recorded API response, every action and the
+  trigger give the same fields, in the same order, with the same values as 2.3.0. Like
+  2.3.0, it needs a Lenz API that serves 2026-10-11.
+
 ## 2.3.0
 
 - Update: the app now asks the Lenz API for its 2026-10-11 response version, on every

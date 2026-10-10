@@ -8,7 +8,6 @@ const {
   isObject,
   NO_CHECKABLE_CLAIM,
   outputCode,
-  isNothingCheckable,
   readFailure,
   ASSESS_NO_CLAIM_MESSAGE,
   ASSESS_COMPOUND_HINT,
@@ -42,13 +41,13 @@ function isPassingVerdict(verdict) {
 // costs nothing to carry.
 //
 // `not_a_claim` is true when the API says nothing in the input can be checked:
-// no rows at all, or (either shape) every row has no checkable claim. It sits
+// no rows at all, or every row has no checkable claim. It sits
 // beside `status`, which keeps its own values.
 const NO_ERROR = { message: '', not_a_claim: false, candidate_claims: [] };
 
 // Every per-row key, present on every row. A verdict row has the verdict
 // fields filled and the error fields empty; an Error row (`verdict: "Error"`)
-// is the other way round. Both shapes carry every key, so a Filter built
+// is the other way round. Both kinds carry every key, so a Filter built
 // against the sample sees the same fields on a live run whichever kind of row
 // comes back.
 const NO_ROW_ERROR = { error_code: '', hint: '', identified_claims: [] };
@@ -79,28 +78,19 @@ const SAMPLE = {
   ],
 };
 
-// A row with no verdict, in either shape: `status: failed` with a null verdict
-// and a `failure` block, or `verdict: "Error"` with `error_code` and `hint`.
-const isFailedRow = (c) => c.status === 'failed' || c.verdict === 'Error';
+// A row with no verdict: `status: failed`, a null verdict and a `failure`
+// block.
+const isFailedRow = (c) => c.status === 'failed';
 
 // The cause of a failed row, spelled as this output always has: `no_claim`
 // for "nothing checkable". An open set; new causes pass through.
-const rowErrorCode = (c) => {
-  const f = readFailure({ failure: isObject(c.failure) ? c.failure : null });
-  return outputCode(f.code || c.error_code || '', 'no_claim');
-};
+const rowErrorCode = (c) => outputCode(readFailure(c.failure).code, 'no_claim');
 
-const moreClaims = (c) =>
-  Array.isArray(c.more_claims) ? c.more_claims : Array.isArray(c.identified_claims) ? c.identified_claims : [];
-
-// A row in the newer shape: it says `status` and never `error_code`.
-const isStatusRow = (c) => typeof c.status === 'string' && !('error_code' in c);
+const moreClaims = (c) => (Array.isArray(c.more_claims) ? c.more_claims : []);
 
 // What a row's hint has always read: the failure's hint on a failed row; on a
 // verdict row whose input held more claims, the sentence pointing at them.
-// Earlier-shape rows carry their own `hint` and are read as sent.
 const rowHint = (c) => {
-  if (!isStatusRow(c)) return c.hint || '';
   if (isObject(c.failure)) return c.failure.hint || '';
   return moreClaims(c).length > 0 ? ASSESS_COMPOUND_HINT : '';
 };
@@ -109,7 +99,7 @@ const shapeRow = (c) => ({
   claim: c.claim || '',
   // A failed row (`status: failed`, no verdict) reads `verdict: "Error"` and
   // `confidence: "low"`, the values a failed row has always had in this
-  // output. Earlier-shape rows are read exactly as sent.
+  // output.
   verdict: c.status === 'failed' && !c.verdict ? 'Error' : c.verdict || null,
   confidence: c.status === 'failed' && !c.verdict ? 'low' : c.confidence || null,
   passed: isPassingVerdict(c.verdict),
@@ -137,7 +127,7 @@ const shapeRow = (c) => ({
   hint: rowHint(c),
   // The OTHER claims found in this input that were not assessed — a compound
   // input is assessed on its main claim. Send these as their own steps to
-  // check the rest. `more_claims` is the newer name for `identified_claims`.
+  // check the rest. Read from the API's `more_claims`.
   identified_claims: moreClaims(c),
 });
 
@@ -182,15 +172,11 @@ const perform = async (z, bundle) => {
     .catch((err) => mapLenzError(z, err));
 
   if (!result.claims || result.claims.length === 0) {
-    // The earlier shape says why in `error`; the newer one in a `failure`
-    // block, whose answer to "no claim at all" this output has always worded
-    // as ASSESS_NO_CLAIM_MESSAGE.
+    // The API says why in a `failure` block, whose answer to "no claim at
+    // all" this output has always worded as ASSESS_NO_CLAIM_MESSAGE.
     return {
       status: 'no_claim',
-      message:
-        result.error ||
-        (isObject(result.failure) ? ASSESS_NO_CLAIM_MESSAGE : '') ||
-        'No verifiable factual claim was detected.',
+      message: isObject(result.failure) ? ASSESS_NO_CLAIM_MESSAGE : 'No verifiable factual claim was detected.',
       not_a_claim: true,
       // Deprecated on the API, always empty; see NO_ERROR.
       candidate_claims: [],
@@ -200,9 +186,7 @@ const perform = async (z, bundle) => {
 
   const rows = result.claims.map(shapeRow);
   const nothingCheckable =
-    result.status === NO_CHECKABLE_CLAIM ||
-    result.status === 'not_a_claim' ||
-    rows.every((r) => r.verdict === 'Error' && isNothingCheckable(r.error_code));
+    result.status === NO_CHECKABLE_CLAIM || rows.every((r) => r.verdict === 'Error' && r.error_code === 'no_claim');
 
   // A transient failure can arrive INSIDE a 200, as rows: `upstream_unavailable`
   // (a provider was down) and `timeout` (the call ran out of budget before this

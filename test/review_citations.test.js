@@ -265,7 +265,7 @@ describe('creates.review_draft performResume', () => {
       outcome: null,
       issues: [],
       citation_issues: [],
-      failure: { failure_reason: 'upstream_unavailable', failure_class: 'upstream_unavailable', retryable: true, hint: 'Try again shortly.' },
+      failure: { code: 'upstream_unavailable', detail: 'A provider was unavailable.', failure_class: 'upstream_unavailable', retryable: true, hint: 'Try again shortly.' },
     };
     const out = await appTester(
       review.performResume,
@@ -338,7 +338,7 @@ const CITECHECK = {
   outcome: 'issues_found',
   created_at: '2026-09-27T19:24:05Z',
   completed_at: '2026-09-27T19:24:08Z',
-  summary: { citation_limit_reached: true, citation_checks: { checked: 2, unchecked: 1, failed: 1 }, citation_issues: 1 },
+  summary: { citation_limit_exceeded: true, citation_checks: { checked: 2, unchecked: 1, failed: 1 }, citation_issues: 1 },
   credits: { charged: 2 },
   citations: [
     {
@@ -466,7 +466,7 @@ describe('creates.check_citations', () => {
 
   it('shapes a failed check', async () => {
     mockClient();
-    const failed = { ...CITECHECK, status: 'failed', outcome: null, citations: [], citation_issues: [], failure: { failure_reason: 'no_citations' } };
+    const failed = { ...CITECHECK, status: 'failed', outcome: null, citations: [], citation_issues: [], failure: { code: 'no_citations', detail: 'No citations found.', hint: null } };
     const out = await appTester(
       cite.performResume,
       resumeCite(callback(citeEvent({ event: 'citecheck.failed', status: 'failed', citecheck: failed }))),
