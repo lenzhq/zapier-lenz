@@ -45,7 +45,7 @@ only what the sample shows. These are the values the API actually sends:
 | `domain` | Verify a Claim | Same eight capitalised values as above, or empty. |
 | `status` | Verify a Claim | `completed`, `needs_input`, `failed`, or `processing`. Built by the integration. |
 | `reason` | Verify a Claim, when `status` is `needs_input` | `multi_claim` or `duplicate_found`. Empty otherwise. `clarification_required` was a third value until the API retired it on 2026-09-12; **Candidate Readings** is still emitted, always empty, so a Zap that maps it keeps working. |
-| `claims[].rationale`, `claims[].dissent` | Assess (Fast) | Free text, not values to filter on. `rationale` is the reasoning of a reviewer who agrees with the panel's verdict; `dissent`, when set, is the reasoning of the reviewer farthest from it. Both are reviewers' notes, not checked sources; for sourced evidence, call /verify. Empty on an `Error` row, and `dissent` is empty on most rows, so "Reviewer Dissent is not empty" is a reasonable branch. |
+| `claims[].rationale` | Assess (Fast) | Free text, not a value to filter on: the reasoning of a reviewer who agrees with the panel's verdict. It is a reviewer's note, not a checked source; for sourced evidence, call /verify. Empty on an `Error` row. `claims[].dissent` (**Reviewer Dissent**) is deprecated: the Lenz API no longer returns it, so it is always empty. The field stays so existing Zaps keep working. |
 | `suggested_rewrite` | Verify a Claim, New Verification Completed | Free text: a suggested rewrite of `claim` that the verification's findings support, for a person to review before using it. **It has not been verified itself.** Empty for a true claim, when no correction is established, and on verifications from before Lenz added it. |
 | `depth` | Verify a Claim, when `status` is `completed` | `standard` or `low` — the depth the verdict was **produced** with, which is not always the one you asked for. Empty on every other status, and on verdicts from before Lenz recorded it. |
 | `visibility` | Verify a Claim, when `status` is `completed` | `private`, `unlisted` or `public`. You can only *request* the first two; `public` is read back when the verdict was served from an existing verification someone made public. Empty on every other status. |
@@ -55,7 +55,7 @@ only what the sample shows. These are the values the API actually sends:
 | `issues[].source` (**Checked By**) | Review a Draft | `assessment` (the quick check) or `verification` (a deep check, which also has a **Key Finding** and a **Lenz Page**). |
 | `citations_skipped` | Review a Draft | Why citations you asked for were **not** checked: `url_input`, `switched_off` or `insufficient_credits`. Empty otherwise. When set, **Clean** says nothing about the citations. |
 | `finding` | Check Citations, Review a Draft (citation rows) | `supported`, `partly_supported`, `contradicted`, `unsupported`, `not_found`, `metadata_mismatch` and more: an open set. To decide whether a citation is a problem, use **Is Issue** or the **Citation Issues** list, not the finding's name. |
-| `language` | Assess (Fast), Extract Claims, Verify a Claim, Ask Follow-Up, Review a Draft, Check Citations (input) | `en` `es` `de` `fr` `it` `pt` `nl` `sv` `da` `no` `fi` `bg`. A dropdown since 1.4.0 — it was free text, and anything outside this set fails the run. |
+| `language` | Assess (Fast), Extract Claims, Verify a Claim, Ask Follow-Up, Review a Draft, Check Citations (input); also an output of Extract Claims | `en` `es` `de` `fr` `it` `pt` `nl` `sv` `da` `no` `fi` `bg`. A dropdown since 1.4.0 — it was free text, and anything outside this set fails the run. |
 
 Every field in the table above, and every other field Verify a Claim, Review a Draft and
 Check Citations declare, is **present on every result** — empty when it does not apply, never missing. Zapier treats
@@ -96,9 +96,18 @@ when this was a free-text box described only as "ISO 639-1", typing `English`, `
 any unsupported code failed **every** run of that Zap with nothing in the editor to say
 why. If you have an existing Zap with a hand-typed value, re-pick it from the dropdown.
 
-**It sets the language of the answer, not of your input.** Lenz never inspects what
-language your text is in; this field alone decides what comes back. Reading it the other
-way round is the easy mistake, and it quietly changes the output.
+**It sets the language of the answer, not of your input.** A language code describes the
+answer, never your text; reading it the other way round is the easy mistake, and it
+quietly changes the output.
+
+**`auto` on Assess, Verify a Claim, Ask Follow-Up, Review a Draft and Extract Claims.** To get
+the answer in the language of your text, enter `auto` as a custom value in the Language field
+(the dropdown lists the twelve codes only). On Ask Follow-Up it means the language of the claim
+being discussed; on Review a Draft the review comes back in the language of the draft, one
+language for the whole review; on Extract Claims the claims are written in the language of the
+text (of the fetched page when **Text** is a URL), and a text too short to tell comes back in
+English. A code you pick always wins, and Check Citations does not accept `auto`. Extract
+Claims also returns a **Language** output with the code the claims are written in.
 
 **Blank means two different things.** On Verify a Claim, Assess and Extract Claims a blank
 field means English. On **Ask Follow-Up** it means *the language the verification is stored

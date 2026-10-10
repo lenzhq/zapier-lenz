@@ -2,7 +2,7 @@
 
 const { mapLenzError } = require('../lib/errors');
 const { lenzClient, CALL_TIMEOUT_MS } = require('../client');
-const { languageField } = require('../lib/languages');
+const { languageField, LANGUAGE_HELP_TEXT_AUTO } = require('../lib/languages');
 const { isObject, NO_CHECKABLE_CLAIM } = require('../lib/shapes');
 
 // `perform` returns the API's response untouched, so every value here has to
@@ -47,6 +47,9 @@ const SAMPLE = {
   presumed_intent: 'Sharing factual details about a landmark.',
   original_input:
     'Did you know the Eiffel Tower is 330 metres tall? It was completed in 1889.',
+  // The ISO 639-1 code the claims are written in: the Language you picked,
+  // else what Lenz detected for `auto`, else `en`. Passed through from the API.
+  language: 'en',
   // Empty on every path except `no_match`, where it says why the list is
   // empty. Present here because outputFields declares it.
   message: '',
@@ -213,7 +216,7 @@ module.exports = {
         helpText:
           "The text to pull claims from, or a single public web page URL. Lenz reads the page, or a YouTube video's transcript, and extracts the claims from its first 50,000 characters; pages behind a login can't be read. A Zap step has 30 seconds and a page read can take longer, so for a long page send its text instead.",
       },
-      languageField(),
+      languageField(LANGUAGE_HELP_TEXT_AUTO),
       {
         key: 'focus',
         label: 'Focus',
@@ -230,6 +233,7 @@ module.exports = {
       { key: 'claim', label: 'Primary Claim' },
       { key: 'not_a_claim', label: 'Nothing Checkable', type: 'boolean' },
       { key: 'domain', label: 'Domain' },
+      { key: 'language', label: 'Language' },
       // Present on EVERY path — filled on `no_match` to say why the list is
       // empty, `''` otherwise — never absent. Declared so it is offerable in
       // the editor; emitted empty so a Filter built against the sample

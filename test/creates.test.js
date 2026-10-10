@@ -1311,6 +1311,84 @@ describe('language is a closed set on every action', () => {
   });
 });
 
+// `auto` answers in the language of the text on assess, verify and ask. It is
+// wording only: the dropdown keeps its twelve codes, the value is entered as a
+// custom value, and whatever is in the field goes to the API as typed.
+describe('language "auto"', () => {
+  const fieldOf = (action) =>
+    App.creates[action].operation.inputFields.find((f) => f.key === 'language');
+
+  it.each(['assess', 'verify_claim', 'ask', 'extract_claims'])('%s mentions auto in the help text', (action) => {
+    expect(fieldOf(action).helpText).toMatch(/"auto"/);
+  });
+
+  it.each(['check_citations'])(
+    '%s does not mention auto, because the API does not accept it there',
+    (action) => {
+      expect(fieldOf(action).helpText).not.toMatch(/auto/i);
+    },
+  );
+
+  it.each(['assess', 'verify_claim', 'ask', 'extract_claims'])('%s keeps the dropdown to the twelve codes', (action) => {
+    expect(fieldOf(action).choices).toHaveLength(12);
+    expect(fieldOf(action).choices.map((c) => c.value)).not.toContain('auto');
+  });
+
+  const authData = { access_token: 'lenz_good' };
+
+  describe.each([['auto'], [undefined], ['']])('language %p typed into the field', (language) => {
+    const expected = language === 'auto' ? { language: 'auto' } : {};
+    const sentBody = (call) => {
+      const body = { ...call };
+      return 'language' in body ? { language: body.language } : {};
+    };
+
+    it('assess sends it unchanged, or no language key when empty', async () => {
+      const client = mockClient({
+        assess: jest.fn().mockResolvedValue({ claims: [{ claim: 'x', verdict: 'True', confidence: 'high' }] }),
+      });
+      LenzClient.mockImplementation(() => client);
+      await appTester(App.creates.assess.operation.perform, {
+        authData,
+        inputData: { text: 'Die Erde ist rund.', language },
+      });
+      expect(sentBody(client.assess.mock.calls[0][0])).toEqual(expected);
+    });
+
+    it('verify_claim sends it unchanged, or no language key when empty', async () => {
+      const client = mockClient({ verify: jest.fn().mockResolvedValue({ task_id: 'task_1' }) });
+      LenzClient.mockImplementation(() => client);
+      await appTester(App.creates.verify_claim.operation.perform, {
+        authData,
+        inputData: { claim: 'Die Erde ist rund.', language },
+      });
+      expect(sentBody(client.verify.mock.calls[0][0])).toEqual(expected);
+    });
+
+    it('extract_claims sends it unchanged, or no language key when empty', async () => {
+      const client = mockClient({
+        extract: jest.fn().mockResolvedValue({ status: 'ready', claim: 'A', identified_claims: [] }),
+      });
+      LenzClient.mockImplementation(() => client);
+      await appTester(App.creates.extract_claims.operation.perform, {
+        authData,
+        inputData: { text: 'Die Erde ist rund.', language },
+      });
+      expect(sentBody(client.extract.mock.calls[0][0])).toEqual(expected);
+    });
+
+    it('ask sends it unchanged, or no language key when empty', async () => {
+      const client = mockClient({ ask: { send: jest.fn().mockResolvedValue({ content: 'A.' }) } });
+      LenzClient.mockImplementation(() => client);
+      await appTester(App.creates.ask.operation.perform, {
+        authData,
+        inputData: { verificationId: 'ab12cd34', question: 'Warum?', language },
+      });
+      expect(sentBody(client.ask.send.mock.calls[0][1])).toEqual(expected);
+    });
+  });
+});
+
 // #22 — the every-branch rule, enforced at RUNTIME.
 //
 // test/schema.test.js already checks `outputFields` against `sample`, but that

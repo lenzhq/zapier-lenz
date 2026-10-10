@@ -3,7 +3,7 @@
 const { mapLenzError } = require('../lib/errors');
 const { replayKey, secondsToNextBucket, HOUR_MS } = require('../lib/replay-key');
 const { lenzClient, CALL_TIMEOUT_MS } = require('../client');
-const { languageField } = require('../lib/languages');
+const { languageField, LANGUAGE_HELP_TEXT_AUTO } = require('../lib/languages');
 const {
   isObject,
   NO_CHECKABLE_CLAIM,
@@ -121,9 +121,9 @@ const shapeRow = (c) => ({
   // The language this verdict is written in, echoed per claim.
   language: c.language || '',
   // A reviewer's reasoning, not a checked source — the SDK is explicit that
-  // sourced evidence means `verify`. `dissent` is set only when a reviewer
-  // landed far from the panel's verdict, so a non-empty value is itself a
-  // signal worth branching on.
+  // sourced evidence means `verify`. `dissent` is deprecated: the Lenz API no
+  // longer returns it (it is always null), so this is always ''. The key stays
+  // so existing Zaps that map it keep working.
   rationale: c.rationale || '',
   dissent: c.dissent || '',
   // Set only on an Error row: WHY it has no verdict. An open set — the SDK
@@ -273,7 +273,7 @@ module.exports = {
         helpText:
           'The claim to check. If it contains several claims, each is assessed separately. Up to 10,000 characters; longer input is cut off without warning, so send a long document to Extract Claims first.',
       },
-      languageField(),
+      languageField(LANGUAGE_HELP_TEXT_AUTO),
     ],
     perform,
     sample: SAMPLE,
@@ -313,7 +313,7 @@ module.exports = {
           { key: 'verification_url', label: 'Verification URL' },
           { key: 'language', label: 'Language' },
           { key: 'rationale', label: 'Reviewer Rationale' },
-          { key: 'dissent', label: 'Reviewer Dissent' },
+          { key: 'dissent', label: 'Reviewer Dissent (deprecated, always empty)' },
           { key: 'error_code', label: 'Error Code' },
           { key: 'hint', label: 'Hint' },
           { key: 'identified_claims', label: 'Other Claims Found', list: true },

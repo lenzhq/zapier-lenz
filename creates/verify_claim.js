@@ -10,7 +10,7 @@ const {
   webhookSecretMissing,
 } = require('../lib/signed-callback');
 const { lenzClient } = require('../client');
-const { languageField } = require('../lib/languages');
+const { languageField, LANGUAGE_HELP_TEXT_AUTO } = require('../lib/languages');
 
 function isPassingVerdict(verdict) {
   return verdict === 'True' || verdict === 'Mostly True';
@@ -513,7 +513,7 @@ module.exports = {
         required: false,
         helpText: 'Optional URL the claim was found on.',
       },
-      languageField(),
+      languageField(LANGUAGE_HELP_TEXT_AUTO),
       {
         // Half price, and that is the reason to offer it at all:
         // VERIFY_DEPTH_COSTS in lenz/billing.py is {standard: 10, low: 5}.
