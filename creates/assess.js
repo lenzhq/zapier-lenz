@@ -101,9 +101,9 @@ const shapeRow = (c) => ({
   // The language this verdict is written in, echoed per claim.
   language: c.language || '',
   // A reviewer's reasoning, not a checked source — the SDK is explicit that
-  // sourced evidence means `verify`. `dissent` is set only when a reviewer
-  // landed far from the panel's verdict, so a non-empty value is itself a
-  // signal worth branching on.
+  // sourced evidence means `verify`. `dissent` is deprecated: the Lenz API no
+  // longer returns it (it is always null), so this is always ''. The key stays
+  // so existing Zaps that map it keep working.
   rationale: c.rationale || '',
   dissent: c.dissent || '',
   // Set only on an Error row: WHY it has no verdict. An open set — the SDK
@@ -289,7 +289,7 @@ module.exports = {
           { key: 'verification_url', label: 'Verification URL' },
           { key: 'language', label: 'Language' },
           { key: 'rationale', label: 'Reviewer Rationale' },
-          { key: 'dissent', label: 'Reviewer Dissent' },
+          { key: 'dissent', label: 'Reviewer Dissent (deprecated, always empty)' },
           { key: 'error_code', label: 'Error Code' },
           { key: 'hint', label: 'Hint' },
           { key: 'identified_claims', label: 'Other Claims Found', list: true },
