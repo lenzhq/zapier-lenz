@@ -1,10 +1,9 @@
 'use strict';
 
-// Runs every action over the recorded API responses in test/fixtures/<shape>
-// and returns what each produced, keyed by fixture name. The same runner
-// produced test/fixtures/oracle/frozen.json from the code as it stood before
-// the actions learned a second response shape, and test/read_both.test.js
-// replays it against the current code.
+// Runs every action over the recorded API responses in test/fixtures/canonical
+// (the `2026-10-11` shape, the one this app asks for) and returns what each
+// produced, keyed by fixture name. test/outputs.test.js compares the result
+// with test/fixtures/oracle/outputs.json.
 
 const crypto = require('crypto');
 const fs = require('fs');
@@ -13,17 +12,31 @@ const path = require('path');
 const SECRET = 'whsec_test';
 const AUTH = { access_token: 'lat_good', webhook_secret: SECRET };
 const TASK_ID = '2f8b2e2b6a4a4e6c9e8f9a6c3f4b2a1c';
-const FIXTURES = path.join(__dirname, '..', 'fixtures');
+const FIXTURES = path.join(__dirname, '..', 'fixtures', 'canonical');
+const ORACLE = path.join(__dirname, '..', 'fixtures', 'oracle', 'outputs.json');
 
-const fixtureNames = (shape) =>
+const fixtureNames = () =>
   fs
-    .readdirSync(path.join(FIXTURES, shape))
+    .readdirSync(FIXTURES)
     .filter((f) => f.endsWith('.json'))
     .map((f) => f.slice(0, -5))
     .sort();
 
-const loadFixture = (shape, name) =>
-  JSON.parse(fs.readFileSync(path.join(FIXTURES, shape, `${name}.json`), 'utf-8'));
+const loadFixture = (name) => JSON.parse(fs.readFileSync(path.join(FIXTURES, `${name}.json`), 'utf-8'));
+
+// The outputs recorded before the app stopped reading the earlier response
+// shape: { mocked, reads, starts }, each keyed by fixture name.
+const loadOracle = () => JSON.parse(fs.readFileSync(ORACLE, 'utf-8'));
+
+// What an output is compared as: its JSON, key order included, with the
+// replay wait (which depends on the clock) left out.
+const normalize = (value) =>
+  JSON.parse(
+    JSON.stringify(value, (key, v) => {
+      if (key === 'delay') return 'N';
+      return typeof v === 'string' ? v.replace(/Retrying in \d+s/g, 'Retrying in Ns') : v;
+    }),
+  );
 
 const sign = (content) =>
   `sha256=${crypto.createHmac('sha256', SECRET).update(Buffer.from(content, 'utf-8')).digest('hex')}`;
@@ -123,10 +136,10 @@ const plan = (App, name, body) => {
 };
 
 // -> { [fixture name]: output | { __error: { name, message } } }
-const runAll = async ({ App, appTester, LenzClient, jest, shape }) => {
+const runAll = async ({ App, appTester, LenzClient, jest }) => {
   const out = {};
-  for (const name of fixtureNames(shape)) {
-    const body = loadFixture(shape, name);
+  for (const name of fixtureNames()) {
+    const body = loadFixture(name);
     const p = plan(App, name, body);
     if (!p) continue;
     LenzClient.mockImplementation(() => p.client(jest));
@@ -139,4 +152,4 @@ const runAll = async ({ App, appTester, LenzClient, jest, shape }) => {
   return out;
 };
 
-module.exports = { runAll, fixtureNames, loadFixture, signed, AUTH, TASK_ID };
+module.exports = { runAll, fixtureNames, loadFixture, loadOracle, normalize, ORACLE, signed, AUTH, TASK_ID };

@@ -1,24 +1,22 @@
 /* globals describe, it, expect, jest, beforeAll, afterAll, beforeEach, afterEach */
 
 // This app asks the Lenz API for responses in the version named by
-// client.js API_VERSION, and gives every Zap the outputs it gave when it read
-// the earlier version (2026-05-13).
+// client.js API_VERSION (`2026-10-11`) and reads only that version's shape,
+// into the outputs it has always given.
 //
 // Both halves run the REAL lenz-io client with only `fetch` replaced:
 //
 //  1. Every request names the version: the SDK's calls and the two calls
 //     authentication.js makes itself.
-//  2. For each recorded API response, the earlier-version body and the
-//     current-version body of the SAME result give the same output: every
-//     key, every value. The only differences allowed are listed in ALLOWED,
-//     each with its reason: sentences the API now words differently, and
-//     answers the API now gives differently on purpose.
+//  2. Every recorded API response gives exactly the output recorded in
+//     test/fixtures/oracle/outputs.json (`reads` and `starts`) before the app
+//     stopped reading the earlier (`2026-05-13`) shape: every key, in order,
+//     every value.
 //
-// Fixtures: test/fixtures/{legacy,canonical} are the two versions of each
-// read the actions make (bodies only); test/fixtures/wire/{legacy,canonical}
-// hold the calls an action starts with ({ status, headers, body }): receipts
-// and refusals. All are the API's recorded responses with run-specific values
-// replaced.
+// Fixtures: test/fixtures/canonical holds the bodies of each read the actions
+// make; test/fixtures/wire/canonical the calls an action starts with
+// ({ status, headers, body }): receipts and refusals. All are the API's
+// recorded responses with run-specific values replaced.
 
 const fs = require('fs');
 const path = require('path');
@@ -27,11 +25,12 @@ const zapier = require('zapier-platform-core');
 const App = require('../index');
 const { API_VERSION, USER_AGENT, lenzClient } = require('../client');
 const { runWire } = require('./helpers/wire');
-const { AUTH } = require('./helpers/oracle');
+const { AUTH, loadOracle, normalize } = require('./helpers/oracle');
 
 const appTester = zapier.createAppTester(App);
 const VERSION_HEADER = 'x-lenz-api-version';
-const WIRE = path.join(__dirname, 'fixtures', 'wire');
+const WIRE = path.join(__dirname, 'fixtures', 'wire', 'canonical');
+const ORACLE = loadOracle();
 
 // zapier-platform-core ends the process once it has made 250 runs AND its
 // memory passes 450 MB (tools/memory-checker.js), a guard for long-lived
@@ -103,122 +102,56 @@ describe('the API version header', () => {
   });
 });
 
-// ─── 2. The same result gives the same output in either version ─────────────
+// ─── 2. Every recorded response gives the output it always has ──────────────
 
-// Differences between the two versions' outputs that are expected, by
-// fixture and output key. Anything not listed here must be identical.
-const SENTENCE = 'a sentence for people; the API words it differently now';
-const ALLOWED = {
-  // The failed poll's `error` is the API's sentence about the failure.
-  verify__status_cancelled_durable: { error: SENTENCE },
-  verify__status_failed_durable: { error: SENTENCE },
-  verify__status_failed_durable_framing: { error: SENTENCE },
-  verify__status_failed_live: { error: SENTENCE },
-  verify__status_failed_live_retryable: { error: SENTENCE },
-  verify__status_not_a_claim: { error: SENTENCE },
-  verify__status_not_a_claim_durable: { error: SENTENCE },
-  verify__status_task_stuck: { error: SENTENCE },
-  // An extractor answer that said "nothing checkable" while still listing a
-  // claim reads `ready` now: the API no longer says both at once.
-  extract__not_a_claim_beside_claims: {
-    status: 'the API now answers ready when it lists a claim',
-    not_a_claim: 'follows status',
-  },
-  // Locations the locator dropped entirely: only reachable when locations are
-  // asked for, which this action never does.
-  extract__locate_all_dropped: { locations: 'needs a locate request; this action never sends one' },
-};
+const mismatched = (expected, got) =>
+  Object.keys(expected).filter((name) => JSON.stringify(normalize(got[name])) !== JSON.stringify(expected[name]));
 
-const differences = (a, b, where = '', out = []) => {
-  if (JSON.stringify(a) === JSON.stringify(b)) return out;
-  const objects = a && b && typeof a === 'object' && typeof b === 'object' && Array.isArray(a) === Array.isArray(b);
-  if (!objects) {
-    out.push(where || '(root)');
-    return out;
-  }
-  for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) differences(a[k], b[k], `${where}.${k}`, out);
-  return out;
-};
-
-const unexpected = (legacy, canonical) => {
-  const found = [];
-  for (const name of Object.keys(legacy)) {
-    const allowed = ALLOWED[name] || {};
-    for (const at of differences(legacy[name], canonical[name])) {
-      const key = at.split('.')[1];
-      if (!(key in allowed)) found.push(`${name}: ${at}`);
-    }
-  }
-  return found;
-};
-
-describe('reads: one output for one result, whichever version', () => {
-  let legacy;
-  let canonical;
+describe('reads: the output each recorded response has always given', () => {
+  let run;
   beforeAll(async () => {
-    legacy = await runWire({ App, appTester, jest, shape: 'legacy' });
-    canonical = await runWire({ App, appTester, jest, shape: 'canonical' });
+    run = await runWire({ App, appTester, jest });
   });
 
-  it('covers every recorded response, in both versions', () => {
-    expect(Object.keys(canonical.outputs).sort()).toEqual(Object.keys(legacy.outputs).sort());
-    expect(Object.keys(canonical.outputs).length).toBeGreaterThan(100);
+  it('covers every recorded response', () => {
+    expect(Object.keys(run.outputs).sort()).toEqual(Object.keys(ORACLE.reads).sort());
+    expect(Object.keys(run.outputs).length).toBeGreaterThan(100);
   });
 
-  it('gives identical outputs, but for the listed differences', () => {
-    // The oversized review callback carries no review: the action reads it by
-    // id, compared apart below.
-    const skip = (o) => {
-      const { webhook__review_completed_oversized_rebuilt: _skipped, ...rest } = o;
-      return rest;
-    };
-    expect(unexpected(skip(legacy.outputs), skip(canonical.outputs))).toEqual([]);
-  });
-
-  it('every listed difference still happens (the list is not stale)', () => {
-    for (const [name, keys] of Object.entries(ALLOWED)) {
-      const at = differences(legacy.outputs[name], canonical.outputs[name]).map((p) => p.split('.')[1]);
-      for (const key of Object.keys(keys)) expect(`${name}: ${at.includes(key)}`).toBe(`${name}: true`);
-    }
+  it('gives the recorded outputs, serialized (key order included)', () => {
+    expect(mismatched(ORACLE.reads, run.outputs)).toEqual([]);
   });
 
   it('reads nothing back when the signed callback carries the result', () => {
     // A needs_input callback is always read from the status route, and an
     // oversized review callback carries no review: both read by id.
     const byId = ['webhook__verification_needs_input_multi_claim', 'webhook__review_completed_oversized_rebuilt'];
-    for (const run of [legacy, canonical]) {
-      const reads = run.calls.filter((c) => c.fixture.startsWith('webhook__') && !byId.includes(c.fixture));
-      expect(reads.map((c) => c.fixture)).toEqual([]);
-    }
+    const reads = run.calls.filter((c) => c.fixture.startsWith('webhook__') && !byId.includes(c.fixture));
+    expect(reads.map((c) => c.fixture)).toEqual([]);
   });
 
   it('reads an oversized review callback by id', () => {
-    const reads = canonical.calls.filter((c) => c.fixture === 'webhook__review_completed_oversized_rebuilt');
+    const reads = run.calls.filter((c) => c.fixture === 'webhook__review_completed_oversized_rebuilt');
     expect(reads.map((c) => c.url)).toEqual(['https://lenz.io/api/v1/reviews/8fdbfca6']);
   });
 
   it('every read reached the network, signed in', () => {
-    for (const run of [legacy, canonical]) {
-      const reads = Object.keys(run.outputs).filter((n) => !n.startsWith('webhook__'));
-      const fetched = new Set(run.calls.map((c) => c.fixture));
-      expect(reads.filter((n) => !fetched.has(n))).toEqual([]);
-      expect(reads.filter((n) => run.outputs[n].__error)).toEqual([]);
-      expect(run.calls.filter((c) => c.headers.get('authorization') !== `Bearer ${AUTH.access_token}`)).toEqual([]);
-    }
-    expect(Object.keys(canonical.outputs).filter((n) => /^(review|citecheck)__get/.test(n)).length).toBeGreaterThan(
-      30,
-    );
+    const reads = Object.keys(run.outputs).filter((n) => !n.startsWith('webhook__'));
+    const fetched = new Set(run.calls.map((c) => c.fixture));
+    expect(reads.filter((n) => !fetched.has(n))).toEqual([]);
+    expect(reads.filter((n) => run.outputs[n].__error)).toEqual([]);
+    expect(run.calls.filter((c) => c.headers.get('authorization') !== `Bearer ${AUTH.access_token}`)).toEqual([]);
+    expect(Object.keys(run.outputs).filter((n) => /^(review|citecheck)__get/.test(n)).length).toBeGreaterThan(30);
   });
 
   it('names the version on every read', () => {
-    const calls = [...legacy.calls, ...canonical.calls];
-    expect(calls.length).toBeGreaterThan(50);
-    expect(calls.filter((c) => c.headers.get(VERSION_HEADER) !== API_VERSION)).toEqual([]);
+    expect(run.calls.length).toBeGreaterThan(50);
+    expect(run.calls.filter((c) => c.headers.get(VERSION_HEADER) !== API_VERSION)).toEqual([]);
   });
 });
 
 // The calls an action starts with: what each returns, or the error Zapier is
-// handed, must be the same for the two versions of one response.
+// handed, must be what it has always been.
 const START = {
   assess: (App_) => [App_.creates.assess.operation.perform, { authData: AUTH, inputData: { text: 'x' } }],
   extract: (App_) => [App_.creates.extract_claims.operation.perform, { authData: AUTH, inputData: { text: 'x' } }],
@@ -280,7 +213,7 @@ const outcome = (err) => {
   return { __error: { name: err.name, message } };
 };
 
-describe('calls an action starts: the same answer or error, whichever version', () => {
+describe('calls an action starts: the answer or error each has always given', () => {
   let originalFetch;
   beforeEach(() => {
     originalFetch = globalThis.fetch;
@@ -290,34 +223,29 @@ describe('calls an action starts: the same answer or error, whichever version', 
   });
 
   const names = fs
-    .readdirSync(path.join(WIRE, 'canonical'))
+    .readdirSync(WIRE)
     .map((f) => f.slice(0, -5))
     .sort();
 
-  it('every recorded response has an action', () => {
+  it('every recorded response has an action and a recorded output', () => {
     expect(names.filter((n) => !ACTION_FOR[n])).toEqual([]);
-    expect(fs.readdirSync(path.join(WIRE, 'legacy')).sort()).toEqual(names.map((n) => `${n}.json`));
+    expect(names).toEqual(Object.keys(ORACLE.starts).sort());
   });
 
   it.each(names)('%s', async (name) => {
-    const run = async (shape) => {
-      const rec = JSON.parse(fs.readFileSync(path.join(WIRE, shape, `${name}.json`), 'utf-8'));
-      const spy = jest.fn().mockResolvedValue(json(rec.status, rec.body, rec.headers));
-      globalThis.fetch = spy;
-      const [fn, bundle] = START[ACTION_FOR[name]](App);
-      const out = await appTester(fn, bundle).then((r) => r, outcome);
-      expect(spy).toHaveBeenCalledTimes(1);
-      expect(new Headers(spy.mock.calls[0][1].headers).get(VERSION_HEADER)).toBe(API_VERSION);
-      return out;
-    };
-    const legacyOut = await run('legacy');
-    const canonicalOut = await run('canonical');
-    expect(canonicalOut).toEqual(legacyOut);
+    const rec = JSON.parse(fs.readFileSync(path.join(WIRE, `${name}.json`), 'utf-8'));
+    const spy = jest.fn().mockResolvedValue(json(rec.status, rec.body, rec.headers));
+    globalThis.fetch = spy;
+    const [fn, bundle] = START[ACTION_FOR[name]](App);
+    const out = await appTester(fn, bundle).then((r) => r, outcome);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(new Headers(spy.mock.calls[0][1].headers).get(VERSION_HEADER)).toBe(API_VERSION);
+    expect(JSON.stringify(normalize(out))).toBe(JSON.stringify(ORACLE.starts[name]));
   });
 });
 
 // Targeted cases the recorded responses do not cover.
-describe('values the newer shape carries differently', () => {
+describe('values the API carries differently from the output', () => {
   let originalFetch;
   beforeEach(() => {
     originalFetch = globalThis.fetch;
@@ -326,8 +254,8 @@ describe('values the newer shape carries differently', () => {
     globalThis.fetch = originalFetch;
   });
 
-  // A citation refusal in the newer shape states the balance only as
-  // `remaining`, counted in credits on these two calls.
+  // A citation refusal can state the balance only as `remaining`, counted in
+  // credits on these two calls.
   it.each([
     ['review', 'review_draft'],
     ['citecheck', 'check_citations'],
@@ -379,7 +307,6 @@ describe('values the newer shape carries differently', () => {
 
     it('no hint: the code', () => {
       expect(shapeJobFailure(block({})).error).toBe('timeout');
-      expect(shapeJobFailure({ failure_reason: 'timeout', hint: null }).error).toBe('timeout');
     });
 
     it('a hint: the hint', () => {
@@ -390,8 +317,81 @@ describe('values the newer shape carries differently', () => {
       const f = block({ code: 'assessment_failed', detail: 'No claim could be assessed.', hint: 'Retry it.' });
       expect(shapeJobFailure(f).error).toBe('No claim could be assessed. Retry it.');
       expect(shapeJobFailure({ ...f, hint: null }).error).toBe('No claim could be assessed.');
-      // An earlier-shape block is read as sent.
-      expect(shapeJobFailure({ failure_reason: 'assessment_failed', hint: 'Retry it.' }).error).toBe('Retry it.');
     });
+  });
+});
+
+// One place that lists every endpoint this app calls and holds each to the
+// version: the reads, the calls each action starts with, and the two calls
+// authentication.js makes itself (the token endpoint and the webhook-secret
+// read), each through the same fetch.
+describe('every endpoint the app calls sends the version', () => {
+  let originalFetch;
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+  });
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it('sends X-Lenz-API-Version: 2026-10-11 on every call', async () => {
+    const seen = [];
+    const record = (reply) =>
+      jest.fn(async (url, init = {}) => {
+        const u = new URL(String(url));
+        const route = u.pathname.replace(/\/[0-9a-f]{8,32}(?=\/|$)/g, '/{id}');
+        seen.push({ call: `${init.method || 'GET'} ${route}`, version: new Headers(init.headers || {}).get(VERSION_HEADER) });
+        return reply();
+      });
+
+    // Every action's first call, from the recorded receipts and refusals.
+    for (const f of fs.readdirSync(WIRE).sort()) {
+      const name = f.slice(0, -5);
+      const rec = JSON.parse(fs.readFileSync(path.join(WIRE, f), 'utf-8'));
+      globalThis.fetch = record(() => json(rec.status, rec.body, rec.headers));
+      const [fn, bundle] = START[ACTION_FOR[name]](App);
+      await appTester(fn, bundle).catch(() => null);
+    }
+    // Every read: polls, reads by id, the trigger's list.
+    const run = await runWire({ App, appTester, jest });
+    for (const c of run.calls) {
+      const route = new URL(c.url).pathname.replace(/\/[0-9a-f]{8,32}(?=\/|$)/g, '/{id}');
+      seen.push({ call: `${c.method} ${route}`, version: c.headers.get(VERSION_HEADER) });
+    }
+    // Connect and refresh.
+    const env = { ...process.env };
+    process.env.CLIENT_ID = 'zapier-client';
+    process.env.CLIENT_SECRET = 's3cret';
+    try {
+      const token = { access_token: 'lat_new', token_type: 'Bearer', expires_in: 3600, refresh_token: 'lrt_new' };
+      const replies = [token, { webhook_secret: 'whsec_1' }, token];
+      globalThis.fetch = record(() => json(200, replies.shift()));
+      const { getAccessToken, refreshAccessToken } = App.authentication.oauth2Config;
+      await appTester(getAccessToken, {
+        inputData: { code: 'c', redirect_uri: 'https://zapier.com/return/', code_verifier: 'v' },
+      });
+      await appTester(refreshAccessToken, { authData: { refresh_token: 'lrt_old', webhook_secret: 'whsec_1' } });
+    } finally {
+      process.env = env;
+    }
+
+    const calls = [...new Set(seen.map((s) => s.call))].sort();
+    // Exactly these: a new endpoint joins the list when the app starts calling it.
+    expect(calls).toEqual([
+      'GET /api/v1/citechecks/{id}',
+      'GET /api/v1/me/usage',
+      'GET /api/v1/me/webhook-secret',
+      'GET /api/v1/reviews/{id}',
+      'GET /api/v1/verifications',
+      'GET /api/v1/verify/status/{id}',
+      'POST /api/v1/ask/{id}',
+      'POST /api/v1/assess',
+      'POST /api/v1/citecheck',
+      'POST /api/v1/extract',
+      'POST /api/v1/oauth/token',
+      'POST /api/v1/review',
+      'POST /api/v1/verify',
+    ]);
+    expect(seen.filter((s) => s.version !== API_VERSION)).toEqual([]);
   });
 });

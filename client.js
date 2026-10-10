@@ -30,9 +30,8 @@ const USER_AGENT = `lenz-zapier/${APP_VERSION} (lenz-io-node ${SDK_VERSION})`;
 // asked for them, so the callbacks Verify a Claim, Review a Draft and Check
 // Citations wait for arrive in this version too.
 //
-// Every action reads this version's shapes into the output keys and values
-// it has always given (lib/shapes.js), so moving to a newer version changes
-// no output a Zap maps.
+// Every action reads only this version's shapes, into the output keys and
+// values it has always given (lib/shapes.js).
 const API_VERSION = '2026-10-11';
 
 // `Headers` normalizes whatever the SDK passes (today a plain object) and is

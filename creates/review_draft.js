@@ -256,7 +256,7 @@ const perform = async (z, bundle) => {
     .catch((err) => {
       if (isWebhookSecretMissing(err)) throw webhookSecretMissing(z, ACTION_LABEL);
       // A review's 402 counts `remaining` in credits too (its citation
-      // refusal states no other balance in the newer shape).
+      // refusal can state no other balance).
       return mapLenzError(z, err, { remainingIsCredits: true });
     });
 };
