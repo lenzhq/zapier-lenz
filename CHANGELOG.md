@@ -5,6 +5,12 @@ mechanics live in [README.md](README.md#building-and-pushing).
 
 ## Unreleased
 
+- Update: Extract Claims accepts `auto` in the Language field: the claims are written in
+  the language of the text (of the fetched page when Text is a URL), and a text too short
+  to tell comes back in English. Enter it as a custom value; a code you pick always wins.
+  Extract Claims also has a new **Language** output, the code the claims are written in.
+  Check Citations still does not accept `auto`. Takes effect once the Lenz API accepts
+  `auto` on Extract.
 - Update: Reviewer Dissent is deprecated: the Lenz API no longer returns it, so the field is always empty. It stays so existing Zaps keep working; a Zap that branches on it being non-empty will no longer take that branch.
 - Update: the Language field's help text on Assess, Verify a Claim and Ask Follow-Up
   now mentions `auto`, which answers in the language of the text (on Ask Follow-Up, the

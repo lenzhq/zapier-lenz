@@ -118,6 +118,33 @@ describe('not_a_claim', () => {
   });
 });
 
+// The language the claims are written in rides through on both response shapes.
+describe('extract language output', () => {
+  const extract = App.creates.extract_claims.operation;
+  const run = (body) => {
+    mockClient({ extract: jest.fn().mockResolvedValue(body) });
+    return appTester(extract.perform, { authData: AUTH, inputData: { text: 'x', language: 'auto' } });
+  };
+
+  it('passes language through on the flat shape and on the claim-list shape', async () => {
+    expect(
+      (await run({ status: 'ready', claim: 'A', identified_claims: [], language: 'de' })).language,
+    ).toBe('de');
+    expect(
+      (await run({ status: 'ready', claims: [{ claim: 'A', positions: [] }], language: 'de' })).language,
+    ).toBe('de');
+  });
+
+  it('adds nothing when the API sent no language', async () => {
+    expect(await run({ status: 'ready', claim: 'A', identified_claims: [] })).not.toHaveProperty('language');
+  });
+
+  it('is declared in the output fields and the sample', () => {
+    expect(extract.outputFields.some((f) => f.key === 'language')).toBe(true);
+    expect(extract.sample.language).toBe('en');
+  });
+});
+
 // ─── 2. Canonical responses: no failure, every key present ──────────────────
 
 describe('canonical responses', () => {

@@ -1318,18 +1318,18 @@ describe('language "auto"', () => {
   const fieldOf = (action) =>
     App.creates[action].operation.inputFields.find((f) => f.key === 'language');
 
-  it.each(['assess', 'verify_claim', 'ask'])('%s mentions auto in the help text', (action) => {
+  it.each(['assess', 'verify_claim', 'ask', 'extract_claims'])('%s mentions auto in the help text', (action) => {
     expect(fieldOf(action).helpText).toMatch(/"auto"/);
   });
 
-  it.each(['extract_claims', 'check_citations'])(
+  it.each(['check_citations'])(
     '%s does not mention auto, because the API does not accept it there',
     (action) => {
       expect(fieldOf(action).helpText).not.toMatch(/auto/i);
     },
   );
 
-  it.each(['assess', 'verify_claim', 'ask'])('%s keeps the dropdown to the twelve codes', (action) => {
+  it.each(['assess', 'verify_claim', 'ask', 'extract_claims'])('%s keeps the dropdown to the twelve codes', (action) => {
     expect(fieldOf(action).choices).toHaveLength(12);
     expect(fieldOf(action).choices.map((c) => c.value)).not.toContain('auto');
   });
@@ -1363,6 +1363,18 @@ describe('language "auto"', () => {
         inputData: { claim: 'Die Erde ist rund.', language },
       });
       expect(sentBody(client.verify.mock.calls[0][0])).toEqual(expected);
+    });
+
+    it('extract_claims sends it unchanged, or no language key when empty', async () => {
+      const client = mockClient({
+        extract: jest.fn().mockResolvedValue({ status: 'ready', claim: 'A', identified_claims: [] }),
+      });
+      LenzClient.mockImplementation(() => client);
+      await appTester(App.creates.extract_claims.operation.perform, {
+        authData,
+        inputData: { text: 'Die Erde ist rund.', language },
+      });
+      expect(sentBody(client.extract.mock.calls[0][0])).toEqual(expected);
     });
 
     it('ask sends it unchanged, or no language key when empty', async () => {

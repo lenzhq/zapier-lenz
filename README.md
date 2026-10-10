@@ -55,7 +55,7 @@ only what the sample shows. These are the values the API actually sends:
 | `issues[].source` (**Checked By**) | Review a Draft | `assessment` (the quick check) or `verification` (a deep check, which also has a **Key Finding** and a **Lenz Page**). |
 | `citations_skipped` | Review a Draft | Why citations you asked for were **not** checked: `url_input`, `switched_off` or `insufficient_credits`. Empty otherwise. When set, **Clean** says nothing about the citations. |
 | `finding` | Check Citations, Review a Draft (citation rows) | `supported`, `partly_supported`, `contradicted`, `unsupported`, `not_found`, `metadata_mismatch` and more: an open set. To decide whether a citation is a problem, use **Is Issue** or the **Citation Issues** list, not the finding's name. |
-| `language` | Assess (Fast), Extract Claims, Verify a Claim, Ask Follow-Up, Review a Draft, Check Citations (input) | `en` `es` `de` `fr` `it` `pt` `nl` `sv` `da` `no` `fi` `bg`. A dropdown since 1.4.0 — it was free text, and anything outside this set fails the run. |
+| `language` | Assess (Fast), Extract Claims, Verify a Claim, Ask Follow-Up, Review a Draft, Check Citations (input); also an output of Extract Claims | `en` `es` `de` `fr` `it` `pt` `nl` `sv` `da` `no` `fi` `bg`. A dropdown since 1.4.0 — it was free text, and anything outside this set fails the run. |
 
 Every field in the table above, and every other field Verify a Claim, Review a Draft and
 Check Citations declare, is **present on every result** — empty when it does not apply, never missing. Zapier treats
@@ -100,12 +100,14 @@ why. If you have an existing Zap with a hand-typed value, re-pick it from the dr
 answer, never your text; reading it the other way round is the easy mistake, and it
 quietly changes the output.
 
-**`auto` on Assess, Verify a Claim, Ask Follow-Up and Review a Draft.** To get the answer in
-the language of your text, enter `auto` as a custom value in the Language field (the dropdown
-lists the twelve codes only). On Ask Follow-Up it means the language of the claim being
-discussed; on Review a Draft the review comes back in the language of the draft, one language
-for the whole review. A code you pick always wins, and Extract Claims and Check Citations do
-not accept `auto`.
+**`auto` on Assess, Verify a Claim, Ask Follow-Up, Review a Draft and Extract Claims.** To get
+the answer in the language of your text, enter `auto` as a custom value in the Language field
+(the dropdown lists the twelve codes only). On Ask Follow-Up it means the language of the claim
+being discussed; on Review a Draft the review comes back in the language of the draft, one
+language for the whole review; on Extract Claims the claims are written in the language of the
+text (of the fetched page when **Text** is a URL), and a text too short to tell comes back in
+English. A code you pick always wins, and Check Citations does not accept `auto`. Extract
+Claims also returns a **Language** output with the code the claims are written in.
 
 **Blank means two different things.** On Verify a Claim, Assess and Extract Claims a blank
 field means English. On **Ask Follow-Up** it means *the language the verification is stored
