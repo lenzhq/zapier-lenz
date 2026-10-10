@@ -12,9 +12,9 @@
 //     every recorded response in test/fixtures/legacy); the first block replays
 //     it against the current code.
 //  2. Canonical responses (the newer shape, test/fixtures/canonical): the
-//     actions do not fail and every output key is present with a sensible
-//     value. The output is NOT promised to equal the legacy output; that comes
-//     with a later release that sends the newer version header.
+//     actions do not fail and every output key is present. That each one also
+//     gives the SAME output as the legacy response of the same result is
+//     test/api_version.test.js, which runs the real SDK.
 //
 // Fixtures are recorded API responses with run-specific values replaced.
 
@@ -162,10 +162,14 @@ describe('canonical responses', () => {
   });
 
   it('never fail where the legacy response does not', () => {
+    // The oversized review callback carries no review in the newer shape, so
+    // the action reads it by id, which this runner refuses on purpose.
     const failed = Object.entries(canonical)
+      .filter(([name]) => name !== 'webhook__review_completed_oversized_rebuilt')
       .filter(([, out]) => out.__error)
       .map(([name, out]) => `${name}: ${out.__error.name}`);
     const legacyFailed = Object.entries(legacy)
+      .filter(([name]) => name !== 'webhook__review_completed_oversized_rebuilt')
       .filter(([, out]) => out.__error)
       .map(([name, out]) => `${name}: ${out.__error.name}`);
     expect(failed).toEqual(legacyFailed);
@@ -268,7 +272,7 @@ describe('creates.assess rows', () => {
     expect(framing.claims[0]).toMatchObject({ verdict: 'Error', error_code: 'framing_failed' });
   });
 
-  it('reads a failed row: verdict Error, the cause and hint from its failure block', async () => {
+  it('reads a failed row: verdict Error, confidence low, the cause and hint from its failure block', async () => {
     const out = await run({
       status: 'no_checkable_claim',
       claims: [failedRow('no_checkable_claim')],
@@ -277,7 +281,7 @@ describe('creates.assess rows', () => {
     });
     expect(out.claims[0]).toMatchObject({
       verdict: 'Error',
-      confidence: null,
+      confidence: 'low',
       passed: false,
       error_code: 'no_claim',
       hint: 'Hint.',
@@ -295,14 +299,14 @@ describe('creates.assess rows', () => {
     expect(out.claims[0].identified_claims).toEqual(['a', 'b']);
   });
 
-  it('reads the sentence of an answer with no rows from its failure block', async () => {
+  it('words an answer with no rows as it always has', async () => {
     const out = await run({
       status: 'no_checkable_claim',
       claims: [],
       failure: { code: 'no_checkable_claim', detail: 'Nothing to check.' },
       more_claims: [],
     });
-    expect(out).toMatchObject({ status: 'no_claim', not_a_claim: true, message: 'Nothing to check.' });
+    expect(out).toMatchObject({ status: 'no_claim', not_a_claim: true, message: 'No verifiable claim detected' });
   });
 });
 
@@ -393,13 +397,15 @@ describe('creates.verify_claim reads the failure block and the nested callback',
       verify.performResume,
       resume({ rawRequest: signed(envelope('verification.failed', { ...body, task_id: TASK_ID })) }),
     );
+    // As the flat callback always read: the code in `error`, no
+    // failure_reason on this path.
     expect(out).toMatchObject({
       status: 'failed',
-      failure_reason: 'not_a_claim',
+      error: 'not_a_claim',
+      failure_reason: '',
       failure_class: 'invalid_input',
       retryable: false,
     });
-    expect(out.error).toBe(body.failure.detail);
   });
 });
 
@@ -457,7 +463,8 @@ describe('Review a Draft and Check Citations', () => {
     expect(
       shapeJobFailure({ code: 'no_checkable_claim', detail: 'Nothing.', hint: 'Send a claim.', failure_class: 'invalid_input', retryable: false }),
     ).toEqual({ error: 'Send a claim.', failure_reason: 'no_claim', failure_class: 'invalid_input', retryable: false });
-    expect(shapeJobFailure({ code: 'timeout', detail: 'Out of time.' }).error).toBe('Out of time.');
+    // No hint: the code, as the earlier shape always read; `detail` alone is not used.
+    expect(shapeJobFailure({ code: 'timeout', detail: 'Out of time.' }).error).toBe('timeout');
     expect(shapeJobFailure({ failure_reason: 'timeout' }).error).toBe('timeout');
     expect(shapeJobFailure(null)).toEqual({ error: 'The job failed.', failure_reason: '', failure_class: '', retryable: null });
   });

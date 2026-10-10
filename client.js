@@ -20,12 +20,28 @@ const APP_VERSION = require('./package.json').version;
 // installed package.
 const USER_AGENT = `lenz-zapier/${APP_VERSION} (lenz-io-node ${SDK_VERSION})`;
 
+// The version of the Lenz API response shapes this app reads. Lenz answers
+// each call in the version its `X-Lenz-API-Version` header names. The lenz-io
+// 2.x SDK always sends the version it was built against, and offers no option
+// to change it, so the header is set here, on every request this app makes:
+// the SDK's calls, and the two it makes itself in authentication.js (the
+// token endpoint, whose OAuth responses are the same in every version, and
+// the webhook-secret read). Webhooks follow the version of the request that
+// asked for them, so the callbacks Verify a Claim, Review a Draft and Check
+// Citations wait for arrive in this version too.
+//
+// Every action reads this version's shapes into the output keys and values
+// it has always given (lib/shapes.js), so moving to a newer version changes
+// no output a Zap maps.
+const API_VERSION = '2026-10-11';
+
 // `Headers` normalizes whatever the SDK passes (today a plain object) and is
-// case-insensitive, so `set` replaces the SDK's own User-Agent rather than
-// sending it twice.
+// case-insensitive, so `set` replaces the SDK's own User-Agent and version
+// rather than sending either twice.
 const fetchAsZapier = (url, init = {}) => {
   const headers = new Headers(init.headers || {});
   headers.set('User-Agent', USER_AGENT);
+  headers.set('X-Lenz-API-Version', API_VERSION);
   return fetch(url, { ...init, headers });
 };
 
@@ -93,4 +109,4 @@ const lenzClient = (bundle) =>
     timeoutMs: CALL_TIMEOUT_MS,
   });
 
-module.exports = { lenzClient, fetchAsZapier, USER_AGENT, CALL_TIMEOUT_MS };
+module.exports = { lenzClient, fetchAsZapier, USER_AGENT, API_VERSION, CALL_TIMEOUT_MS };

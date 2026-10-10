@@ -1,15 +1,20 @@
 {
-  "attempt": 1,
-  "batch_id": null,
-  "coverage": null,
-  "delivered_at": "2026-10-08T12:00:00+00:00",
-  "error": "framing_failed",
   "event": "verification.failed",
-  "failure_class": "upstream_unavailable",
-  "needs_input": null,
-  "result": null,
-  "retryable": true,
-  "status": "failed",
+  "event_id": "evt_6323a3213aab16ff96ea44ef",
   "task_id": "fa50185e37ad61160dbe4a785cdf7286",
-  "verification_id": null
+  "status": "failed",
+  "verification": {
+    "status": "failed",
+    "task_id": "fa50185e37ad61160dbe4a785cdf7286",
+    "failure": {
+      "code": "framing_failed",
+      "detail": "The input could not be read as a claim.",
+      "hint": null,
+      "failure_class": "upstream_unavailable",
+      "retryable": true,
+      "docs_url": "https://lenz.io/docs/errors#upstream-unavailable"
+    }
+  },
+  "attempt": 1,
+  "delivered_at": "2026-10-08T12:00:00+00:00"
 }
