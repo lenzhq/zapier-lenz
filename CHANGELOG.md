@@ -26,8 +26,7 @@ mechanics live in [README.md](README.md#building-and-pushing).
   `http://` or `https://` address with no embedded sign-in and no space or control
   character; the list is empty when there
   are none, on an `Error` row, and until the Lenz API sends the field. On Review a Draft an
-  issue shows the pages of the claim it is about. Nothing else changes; this is the one
-  added output.
+  issue shows the pages of the claim it is about. Nothing else changes in this entry.
 
 ## 2.2.0
 
