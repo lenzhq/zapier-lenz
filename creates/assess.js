@@ -14,7 +14,11 @@ const {
   ASSESS_COMPOUND_HINT,
 } = require('../lib/shapes');
 
+// `passed` for a verdict label. 'No Public Record' is neither a pass nor a
+// failure: Lenz found no public record of the claim, which does not make it
+// false, so it is null, like every answer that is not a verdict.
 function isPassingVerdict(verdict) {
+  if (verdict === 'No Public Record') return null;
   return verdict === 'True' || verdict === 'Mostly True';
 }
 

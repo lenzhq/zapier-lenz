@@ -409,6 +409,99 @@ describe('creates.verify_claim reads the failure block and the nested callback',
   });
 });
 
+describe('No Public Record', () => {
+  const verify = App.creates.verify_claim.operation;
+  const assess = App.creates.assess.operation;
+  const resume = () => ({ authData: AUTH, outputData: { task_id: TASK_ID } });
+  const noRecord = {
+    verification_id: 'ab12cd34',
+    claim: 'The mayor of Smalltown signed the order on 3 May.',
+    verdict: 'No Public Record',
+    confidence: 'medium',
+    lenz_score: null,
+    key_finding: 'Lenz found no public record of this.',
+    executive_summary: 'No public source records this. That does not make it false.',
+    suggested_rewrite: null,
+    sources: [],
+  };
+
+  it('Verify a Claim: passed is null, lenz_score is null, the verdict is kept', async () => {
+    mockClient({ getStatus: jest.fn().mockResolvedValue({ status: 'completed', result: noRecord }) });
+    const out = await appTester(verify.performResume, resume());
+    expect(out).toMatchObject({
+      status: 'completed',
+      passed: null,
+      verdict: 'No Public Record',
+      confidence: 'medium',
+      lenz_score: null,
+      suggested_rewrite: '',
+      sources: [],
+    });
+  });
+
+  it('Verify a Claim: only True and Mostly True pass', async () => {
+    const seen = {};
+    for (const verdict of ['True', 'Mostly True', 'Mixed', 'Mostly False', 'False', 'No Public Record']) {
+      mockClient({ getStatus: jest.fn().mockResolvedValue({ status: 'completed', result: { ...noRecord, verdict } }) });
+      seen[verdict] = (await appTester(verify.performResume, resume())).passed;
+    }
+    expect(seen).toEqual({
+      True: true,
+      'Mostly True': true,
+      Mixed: false,
+      'Mostly False': false,
+      False: false,
+      'No Public Record': null,
+    });
+  });
+
+  it('Assess (Fast): a row with this verdict has passed null', async () => {
+    mockClient({
+      assess: jest.fn().mockResolvedValue({
+        claims: [{ claim: 'x', verdict: 'No Public Record', confidence: 'medium' }],
+      }),
+    });
+    const out = await appTester(assess.perform, { authData: AUTH, inputData: { text: 'x' } });
+    expect(out.claims[0]).toMatchObject({ verdict: 'No Public Record', passed: null });
+  });
+
+  it.each([
+    ['upstream_unavailable', 'upstream_unavailable', true],
+    ['internal', 'internal', false],
+    ['cancelled', 'cancelled', false],
+  ])('a failed poll with code %s is passed on with its class and retryable', async (code, failureClass, retryable) => {
+    mockClient({
+      getStatus: jest.fn().mockResolvedValue({
+        status: 'failed',
+        failure: { code, detail: 'Stopped.', failure_class: failureClass, retryable },
+      }),
+    });
+    const out = await appTester(verify.performResume, resume());
+    expect(out).toMatchObject({
+      status: 'failed',
+      passed: null,
+      lenz_score: null,
+      failure_reason: code,
+      failure_class: failureClass,
+      retryable,
+      error: 'Stopped.',
+    });
+  });
+
+  it('a failed poll with no_checkable_claim keeps the earlier spelling', async () => {
+    mockClient({
+      getStatus: jest.fn().mockResolvedValue({
+        status: 'failed',
+        failure: { code: 'no_checkable_claim', detail: 'Nothing to check.', failure_class: 'invalid_input', retryable: false },
+      }),
+    });
+    expect(await appTester(verify.performResume, resume())).toMatchObject({
+      failure_reason: 'not_a_claim',
+      failure_class: 'invalid_input',
+    });
+  });
+});
+
 describe('triggers.new_verification', () => {
   const trigger = App.triggers.new_verification.operation;
   const run = (item) => {

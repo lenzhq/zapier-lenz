@@ -12,7 +12,11 @@ const {
 const { lenzClient } = require('../client');
 const { languageField, LANGUAGE_HELP_TEXT_AUTO } = require('../lib/languages');
 
+// `passed` for a verdict label. 'No Public Record' is neither a pass nor a
+// failure: Lenz found no public record of the claim, which does not make it
+// false, so it is null, like every answer that is not a verdict.
 function isPassingVerdict(verdict) {
+  if (verdict === 'No Public Record') return null;
   return verdict === 'True' || verdict === 'Mostly True';
 }
 
@@ -408,8 +412,11 @@ const shapeCompleted = (taskId, result) => ({
 });
 
 // A terminal failure. failure_class is a closed set (upstream_unavailable |
-// insufficient_evidence | invalid_input | cancelled | internal); retryable is
-// true only for upstream_unavailable. Both are absent on verifications older
+// invalid_input | cancelled | internal; an earlier-shape answer may also say
+// insufficient_evidence); retryable is true only for upstream_unavailable. The
+// newer shape's failure code is one of no_checkable_claim | upstream_unavailable
+// | internal | cancelled, passed on as it comes (no_checkable_claim keeps its
+// earlier spelling, not_a_claim). Both are absent on verifications older
 // than 2026-08 — explicit fields so a Filter/Paths step can branch on WHY,
 // not parse prose.
 //
@@ -581,6 +588,8 @@ module.exports = {
       { key: 'claim', label: 'Claim' },
       { key: 'verdict', label: 'Verdict' },
       { key: 'confidence', label: 'Confidence' },
+      // 1-10, or empty when the verdict is No Public Record (Lenz found no
+      // public record of the claim, so there is no score to give).
       { key: 'lenz_score', label: 'Lenz Score', type: 'integer' },
       // One declarative sentence stating the finding — the short form to map
       // into a Slack/email step when the full summary is too long. Empty on
@@ -602,10 +611,13 @@ module.exports = {
       // documented here and in the action description instead.
       //
       //   error           Human-readable failure message. Empty on success.
-      //   failure_reason  Where the pipeline stopped, e.g. 'research_empty'.
+      //   failure_reason  Where the pipeline stopped: 'not_a_claim' (nothing to
+      //                   check), 'upstream_unavailable', 'internal' or
+      //                   'cancelled'; an earlier-shape answer names the step,
+      //                   e.g. 'research_empty'.
       //   failure_class   Why, from a closed set: upstream_unavailable |
-      //                   insufficient_evidence | invalid_input | cancelled |
-      //                   internal. Empty on verifications older than 2026-08.
+      //                   invalid_input | cancelled | internal. Empty on
+      //                   verifications older than 2026-08.
       //   retryable       True only for upstream_unavailable — re-running that
       //                   same claim later can succeed. Every other class means
       //                   retrying the same input will not help.

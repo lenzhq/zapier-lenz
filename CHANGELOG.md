@@ -5,6 +5,7 @@ mechanics live in [README.md](README.md#building-and-pushing).
 
 ## 2.3.0
 
+- Update: when Lenz finds no public record of a claim, Verify a Claim gives the verdict `No Public Record`, an empty **Lenz Score**, and an empty **Passed** (not `false`): the claim is not shown to be false, only unrecorded. Assess (Fast) reads such a row the same way. Send an empty Passed to its own path rather than the "failed" one. On the 2026-10-11 response version a failed verification's **Failure Reason** is one of `not_a_claim` (nothing to check), `upstream_unavailable`, `internal` or `cancelled`, where it used to name the pipeline step that stopped; **Failure Class** and **Retryable** are unchanged.
 - Update: the app now asks the Lenz API for its 2026-10-11 response version, on every
   request it makes. Signed callbacks for Verify a Claim, Review a Draft and Check
   Citations arrive in that version too. **No output changes**: every action and the
