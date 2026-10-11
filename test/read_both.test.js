@@ -436,7 +436,7 @@ describe('No Public Record', () => {
     confidence: 'medium',
     lenz_score: null,
     key_finding: 'Lenz found no public record of this.',
-    executive_summary: 'No public source records this. That does not make it false.',
+    executive_summary: 'No public source records this.',
     suggested_rewrite: null,
     sources: [],
   };
