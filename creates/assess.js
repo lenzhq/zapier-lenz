@@ -12,6 +12,7 @@ const {
   readFailure,
   ASSESS_NO_CLAIM_MESSAGE,
   ASSESS_COMPOUND_HINT,
+  searchedPages,
 } = require('../lib/shapes');
 
 function isPassingVerdict(verdict) {
@@ -74,6 +75,9 @@ const SAMPLE = {
       rationale:
         'Sample reviewer note shown while testing in the Zap editor — a live, turned-on Zap returns the real reasoning for your claim.',
       dissent: '',
+      searched_pages: [
+        { title: 'Sample page title shown while testing in the Zap editor', url: 'https://example.org/sample-page' },
+      ],
       ...NO_ROW_ERROR,
     },
   ],
@@ -126,6 +130,10 @@ const shapeRow = (c) => ({
   // so existing Zaps that map it keep working.
   rationale: c.rationale || '',
   dissent: c.dissent || '',
+  // The pages the reviewers looked at, [{ title, url }]: pages to look at,
+  // not checked sources (for those, run Verify a Claim). Filtered, and [] when
+  // there are none, on an Error row, and from an API that predates the field.
+  searched_pages: searchedPages(c.searched_pages),
   // Set only on an Error row: WHY it has no verdict. An open set — the SDK
   // types it `string` and says new causes may arrive in a minor version — so
   // branch on the ones you know and let the rest fall through. Today:
@@ -314,6 +322,15 @@ module.exports = {
           { key: 'language', label: 'Language' },
           { key: 'rationale', label: 'Reviewer Rationale' },
           { key: 'dissent', label: 'Reviewer Dissent (deprecated, always empty)' },
+          {
+            key: 'searched_pages',
+            label: 'Pages the Reviewers Looked At',
+            list: true,
+            children: [
+              { key: 'title', label: 'Title' },
+              { key: 'url', label: 'URL' },
+            ],
+          },
           { key: 'error_code', label: 'Error Code' },
           { key: 'hint', label: 'Hint' },
           { key: 'identified_claims', label: 'Other Claims Found', list: true },

@@ -10,6 +10,7 @@ const {
   isWebhookSecretMissing,
   webhookSecretMissing,
 } = require('../lib/signed-callback');
+const { isObject, searchedPages } = require('../lib/shapes');
 const { shapeCitationIssue, CITATION_ISSUE_CHILDREN } = require('../lib/citations');
 const { NO_FAILURE, isTerminal, shapeJobFailure, optionalInteger, citationLimit } = require('../lib/jobs');
 
@@ -69,6 +70,9 @@ const SAMPLE = {
       suggested_rewrite: 'The EU AI Act entered into force on 1 August 2024.',
       url: 'https://lenz.io/c/eu-ai-act-entry-into-force-march-2024-c9b769e1',
       verification_id: 'c9b769e1',
+      searched_pages: [
+        { title: 'Sample page title shown while testing in the Zap editor', url: 'https://example.org/sample-page' },
+      ],
     },
   ],
   citation_issue_count: 0,
@@ -88,12 +92,25 @@ const SAMPLE = {
   ...NO_FAILURE,
 };
 
+// `searched_pages` is the pages the reviewers looked at for the claim. An issue
+// row carries none; the review's `claims[]` does, on the claim's `assessment`,
+// so each issue reads the pages of the claim with its `claim_index`.
+const pagesByClaim = (claims) => {
+  const byIndex = new Map();
+  for (const c of Array.isArray(claims) ? claims : []) {
+    if (isObject(c) && isObject(c.assessment)) byIndex.set(c.index, searchedPages(c.assessment.searched_pages));
+  }
+  return byIndex;
+};
+
 // The issue rows (`issues[]`): only the claims Lenz found a problem with. A
 // row comes from the quick check (`source: assessment`) or from a deep check
 // (`source: verification`, with a key finding and a lenz.io page). The
 // suggested rewrite is the findings' correction of the claim and has NOT
 // been verified itself.
-const shapeIssue = (row) => ({
+//
+// `searched_pages` is read from the issue's claim (see pagesByClaim).
+const shapeIssue = (row, pages) => ({
   claim: row.claim || '',
   verdict: row.verdict || '',
   confidence: row.confidence || '',
@@ -103,6 +120,7 @@ const shapeIssue = (row) => ({
   suggested_rewrite: row.suggested_rewrite || '',
   url: row.url || '',
   verification_id: row.verification_id || '',
+  searched_pages: pages.get(row.claim_index) || [],
 });
 
 // One shaper for the signed callback (`review`, view=full) and the read by id
@@ -111,7 +129,8 @@ const shapeReview = (reviewId, review) => {
   const r = review || {};
   const summary = r.summary || {};
   const citationCounts = summary.citation_checks || {};
-  const issues = (r.issues || []).map(shapeIssue);
+  const pages = pagesByClaim(r.claims);
+  const issues = (r.issues || []).map((row) => shapeIssue(row, pages));
   const citationIssues = (r.citation_issues || []).map(shapeCitationIssue);
   const status = r.status || 'queued';
   return {
@@ -361,6 +380,15 @@ module.exports = {
           { key: 'suggested_rewrite', label: 'Suggested Rewrite (not verified)' },
           { key: 'url', label: 'Lenz Page' },
           { key: 'verification_id', label: 'Verification ID' },
+          {
+            key: 'searched_pages',
+            label: 'Pages the Reviewers Looked At',
+            list: true,
+            children: [
+              { key: 'title', label: 'Title' },
+              { key: 'url', label: 'URL' },
+            ],
+          },
         ],
       },
       { key: 'citation_issue_count', label: 'Citation Issue Count', type: 'integer' },

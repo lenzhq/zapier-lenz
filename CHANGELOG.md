@@ -7,8 +7,9 @@ mechanics live in [README.md](README.md#building-and-pushing).
 
 - Update: the app now asks the Lenz API for its 2026-10-11 response version, on every
   request it makes. Signed callbacks for Verify a Claim, Review a Draft and Check
-  Citations arrive in that version too. **No output changes**: every action and the
-  trigger give the same fields, with the same values, as before. A failed assessment
+  Citations arrive in that version too. **No output changes** apart from the added
+  output in the next entry: every action and the trigger give the same fields, with
+  the same values, as before. A failed assessment
   row still reads `Error` with confidence `low`, a check that found nothing to verify
   still reads `no_claim` / `not_a_claim`, Extract Claims still gives Primary Claim and
   Identified Claims, and New Verification Completed still gives `modified_at`.
@@ -17,6 +18,15 @@ mechanics live in [README.md](README.md#building-and-pushing).
   wording; an extraction that lists a claim now always has status `ready`; and on
   Review a Draft, a review of a draft kept under zero retention that found nothing
   checkable gives the standard hint in Error, where it gave `no_claim`.
+- Update: new output **Pages the Reviewers Looked At** (`searched_pages`) on each Assess
+  (Fast) claim and on each issue of Review a Draft: a list of pages, each with a Title and
+  a URL, in the order Lenz sends them. They are pages to look at, not checked sources that
+  confirm the verdict. A page is listed only when its title is text and its link is an
+  `http://` or `https://` address with no embedded sign-in and no space or control
+  character; the list is empty when there
+  are none, on an `Error` row, and until the Lenz API sends the field. On Review a Draft an
+  issue shows the pages of the claim it is about. Nothing else changes; this is the one
+  added output.
 
 ## 2.2.0
 
