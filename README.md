@@ -302,10 +302,11 @@ number of the release being accumulated, and whoever builds sets them together.
 
 Three places carry it and all three move at once: `package.json`, the top `CHANGELOG.md`
 heading, and the "Since x.y.z:" reference under [What happens when something goes
-wrong](#what-happens-when-something-goes-wrong). Zapier does **not** require versions to
-be sequential: 1.4.0 was pushed on 2026-09-20 with neither 1.3.3 nor 1.3.4 ever having
-existed on Zapier, and it was accepted without comment. An earlier version of this
-paragraph claimed otherwise; it had never been tested.
+wrong](#what-happens-when-something-goes-wrong). A new minor version needs the minor
+before it to exist on Zapier; patch numbers may skip. 1.4.0 was accepted on 2026-09-20
+with neither 1.3.3 nor 1.3.4 ever pushed, because 1.3.2 existed. 2.3.0 was refused on
+2026-10-11 with "Version 2.3.0 requires 2.2.x to exist" while no 2.2.x did; pushing 2.2.0
+first cleared it.
 
 **Do not run `zapier push` from Windows.** `zapier-platform-cli` 19.1.0 copies the
 project into `%TEMP%\zapier-<hash>` and archives it with that path embedded, so the
