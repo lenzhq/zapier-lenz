@@ -5,6 +5,7 @@ mechanics live in [README.md](README.md#building-and-pushing).
 
 ## 2.3.0
 
+- Update: when Lenz finds no public record of a claim, Verify a Claim gives the verdict `No Public Record`, an empty **Lenz Score**, and an empty **Passed** (not `false`): the claim is not shown to be false, only unrecorded. Assess (Fast) reads such a row the same way. A Review a Draft that has such a claim lists it under Issues with that verdict, and its Outcome is `issues_found`. Send an empty Passed to its own path rather than the "failed" one. On the 2026-10-11 response version a failed verification's **Failure Reason** is one of `not_a_claim` (nothing to check), `upstream_unavailable`, `internal` or `cancelled`, where it used to name the pipeline step that stopped; **Failure Class** and **Retryable** are unchanged.
 - Update: the app now asks the Lenz API for its 2026-10-11 response version, on every
   request it makes. Signed callbacks for Verify a Claim, Review a Draft and Check
   Citations arrive in that version too. **No output changes** apart from the added
@@ -25,8 +26,7 @@ mechanics live in [README.md](README.md#building-and-pushing).
   `http://` or `https://` address with no embedded sign-in and no space or control
   character; the list is empty when there
   are none, on an `Error` row, and until the Lenz API sends the field. On Review a Draft an
-  issue shows the pages of the claim it is about. Nothing else changes; this is the one
-  added output.
+  issue shows the pages of the claim it is about. Nothing else changes in this entry.
 
 ## 2.2.0
 
