@@ -245,6 +245,7 @@ describe('creates.review_draft performResume', () => {
       suggested_rewrite: 'The EU AI Act entered into force on 1 August 2024.',
       url: 'https://lenz.io/c/eu-ai-act-c9b769e1',
       verification_id: 'c9b769e1',
+      searched_pages: [],
     });
     expect(out.citation_issues[0]).toMatchObject({ finding: 'contradicted', doi: '', snippet: 'A said C.' });
   });

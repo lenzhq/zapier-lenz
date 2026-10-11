@@ -49,6 +49,21 @@ const clone = (o) => JSON.parse(JSON.stringify(o));
 
 const FROZEN = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'oracle', 'frozen.json'), 'utf-8'));
 const ADDED = 'not_a_claim';
+// `searched_pages` (the pages the reviewers looked at) is added to each Assess
+// row and each Review a Draft issue. Like ADDED it is not in the frozen
+// outputs, so it is removed before they are compared.
+const ADDED_LISTS = ['claims', 'issues'];
+const withoutPages = (out) => {
+  for (const key of ADDED_LISTS) {
+    if (!Array.isArray(out[key])) continue;
+    for (const row of out[key]) {
+      if (row && typeof row === 'object' && 'searched_pages' in row) {
+        expect(Array.isArray(row.searched_pages)).toBe(true);
+        delete row.searched_pages;
+      }
+    }
+  }
+};
 
 // ─── 1. Legacy responses: unchanged outputs ─────────────────────────────────
 
@@ -67,6 +82,7 @@ describe('legacy responses give the outputs the app has always given', () => {
     const mismatches = [];
     for (const [name, frozen] of Object.entries(FROZEN)) {
       const got = clone(current[name]);
+      if (!got.__error) withoutPages(got);
       if ((name.startsWith('assess__') || name.startsWith('extract__')) && !got.__error) {
         expect(typeof got[ADDED]).toBe('boolean');
         delete got[ADDED];
