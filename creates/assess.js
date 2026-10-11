@@ -58,12 +58,16 @@ const NO_ERROR = { message: '', not_a_claim: false, candidate_claims: [] };
 // comes back.
 const NO_ROW_ERROR = { error_code: '', hint: '', identified_claims: [] };
 
-// The row causes that resolve on their own. The other two documented causes
-// are answers about the input — `no_claim` wants different text and
-// `framing_failed` is deterministic — so they stay as rows. Kept as a set
-// rather than a negation because `error_code` is an OPEN set: a cause added
-// in a minor version should land as a row, not as a replay.
-const TRANSIENT_ROW_CODES = new Set(['upstream_unavailable', 'timeout']);
+// A failed row resolves on its own when its failure's class says so
+// (`retryable`: a provider was down, or the call ran out of its time budget).
+// The class decides, never a list of codes: `error_code` is an OPEN set, and a
+// cause added later should land correctly. The answers about the input
+// (`no_claim`) and our own failures (`internal`) are not retryable, so they
+// stay as rows.
+//
+// A row in the earlier shape carries no class, only a code; for that shape
+// alone the two codes it used for a transient cause stay the rule.
+const EARLIER_TRANSIENT_CODES = new Set(['upstream_unavailable', 'timeout']);
 
 const SAMPLE = {
   status: 'ok',
@@ -96,6 +100,16 @@ const isFailedRow = (c) => c.status === 'failed' || c.verdict === 'Error';
 const rowErrorCode = (c) => {
   const f = readFailure({ failure: isObject(c.failure) ? c.failure : null });
   return outputCode(f.code || c.error_code || '', 'no_claim');
+};
+
+// Whether the same request can succeed on a retry: the failure block's
+// `retryable`, else its class, else (an earlier-shape row, which has neither)
+// the code.
+const rowRetryable = (c) => {
+  const f = readFailure({ failure: isObject(c.failure) ? c.failure : null });
+  if (f.retryable !== null) return f.retryable;
+  if (f.failureClass) return f.failureClass === 'upstream_unavailable';
+  return EARLIER_TRANSIENT_CODES.has(rowErrorCode(c));
 };
 
 const moreClaims = (c) =>
@@ -141,8 +155,8 @@ const shapeRow = (c) => ({
   // Set only on an Error row: WHY it has no verdict. An open set — the SDK
   // types it `string` and says new causes may arrive in a minor version — so
   // branch on the ones you know and let the rest fall through. Today:
-  // `no_claim`, `framing_failed`, `upstream_unavailable`, `timeout`. Error
-  // rows are free.
+  // `no_claim`, `internal`, `upstream_unavailable`; a response in the earlier
+  // shape can also say `framing_failed` or `timeout`. Error rows are free.
   error_code: rowErrorCode(c),
   // One sentence on what to send next. On every Error row, and on a verdict
   // row whose input held more claims than the one assessed.
@@ -216,9 +230,10 @@ const perform = async (z, bundle) => {
     result.status === 'not_a_claim' ||
     rows.every((r) => r.verdict === 'Error' && isNothingCheckable(r.error_code));
 
-  // A transient failure can arrive INSIDE a 200, as rows: `upstream_unavailable`
-  // (a provider was down) and `timeout` (the call ran out of budget before this
-  // item), both of which the SDK says are "worth resending as-is". Returned as
+  // A transient failure can arrive INSIDE a 200, as rows: a provider was down,
+  // or the call ran out of budget before this item (both `upstream_unavailable`
+  // now; the earlier shape also said `timeout`), which the SDK says are "worth
+  // resending as-is". An unresolved panel is the same kind of row. Returned as
   // rows they would read as `status: ok, passed: false` — and a Zap branching
   // on `passed` would fire its "claim failed fact-check" leg for a claim that
   // was never assessed, with nothing replaying. The SAME condition delivered
@@ -234,7 +249,7 @@ const perform = async (z, bundle) => {
   // "Nothing was charged" is safe to say here for the reason it is safe on the
   // typed-503 branch: the server produced these rows, and it produces an Error
   // row instead of charging.
-  if (result.claims.every((c) => isFailedRow(c) && TRANSIENT_ROW_CODES.has(rowErrorCode(c)))) {
+  if (result.claims.every((c) => isFailedRow(c) && rowRetryable(c))) {
     // Into the NEXT hour bucket, not the default 60s — because of the key.
     // The server stores every 200 under its Idempotency-Key for 24h, and
     // this all-Error response IS a 200. A replay 60s later would carry the

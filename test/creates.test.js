@@ -901,6 +901,105 @@ describe('creates.assess', () => {
     });
   });
 
+  // The newer shape's failed row: `status: failed`, no verdict, and a `failure`
+  // block whose `retryable` (its class) says whether the same request can
+  // succeed. The retry decision reads that, not a list of codes, so a code
+  // added later keeps working.
+  describe('failed rows in the newer shape: retry on the failure class', () => {
+    const failedRow = (failure) => ({
+      claim: 'A',
+      language: 'en',
+      status: 'failed',
+      verdict: null,
+      confidence: null,
+      verification_url: null,
+      rationale: null,
+      dissent: null,
+      suggested_rewrite: null,
+      more_claims: [],
+      failure: { detail: 'd', hint: 'Send it again.', docs_url: null, ...failure },
+    });
+    const retryable = (code = 'upstream_unavailable') =>
+      failedRow({ code, failure_class: 'upstream_unavailable', retryable: true });
+    const final = (code = 'internal') => failedRow({ code, failure_class: 'internal', retryable: false });
+    const run = (rows) => {
+      LenzClient.mockImplementation(() => mockClient({ assess: jest.fn().mockResolvedValue({ status: 'ok', claims: rows }) }));
+      return captureCreateError(App.creates.assess.operation.perform, {
+        authData: { access_token: 'lenz_good' },
+        inputData: { text: 'A and B' },
+      });
+    };
+    const runOk = (rows) => {
+      LenzClient.mockImplementation(() => mockClient({ assess: jest.fn().mockResolvedValue({ status: 'ok', claims: rows }) }));
+      return appTester(App.creates.assess.operation.perform, {
+        authData: { access_token: 'lenz_good' },
+        inputData: { text: 'A and B' },
+      });
+    };
+
+    it('replays when every row is retryable, whatever its code', async () => {
+      for (const code of ['upstream_unavailable', 'some_cause_added_later']) {
+        const err = await run([retryable(code), retryable(code)]);
+        expect(err.name).toBe('ThrottledError');
+        expect(err.message).toContain('nothing was charged');
+        expect(err.message).toContain(code);
+      }
+    });
+
+    it('keeps the rows when the failure is final, whatever its code', async () => {
+      for (const row of [final('internal'), failedRow({ code: 'upstream_unavailable', failure_class: 'internal', retryable: false })]) {
+        const result = await runOk([row]);
+        expect(result.status).toBe('ok');
+        expect(result.claims[0]).toEqual(expect.objectContaining({ verdict: 'Error', confidence: 'low', passed: false }));
+      }
+    });
+
+    it('reads the class when the block states no retryable, and the code only for an earlier-shape row', async () => {
+      const byClass = failedRow({ code: 'whatever', failure_class: 'upstream_unavailable' });
+      expect((await run([byClass])).name).toBe('ThrottledError');
+      const finalByClass = failedRow({ code: 'upstream_unavailable', failure_class: 'internal' });
+      expect((await runOk([finalByClass])).status).toBe('ok');
+      // No class, no flag, a code the earlier shape used: the earlier rule.
+      const bare = failedRow({ code: 'timeout' });
+      expect((await run([bare])).name).toBe('ThrottledError');
+      const unknown = failedRow({ code: 'something_new' });
+      expect((await runOk([unknown])).status).toBe('ok');
+    });
+
+    it('returns a mixed result, since a verdict row was charged: an unresolved row stays a row with its code', async () => {
+      const result = await runOk([{ claim: 'A', status: 'completed', verdict: 'True', confidence: 'high' }, retryable()]);
+      expect(result.claims[1]).toEqual(expect.objectContaining({ verdict: 'Error', error_code: 'upstream_unavailable' }));
+      expect(result.claims[0].passed).toBe(true);
+    });
+
+    it('a row that found no public record: passed is empty, every declared key is there, and it is a row', async () => {
+      const noRecord = {
+        claim: 'The Smalltown council approved the bridge budget in 2019.',
+        language: 'en',
+        status: 'completed',
+        verdict: 'No Public Record',
+        confidence: 'medium',
+        verification_url: null,
+        rationale: 'Nothing the reviewers found records the vote.',
+        dissent: null,
+        suggested_rewrite: null,
+        more_claims: [],
+        failure: null,
+      };
+      const result = await runOk([noRecord, final()]);
+      const declared = App.creates.assess.operation.outputFields.find((f) => f.key === 'claims').children.map((c) => c.key);
+      expect(result.status).toBe('ok');
+      expect(result.claims[0]).toEqual(
+        expect.objectContaining({ verdict: 'No Public Record', confidence: 'medium', passed: null, error_code: '' }),
+      );
+      for (const row of result.claims) for (const key of declared) expect(row).toHaveProperty(key);
+      // Not a failed claim and not "nothing to check".
+      expect(result.not_a_claim).toBe(false);
+      const alone = await runOk([noRecord]);
+      expect(alone.claims[0].passed).toBeNull();
+    });
+  });
+
   // Every row key is present on every row — including on a response from a
   // server old enough not to send the new keys at all.
   it('emits every declared row key even when the API omits them', () => {

@@ -19,6 +19,19 @@ mechanics live in [README.md](README.md#building-and-pushing).
   wording; an extraction that lists a claim now always has status `ready`; and on
   Review a Draft, a review of a draft kept under zero retention that found nothing
   checkable gives the standard hint in Error, where it gave `no_claim`.
+- Update: failures are named by what they are. On Assess (Fast), **Error Code** on a row that
+  could not be checked reads `upstream_unavailable` (a provider, or the time budget; where it
+  read `timeout`) or `internal` (where it read `framing_failed`), and `no_claim` as before.
+  Assess (Fast) now replays a step whose rows all failed in a way that can succeed later, as
+  Lenz marks it, rather than by a fixed list of codes; the others stay as rows. On Review a
+  Draft and Check Citations, **Failure Reason** reads the same codes, and **Error** is Lenz's
+  hint, or the code when there is none (a review that could assess no claim says to retry it,
+  where it opened with a sentence about the cause). Branch on **Failure Class** and
+  **Retryable**, not on the cause. Extract Claims on a link whose page could not be read now
+  stops with a message saying so and to paste the page's text instead.
+- Update: Assess (Fast) can give the verdict `No Public Record` for a claim with no public
+  record, with a Confidence of `low` or `medium` (never `high`) and an empty **Passed**,
+  like Verify a Claim. Review a Draft lists such a claim under Issues.
 - Update: new output **Pages the Reviewers Looked At** (`searched_pages`) on each Assess
   (Fast) claim and on each issue of Review a Draft: a list of pages, each with a Title and
   a URL, in the order Lenz sends them. They are pages to look at, not checked sources that

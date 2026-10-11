@@ -238,7 +238,14 @@ describe('creates.assess rows', () => {
     dissent: null,
     suggested_rewrite: null,
     more_claims: [],
-    failure: { code, detail: 'Detail.', hint: 'Hint.', failure_class: 'upstream_unavailable', retryable: true },
+    // The class follows the cause: only an outage or a spent time budget can succeed on a retry.
+    failure: {
+      code,
+      detail: 'Detail.',
+      hint: 'Hint.',
+      failure_class: ['upstream_unavailable', 'timeout'].includes(code) ? 'upstream_unavailable' : code === 'no_checkable_claim' ? 'invalid_input' : 'internal',
+      retryable: ['upstream_unavailable', 'timeout'].includes(code),
+    },
   });
   const errorRow = (code, over = {}) => ({
     claim: 'x',
@@ -286,6 +293,8 @@ describe('creates.assess rows', () => {
     expect(mixed.status).toBe('ok');
     const framing = await run({ status: 'error', claims: [failedRow('framing_failed')] });
     expect(framing.claims[0]).toMatchObject({ verdict: 'Error', error_code: 'framing_failed' });
+    const internal = await run({ status: 'error', claims: [failedRow('internal')] });
+    expect(internal.claims[0]).toMatchObject({ verdict: 'Error', error_code: 'internal' });
   });
 
   it('reads a failed row: verdict Error, confidence low, the cause and hint from its failure block', async () => {

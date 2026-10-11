@@ -108,7 +108,11 @@ describe('the API version header', () => {
 // Differences between the two versions' outputs that are expected, by
 // fixture and output key. Anything not listed here must be identical.
 const SENTENCE = 'a sentence for people; the API words it differently now';
+const COLLAPSED = 'the API names a failure by its class (upstream_unavailable, internal) where it named the cause';
 const ALLOWED = {
+  // An assessed row that failed on our side, and a review that could assess no claim.
+  assess__list_mixed_rows: { claims: COLLAPSED },
+  review__get_failed_every_assessment_failed: { error: SENTENCE, failure_reason: COLLAPSED },
   // The failed poll's `error` is the API's sentence about the failure.
   verify__status_cancelled_durable: { error: SENTENCE },
   verify__status_failed_durable: { error: SENTENCE },
@@ -386,12 +390,21 @@ describe('values the newer shape carries differently', () => {
       expect(shapeJobFailure(block({ hint: 'Retry.' })).error).toBe('Retry.');
     });
 
-    it('assessment_failed: the sentence the earlier hint opened with, then the hint', () => {
-      const f = block({ code: 'assessment_failed', detail: 'No claim could be assessed.', hint: 'Retry it.' });
-      expect(shapeJobFailure(f).error).toBe('No claim could be assessed. Retry it.');
-      expect(shapeJobFailure({ ...f, hint: null }).error).toBe('No claim could be assessed.');
-      // An earlier-shape block is read as sent.
+    it('a retryable class reads its hint like any other: no cause has a sentence of its own', () => {
+      // A review that could assess no claim: the newer shape's code is its class, with the cause in `detail`.
+      const f = block({ code: 'upstream_unavailable', detail: 'No claim could be assessed.', hint: 'Retry it.' });
+      expect(shapeJobFailure(f).error).toBe('Retry it.');
+      expect(shapeJobFailure({ ...f, hint: null }).error).toBe('upstream_unavailable');
+      expect(shapeJobFailure(f)).toMatchObject({ failure_reason: 'upstream_unavailable', failure_class: 'upstream_unavailable', retryable: true });
+      // The earlier shape names the cause; read as sent.
       expect(shapeJobFailure({ failure_reason: 'assessment_failed', hint: 'Retry it.' }).error).toBe('Retry it.');
+    });
+
+    it('a final class (internal, page_unreadable) is final, and says so', () => {
+      for (const code of ['internal', 'page_unreadable']) {
+        const f = block({ code, failure_class: code === 'internal' ? 'internal' : 'invalid_input', retryable: false, hint: 'Do not retry.' });
+        expect(shapeJobFailure(f)).toMatchObject({ failure_reason: code, retryable: false, error: 'Do not retry.' });
+      }
     });
   });
 });

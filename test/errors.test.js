@@ -441,13 +441,45 @@ describe('capacity / provider outage (503) → ThrottledError', () => {
   // deterministic answers about THIS input. Replaying them spends the run
   // again for the same result, so they must stay hard errors.
   it('keeps the typed, deterministic 502s on the hard-error path', async () => {
-    for (const code of ['framing_failed', 'extraction_failed']) {
+    for (const code of ['framing_failed', 'extraction_failed', 'internal']) {
       const typed = new LenzError({ message: 'Could not process the claim', statusCode: 502 });
       typed.code = code;
       const err = await capture503(typed);
       expect(err.name).not.toBe('ThrottledError');
       expect(err.message).toContain('Could not process the claim');
     }
+  });
+});
+
+// An unreadable link on Extract Claims is a 422 `page_unreadable`: the same
+// link gives the same answer, so it is a hard error (never replayed) that
+// tells the person what to do instead.
+describe('page_unreadable (422) → a plain error', () => {
+  async function capture503(failure) {
+    LenzClient.mockImplementation(() => mockClient({ extract: jest.fn().mockRejectedValue(failure) }));
+    return captureError(App.creates.extract_claims.operation.perform, {
+      ...AUTH,
+      inputData: { text: 'https://example.org/gone' },
+    });
+  }
+
+  it('says the page could not be read, that nothing was charged, and what to send instead', async () => {
+    const typed = new LenzError({ message: 'The page at the link could not be read.', statusCode: 422 });
+    typed.code = 'page_unreadable';
+    const err = await capture503(typed);
+    expect(err.name).not.toBe('ThrottledError');
+    expect(err.name).not.toBe('HaltedError');
+    expect(err.message).toContain('could not read the page');
+    expect(err.message).toContain('Nothing was charged');
+    expect(err.message).toContain("Paste the page's text");
+  });
+
+  it('leaves every other 422 as it was', async () => {
+    const other = new LenzError({ message: 'Text is required.', statusCode: 422 });
+    other.code = 'blank_input';
+    const err = await capture503(other);
+    expect(err.message).toContain('Text is required.');
+    expect(err.message).not.toContain("Paste the page's text");
   });
 });
 
