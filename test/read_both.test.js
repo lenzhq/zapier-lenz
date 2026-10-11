@@ -65,19 +65,6 @@ const withoutPages = (out) => {
   }
 };
 
-// `expected_record` (the record that would show a No Public Record claim) is
-// added to every Verify a Claim output and every New Verification Completed
-// item. Like ADDED it is not in the frozen outputs, so it is removed (after
-// checking it is text) before they are compared.
-const withoutExpectedRecord = (out) => {
-  for (const item of Array.isArray(out) ? out : [out]) {
-    if (item && typeof item === 'object' && 'expected_record' in item) {
-      expect(typeof item.expected_record).toBe('string');
-      delete item.expected_record;
-    }
-  }
-};
-
 // ─── 1. Legacy responses: unchanged outputs ─────────────────────────────────
 
 describe('legacy responses give the outputs the app has always given', () => {
@@ -95,10 +82,7 @@ describe('legacy responses give the outputs the app has always given', () => {
     const mismatches = [];
     for (const [name, frozen] of Object.entries(FROZEN)) {
       const got = clone(current[name]);
-      if (!got.__error) {
-        withoutPages(got);
-        withoutExpectedRecord(got);
-      }
+      if (!got.__error) withoutPages(got);
       if ((name.startsWith('assess__') || name.startsWith('extract__')) && !got.__error) {
         expect(typeof got[ADDED]).toBe('boolean');
         delete got[ADDED];
@@ -468,41 +452,6 @@ describe('No Public Record', () => {
       lenz_score: null,
       suggested_rewrite: '',
       sources: [],
-    });
-  });
-
-  describe('expected_record', () => {
-    const run = async (result) => {
-      mockClient({ getStatus: jest.fn().mockResolvedValue({ status: 'completed', result }) });
-      return appTester(verify.performResume, resume());
-    };
-
-    it('passes on the record that would show the claim, trimmed', async () => {
-      const out = await run({ ...noRecord, expected_record: '  A county register of orders.  ' });
-      expect(out.expected_record).toBe('A county register of orders.');
-    });
-
-    it('reads it from the conclusion when the body nests it there', async () => {
-      const out = await run({ ...noRecord, conclusion: { expected_record: 'A company register entry.' } });
-      expect(out.expected_record).toBe('A company register entry.');
-    });
-
-    it('is empty when none is sent, when it is empty or not text, and on other verdicts', async () => {
-      for (const result of [
-        noRecord,
-        { ...noRecord, expected_record: '' },
-        { ...noRecord, expected_record: '   ' },
-        { ...noRecord, expected_record: null },
-        { ...noRecord, expected_record: 7 },
-        { ...noRecord, verdict: 'True', lenz_score: 9 },
-      ]) {
-        expect((await run(result)).expected_record).toBe('');
-      }
-    });
-
-    it('is empty on a verification that did not complete', async () => {
-      mockClient({ getStatus: jest.fn().mockResolvedValue({ status: 'processing' }) });
-      expect((await appTester(verify.performResume, resume())).expected_record).toBe('');
     });
   });
 

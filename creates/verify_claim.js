@@ -2,7 +2,7 @@
 
 const { mapLenzError } = require('../lib/errors');
 const { NO_FAILURE } = require('../lib/jobs');
-const { isObject, readFailure, outputCode, expectedRecordOf } = require('../lib/shapes');
+const { isObject, readFailure, outputCode } = require('../lib/shapes');
 const {
   parseSignedCallback,
   requireWebhookSecretWhileTesting,
@@ -48,9 +48,6 @@ const SAMPLE = {
   // Empty: the sample claim is True, and a true claim has no rewrite. That is
   // also the value a live run shows for one, so a Filter built on this holds.
   suggested_rewrite: '',
-  // Empty: only a No Public Record verdict carries one, and the sample claim is
-  // True. Empty is also what a live run shows for every other verdict.
-  expected_record: '',
   sources: [
     {
       source_name: 'Tour Eiffel',
@@ -129,7 +126,6 @@ const NO_VERDICT = {
   key_finding: '',
   executive_summary: '',
   suggested_rewrite: '',
-  expected_record: '',
   sources: [],
   language: '',
   domain: '',
@@ -386,12 +382,6 @@ const shapeCompleted = (taskId, result) => ({
       // Lenz#916 called it `suggested_revision`, but the API, both SDKs and
       // /review all send `suggested_rewrite`, and this key can never be renamed.
       suggested_rewrite: result.suggested_rewrite || '',
-      // For a No Public Record verdict: one sentence naming the record that
-      // would show the claim if it were so. '' when the API sends none, when no
-      // record would be expected, on every other verdict, and from a server that
-      // predates the field, so a Filter on it behaves the same everywhere. Read
-      // from the top level, or from `conclusion` if the body nests it there.
-      expected_record: expectedRecordOf(result),
       // All five keys, not just title and url. The API always sends all five
       // (lenz/api/verification_payload.py:124-133) and uses '' rather than
       // null for a missing one, so the `|| ''` here is belt-and-braces for an
@@ -610,9 +600,6 @@ module.exports = {
       // help text (PlainOutputFieldSchema rejects it), and it is the one
       // thing a user must know before pasting this over their own sentence.
       { key: 'suggested_rewrite', label: 'Suggested Rewrite (not verified)' },
-      // For a No Public Record verdict: the record that would show the claim.
-      // Empty on every other verdict.
-      { key: 'expected_record', label: 'Expected Record' },
       // Failure fields — populated only when Status is 'failed', so a
       // Filter/Paths step can branch on WHY instead of parsing prose.
       //
