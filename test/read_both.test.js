@@ -548,7 +548,7 @@ describe('Review a Draft and Check Citations', () => {
       review_id: 'rev12345',
       status: 'completed',
       outcome: 'issues_found',
-      summary: { claims_selected: 1, issues: 1, no_public_record: 1, assessments: { completed: 1, failed: 0 }, verifications: { completed: 1, failed: 0 } },
+      summary: { claims_selected: 1, issues: 1, assessments: { completed: 1, failed: 0 }, verifications: { completed: 1, failed: 0 } },
       issues: [
         {
           claim: 'The Smalltown council approved the new bridge budget in May 2019.',
