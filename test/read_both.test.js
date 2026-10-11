@@ -543,6 +543,34 @@ describe('Review a Draft and Check Citations', () => {
     }
   });
 
+  it('a review with a No Public Record row lists it as an issue, with the verdict as sent', async () => {
+    const body = {
+      review_id: 'rev12345',
+      status: 'completed',
+      outcome: 'issues_found',
+      summary: { claims_selected: 1, issues: 1, no_public_record: 1, assessments: { completed: 1, failed: 0 }, verifications: { completed: 1, failed: 0 } },
+      issues: [
+        {
+          claim: 'The Smalltown council approved the new bridge budget in May 2019.',
+          verdict: 'No Public Record',
+          confidence: 'medium',
+          source: 'verification',
+          key_finding: 'Lenz found no public record of this council decision.',
+          rationale: null,
+          suggested_rewrite: null,
+          url: 'https://lenz.io/c/smalltown-council-bridge-budget-may-2019-3c9a41d0',
+          verification_id: '3c9a41d0',
+        },
+      ],
+      failures: [],
+      citation_issues: [],
+    };
+    mockClient({ getReview: jest.fn().mockResolvedValue(body) });
+    const out = await appTester(review.performResume, { authData: {}, outputData: { review_id: body.review_id } });
+    expect(out).toMatchObject({ outcome: 'issues_found', clean: false, issue_count: 1, unchecked_claims: 0 });
+    expect(out.issues[0]).toMatchObject({ verdict: 'No Public Record', confidence: 'medium', suggested_rewrite: '', rationale: '' });
+  });
+
   it('a canonical failed review: no_claim and the hint', async () => {
     const body = loadFixture('canonical', 'review__get_failed_no_claim');
     mockClient({ getReview: jest.fn().mockResolvedValue(body) });
