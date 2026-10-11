@@ -2,7 +2,7 @@
 
 const { mapLenzError } = require('../lib/errors');
 const { lenzClient } = require('../client');
-const { modifiedAtFrom } = require('../lib/shapes');
+const { modifiedAtFrom, expectedRecordOf } = require('../lib/shapes');
 
 // A list item as this trigger has always emitted it. The newer response shape
 // says `completed_at` where the earlier one said `modified_at` (set only when
@@ -64,14 +64,21 @@ const perform = async (z, bundle) => {
   // only bites if a future/older server omits it — but a field that is ''
   // on one surface and undefined on the other silently breaks a Zap that
   // maps it.
-  return result.items.map(asEarlierItem).map((item) => ({
-    id: item.verification_id,
-    ...item,
-    key_finding: item.key_finding || '',
-    // On list items too (lenz-io VerificationListItem). Normalised to '' for
-    // the same reason as key_finding, and to match Verify a Claim.
-    suggested_rewrite: item.suggested_rewrite || '',
-  }));
+  return result.items.map(asEarlierItem).map((item) => {
+    const row = {
+      id: item.verification_id,
+      ...item,
+      key_finding: item.key_finding || '',
+      // On list items too (lenz-io VerificationListItem). Normalised to '' for
+      // the same reason as key_finding, and to match Verify a Claim.
+      suggested_rewrite: item.suggested_rewrite || '',
+    };
+    // On a No Public Record row: the record that would show the claim. '' on
+    // every other verdict and from a server that predates the field, as on
+    // Verify a Claim.
+    row.expected_record = expectedRecordOf(item);
+    return row;
+  });
 };
 
 module.exports = {
@@ -98,6 +105,7 @@ module.exports = {
       key_finding: 'Official Eiffel Tower figures confirm a current height of 330 metres.',
       executive_summary: 'Confirmed by multiple official sources.',
       suggested_rewrite: '',
+      expected_record: '',
       created_at: '2026-07-14T12:00:00Z',
       modified_at: null,
       language: 'en',
@@ -114,6 +122,7 @@ module.exports = {
       { key: 'key_finding', label: 'Key Finding' },
       { key: 'executive_summary', label: 'Executive Summary' },
       { key: 'suggested_rewrite', label: 'Suggested Rewrite (not verified)' },
+      { key: 'expected_record', label: 'Expected Record' },
       { key: 'created_at', label: 'Created At', type: 'datetime' },
     ],
   },

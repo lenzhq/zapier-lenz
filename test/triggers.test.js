@@ -41,6 +41,26 @@ describe('triggers.new_verification', () => {
     ]);
   });
 
+  it('passes expected_record on a No Public Record row, and gives \'\' on every other row', async () => {
+    const client = mockClient({
+      items: [
+        { verification_id: 'ab12cd34', claim: 'A', verdict: 'No Public Record', lenz_score: null, expected_record: '  A county register.  ' },
+        { verification_id: 'ef56gh78', claim: 'B', verdict: 'True', expected_record: null },
+        { verification_id: 'ij90kl12', claim: 'C', verdict: 'False' },
+      ],
+      total: 3,
+      page: 1,
+      page_size: 100,
+    });
+    LenzClient.mockImplementation(() => client);
+
+    const result = await appTester(App.triggers.new_verification.operation.perform, {
+      authData: { access_token: 'lenz_good' },
+    });
+
+    expect(result.map((r) => r.expected_record)).toEqual(['A county register.', '', '']);
+  });
+
   // The reason this trigger exists in its current form. Zapier polls every
   // 1-15 minutes and only reads page 1, so at the API's default of 20 an
   // account finishing more than 20 checks between polls silently loses the
