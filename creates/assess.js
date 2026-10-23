@@ -10,18 +10,11 @@ const {
   outputCode,
   isNothingCheckable,
   readFailure,
+  passedFrom,
   ASSESS_NO_CLAIM_MESSAGE,
   ASSESS_COMPOUND_HINT,
   searchedPages,
 } = require('../lib/shapes');
-
-// `passed` for a verdict label. 'No Public Record' is neither a pass nor a
-// failure: Lenz found no public record of the claim, which does not make it
-// false, so it is null, like every answer that is not a verdict.
-function isPassingVerdict(verdict) {
-  if (verdict === 'No Public Record') return null;
-  return verdict === 'True' || verdict === 'Mostly True';
-}
 
 // `status` here is BUILT by this action, not passed through from the API:
 // `ok` when the API returned at least one row, `no_claim` when it returned
@@ -49,7 +42,13 @@ function isPassingVerdict(verdict) {
 // `not_a_claim` is true when the API says nothing in the input can be checked:
 // no rows at all, or (either shape) every row has no checkable claim. It sits
 // beside `status`, which keeps its own values.
-const NO_ERROR = { message: '', not_a_claim: false, candidate_claims: [] };
+//
+// `more_claims` is the claims in the input that this call did not assess: past
+// the per-call limit the API checks the most check-worthy ones and hands the
+// rest back at the TOP level of its answer, free, to send on. It is a different
+// thing from a row's own `identified_claims` (the other claims inside the one
+// claim that row assessed), so it has its own key.
+const NO_ERROR = { message: '', not_a_claim: false, candidate_claims: [], more_claims: [] };
 
 // Every per-row key, present on every row. A verdict row has the verdict
 // fields filled and the error fields empty; an Error row (`verdict: "Error"`)
@@ -112,6 +111,11 @@ const rowRetryable = (c) => {
   return EARLIER_TRANSIENT_CODES.has(rowErrorCode(c));
 };
 
+// The top-level overflow list is documented as a list of claims (strings), and
+// it feeds a later step's Claim field, so anything that is not a non-empty
+// string is dropped. A row's own list keeps passing through as it always has.
+const claimStrings = (list) => list.filter((x) => typeof x === 'string' && x.trim() !== '');
+
 const moreClaims = (c) =>
   Array.isArray(c.more_claims) ? c.more_claims : Array.isArray(c.identified_claims) ? c.identified_claims : [];
 
@@ -134,7 +138,7 @@ const shapeRow = (c) => ({
   // output. Earlier-shape rows are read exactly as sent.
   verdict: c.status === 'failed' && !c.verdict ? 'Error' : c.verdict || null,
   confidence: c.status === 'failed' && !c.verdict ? 'low' : c.confidence || null,
-  passed: isPassingVerdict(c.verdict),
+  passed: passedFrom(c.verdict),
   // Null on all but one path. The API only fills this when the verdict
   // came from an existing full verification it can serve to this caller
   // (lenz/api/public_authed.py:1559) — a fresh panel result has no page to
@@ -187,11 +191,12 @@ const EDITOR_TIMEOUT_MESSAGE =
 
 const EDITOR_TIMED_OUT = Symbol('editor test ran out of the call budget');
 
-const editorTimeoutSample = () => ({
-  ...SAMPLE,
-  message: EDITOR_TIMEOUT_MESSAGE,
-  claims: SAMPLE.claims.map((c) => ({ ...c, claim: `SAMPLE, not a result for your claim: ${c.claim}` })),
-});
+const editorTimeoutSample = () => {
+  const sample = structuredClone(SAMPLE);
+  sample.message = EDITOR_TIMEOUT_MESSAGE;
+  for (const c of sample.claims) c.claim = `SAMPLE, not a result for your claim: ${c.claim}`;
+  return sample;
+};
 
 // Our abort fires at CALL_TIMEOUT_MS and the SDK reports it as a no-response
 // failure like a DNS error or a reset, but its message names what happened:
@@ -223,7 +228,7 @@ const perform = async (z, bundle) => {
     // Copied, not returned by reference: on a warm container the platform
     // could mutate the module-level object and every later user of that
     // container would see it. creates/verify_claim.js already does this.
-    return { ...SAMPLE };
+    return structuredClone(SAMPLE);
   }
 
   const client = lenzClient(bundle);
@@ -267,6 +272,7 @@ const perform = async (z, bundle) => {
       not_a_claim: true,
       // Deprecated on the API, always empty; see NO_ERROR.
       candidate_claims: [],
+      more_claims: claimStrings(moreClaims(result)),
       claims: [],
     };
   }
@@ -322,6 +328,7 @@ const perform = async (z, bundle) => {
     status: 'ok',
     ...NO_ERROR,
     not_a_claim: nothingCheckable,
+    more_claims: claimStrings(moreClaims(result)),
     claims: rows,
   };
 };
@@ -362,6 +369,9 @@ module.exports = {
       // would not break that Zap, but declaring it keeps the sample and the
       // field list honest with each other.
       { key: 'candidate_claims', label: 'Candidate Claims (always empty)', list: true },
+      // Past the per-call limit: the claims this call did not assess, in the
+      // API's order, to send on as their own steps. Empty when there are none.
+      { key: 'more_claims', label: 'Claims Not Checked', list: true },
       // Declared as a line-item list with children, the same shape the
       // needs_input lists use in creates/verify_claim.js. Until 1.4.0
       // `outputFields` named only Status and Message, so every per-claim

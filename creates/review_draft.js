@@ -253,7 +253,7 @@ const perform = async (z, bundle) => {
   // spends credits: only the free webhook-secret check, then the sample.
   if (bundle.meta && bundle.meta.isLoadingSample) {
     await requireWebhookSecretWhileTesting(z, client, ACTION_LABEL);
-    return { ...SAMPLE };
+    return structuredClone(SAMPLE);
   }
 
   const input = reviewInput(bundle);

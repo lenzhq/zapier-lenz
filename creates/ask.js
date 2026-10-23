@@ -47,7 +47,7 @@ const askKey = (z, bundle) => {
 
 const perform = async (z, bundle) => {
   if (bundle.meta && bundle.meta.isLoadingSample) {
-    return SAMPLE;
+    return { ...SAMPLE };
   }
 
   const client = lenzClient(bundle);

@@ -65,6 +65,36 @@ const withoutPages = (out) => {
   }
 };
 
+// The outputs that changed on purpose after the frozen file was recorded. Each
+// is applied to the FROZEN value here, so the frozen file stays what it was and
+// every change is listed where a reviewer sees it:
+//
+//  - Assess: a top-level `more_claims` (the claims past the per-call limit) on
+//    every answer. Removed before comparing, and checked on its own below.
+//  - `passed` is empty (null) for a row that has no real verdict (an Error row);
+//    it was false.
+//  - A failed Verify read from the signed callback: Failure Reason holds the
+//    code and Error says what happened; it was the code in Error and an empty
+//    Failure Reason.
+const REAL_VERDICTS = new Set(['True', 'Mostly True', 'Mixed', 'Mostly False', 'False']);
+const intended = (name, frozen) => {
+  const want = clone(frozen);
+  if (name.startsWith('assess__') && Array.isArray(want.claims)) {
+    for (const row of want.claims) {
+      if (row && !REAL_VERDICTS.has(row.verdict) && row.passed === false) row.passed = null;
+    }
+  }
+  if (name.startsWith('webhook__verification_failed_') && want.status === 'failed' && want.failure_reason === '') {
+    const code = want.error;
+    want.error =
+      code === 'not_a_claim'
+        ? 'No claim in the input could be checked against public evidence.'
+        : `Pipeline stopped: ${code}.`;
+    want.failure_reason = code;
+  }
+  return want;
+};
+
 // ─── 1. Legacy responses: unchanged outputs ─────────────────────────────────
 
 describe('legacy responses give the outputs the app has always given', () => {
@@ -87,7 +117,11 @@ describe('legacy responses give the outputs the app has always given', () => {
         expect(typeof got[ADDED]).toBe('boolean');
         delete got[ADDED];
       }
-      if (JSON.stringify(got) !== JSON.stringify(frozen)) mismatches.push(name);
+      if (name.startsWith('assess__') && !got.__error) {
+        expect(Array.isArray(got.more_claims)).toBe(true);
+        delete got.more_claims;
+      }
+      if (JSON.stringify(got) !== JSON.stringify(intended(name, frozen))) mismatches.push(name);
     }
     expect(mismatches).toEqual([]);
   });
@@ -307,13 +341,22 @@ describe('creates.assess rows', () => {
     expect(out.claims[0]).toMatchObject({
       verdict: 'Error',
       confidence: 'low',
-      passed: false,
+      passed: null,
       error_code: 'no_claim',
       hint: 'Hint.',
       identified_claims: [],
     });
     expect(out.not_a_claim).toBe(true);
     expect(out.status).toBe('ok');
+  });
+
+  it('lists the claims past the per-call limit from the answer\'s top-level more_claims', async () => {
+    for (const shape of ['legacy', 'canonical']) {
+      const body = loadFixture(shape, 'assess__single_text_over_wave_more_claims');
+      expect(Array.isArray(body.more_claims) && body.more_claims.length).toBeGreaterThan(0);
+      const out = await run(body);
+      expect(out.more_claims).toEqual(body.more_claims);
+    }
   });
 
   it('reads more_claims as the other claims found', async () => {
@@ -422,12 +465,13 @@ describe('creates.verify_claim reads the failure block and the nested callback',
       verify.performResume,
       resume({ rawRequest: signed(envelope('verification.failed', { ...body, task_id: TASK_ID })) }),
     );
-    // As the flat callback always read: the code in `error`, no
-    // failure_reason on this path.
+    // Read as the status route reads it: the sentence in `error`, the code in
+    // `failure_reason` (before this change this path put the code in `error` and
+    // left `failure_reason` empty).
     expect(out).toMatchObject({
       status: 'failed',
-      error: 'not_a_claim',
-      failure_reason: '',
+      error: body.failure.detail,
+      failure_reason: 'not_a_claim',
       failure_class: 'invalid_input',
       retryable: false,
     });

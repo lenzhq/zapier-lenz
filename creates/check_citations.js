@@ -167,7 +167,7 @@ const perform = async (z, bundle) => {
 
   if (bundle.meta && bundle.meta.isLoadingSample) {
     await requireWebhookSecretWhileTesting(z, client, ACTION_LABEL);
-    return { ...SAMPLE };
+    return structuredClone(SAMPLE);
   }
 
   const input = citecheckInput(bundle);
@@ -232,7 +232,7 @@ module.exports = {
         required: false,
         placeholder: '20',
         helpText:
-          'Leave blank to check up to 20 citations, the most one check takes; a larger number counts as 20. Enter a smaller number to check only the first ones in the draft. A link used twice counts twice. If the draft has more citations than this number, Citation Limit Reached is true and the rest are not checked. Each checked citation costs 1 credit; one Lenz could not read is not charged.',
+          'Leave blank, or enter 0 or a negative number, to check up to 20 citations, the most one check takes; a larger number counts as 20. Enter a smaller number to check only the first ones in the draft. A link used twice counts twice. If the draft has more citations than this number, Citation Limit Reached is true and the rest are not checked. Each checked citation costs 1 credit; one Lenz could not read is not charged.',
       },
       languageField(),
     ],

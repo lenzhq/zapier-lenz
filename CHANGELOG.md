@@ -3,6 +3,14 @@
 User-facing changes to the Lenz integration for Zapier. Build and release
 mechanics live in [README.md](README.md#building-and-pushing).
 
+## Unreleased
+
+- Fix: **Assess (Fast) no longer hides the claims it did not check.** A text with more claims than one call assesses (20) used to give 20 rows and nothing about the rest. The rest now come back in a new output, **Claims Not Checked** (`more_claims`), a list you can send on as their own steps. It is empty when there are none, and it is not the same as a row's **Other Claims Found**.
+- Fix: **Passed is empty when there is no verdict.** On Assess (Fast), an `Error` row, and on Verify a Claim a result with no real verdict, gave `Passed: false`, so a Zap's "claim failed" branch fired for a claim that was never checked. They now give an empty Passed, as the README has always said, and so does a verdict label this app does not know (one the API adds later), which used to give `false` too. A Zap that branched on "Passed is false" for an Error row will stop matching it: send an empty Passed (or `Verdict` is `Error`) to its own path.
+- Fix: **A failed Verify a Claim now says why on a live run.** Read from Lenz's signed callback it gave the code in Error and an empty Failure Reason. It now gives what happened in **Error** and the code in **Failure Reason**, as a read from the status route does. The code is the same on both; the sentence can be worded a little differently, because the status route gets its own from the API. A Zap that matched `Error` on a code such as `not_a_claim` should match **Failure Reason** instead; one that checked that Failure Reason is empty on a failure will no longer match.
+- Fix: a sample shown while testing is now a fresh copy for each run, so nothing a run changes can show up in the next one.
+- Docs: the Maximum Citations to Check help text now says that 0 or a negative number, like a blank field, checks up to 20.
+
 ## 2.3.0
 
 - Update: **Test in the Zap editor now checks your claim for real on Assess (Fast).** It used to return a built-in example (the Eiffel Tower claim), which looked like a wrong answer for whatever you had mapped. A test now takes about 15 seconds and uses 1 credit per claim assessed, like a turned-on Zap. The same Zap sending the same text and language again within the same clock hour gets the stored answer back at no charge, whether that was a test or a live run; a new hour is a new check. With no text mapped yet, Test still shows the example. A long text with many claims can take longer than the 30 seconds Zapier gives a test step; Test then shows the example, marked `SAMPLE, not a result for your claim`, with a Message saying the test got no result in time, instead of an error. The check may still finish and use credits; clicking Test again within the hour returns its stored answer, while a different text is a new check. A live run is unchanged. No output field changes.
