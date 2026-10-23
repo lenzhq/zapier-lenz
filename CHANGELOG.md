@@ -3,6 +3,10 @@
 User-facing changes to the Lenz integration for Zapier. Build and release
 mechanics live in [README.md](README.md#building-and-pushing).
 
+## Unreleased
+
+- Docs: the Review a Draft Status row now says why a review can come back `queued`, `assessing` or `verifying` (Zapier resumes on the first message to its callback address, and a covered account's deep check can send a certificate message first) and how to read the finished review by its Review ID. Nothing the action does changes.
+
 ## 2.3.1
 
 - Fix: **Assess (Fast) no longer hides the claims it did not check.** A text with more claims than one call assesses (20) used to give 20 rows and nothing about the rest. The rest now come back in a new output, **Claims Not Checked** (`more_claims`), a list you can send on as their own steps. It is empty when there are none, and it is not the same as a row's **Other Claims Found**.
