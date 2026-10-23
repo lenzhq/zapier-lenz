@@ -12,6 +12,7 @@ const {
 } = require('../lib/signed-callback');
 const { shapeCitation, shapeCitationIssue, CITATION_CHILDREN, CITATION_ISSUE_CHILDREN } = require('../lib/citations');
 const { NO_FAILURE, isTerminal, shapeJobFailure, citationLimit } = require('../lib/jobs');
+const { readFailure } = require('../lib/shapes');
 
 // Check Citations: POST /citecheck reads each source a draft cites and checks
 // whether it says what the draft attributes to it. Usually seconds, but the
@@ -127,6 +128,34 @@ const shapeCitecheck = (citecheckId, check) => {
   };
 };
 
+// The API accepts a check when the account can afford one citation, counts the
+// citations, and only then fails the job `insufficient_credits` ("This check
+// needs 3 credits, one per citation it checks. Nothing was charged."). A
+// balance of zero is refused at submit with a 402 and halts the Zap; this is
+// the same state one step later, so it halts the Zap too instead of ending the
+// step "successfully" with a failed check in its data. HaltedError, not Error:
+// a spent balance is a state to fix, not a failed run, and must not count toward
+// the error rate that turns a Zap off. A halted task is not retried: after
+// adding credits, the Zap checks again on its next trigger (a paid plan can
+// also replay the whole Zap from its history, which repeats the earlier steps).
+//
+// The words are the API's own (its hint, else its detail), read from the raw
+// failure before it is shaped, because the shaped `error` keeps only the hint
+// or the code. Nothing here states an amount or says what was charged.
+const PLANS_URL = 'https://lenz.io/plans';
+const SHORT_BALANCE = 'insufficient_credits';
+
+const haltIfShortBalance = (z, citecheckId, check) => {
+  if (!check || check.status !== 'failed') return;
+  const failure = readFailure({ failure: check.failure });
+  if (failure.code !== SHORT_BALANCE) return;
+  const said = failure.hint || failure.detail || 'The Lenz balance ran out after this citation check was accepted.';
+  throw new z.errors.HaltedError(
+    `${said} Add credits or upgrade at ${PLANS_URL}. This step will not retry on its own: the Zap checks again on its next trigger. ` +
+      `(Citation Check ${check.citecheck_id || citecheckId})`,
+  );
+};
+
 const fromSignedCitecheck = (bundle) => {
   const parsed = parseSignedCallback(bundle);
   if (!parsed.event) return parsed;
@@ -141,7 +170,7 @@ const fromSignedCitecheck = (bundle) => {
   if (!event.citecheck || typeof event.citecheck !== 'object' || !event.citecheck.status) {
     return { fallback: 'callback carried no citation check' };
   }
-  return { output: shapeCitecheck(citecheckId, event.citecheck) };
+  return { output: shapeCitecheck(citecheckId, event.citecheck), check: event.citecheck };
 };
 
 const citecheckInput = (bundle) => {
@@ -194,6 +223,7 @@ const performResume = async (z, bundle) => {
   const signed = fromSignedCitecheck(bundle);
   if (signed.output) {
     z.console.log('Citation check read from the signed Lenz callback (no API call).');
+    haltIfShortBalance(z, bundle.outputData.citecheck_id, signed.check);
     return signed.output;
   }
   z.console.log(`Citation check read by id: ${signed.fallback}.`);
@@ -201,6 +231,7 @@ const performResume = async (z, bundle) => {
   const check = await lenzClient(bundle)
     .getCitecheck(citecheckId)
     .catch((err) => mapLenzError(z, err));
+  haltIfShortBalance(z, citecheckId, check);
   return shapeCitecheck(citecheckId, check);
 };
 
