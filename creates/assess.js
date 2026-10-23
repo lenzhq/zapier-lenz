@@ -177,11 +177,13 @@ const assessKey = (z, bundle) =>
 // five with four or more claims), so the call is abandoned at CALL_TIMEOUT_MS.
 // A live run replays; a person testing in the editor is shown the example,
 // marked, and told why, rather than an error. The server may still finish the
-// check, and a Test and a live run share one Idempotency-Key (see assessKey),
-// so clicking Test again in the same hour can be answered from the stored result.
+// check and charge for it, and a Test and a live run share one Idempotency-Key
+// (see assessKey), so clicking Test again in the same hour can be answered from
+// the stored result; a different text, or a new hour, is a new check.
 const EDITOR_TIMEOUT_MESSAGE =
-  "Lenz did not finish within Zapier's 30 seconds for a test, so this is a sample, not a result for " +
-  'your claim. Try a shorter text, or click Test again.';
+  "This test did not get a result within Zapier's 30 seconds, so this is a sample, not a result for " +
+  'your claim. The check may still finish and use credits. Click Test again within the hour to get ' +
+  'its stored answer, or try a shorter text (a different text is a new check).';
 
 const EDITOR_TIMED_OUT = Symbol('editor test ran out of the call budget');
 
@@ -191,11 +193,15 @@ const editorTimeoutSample = () => ({
   claims: SAMPLE.claims.map((c) => ({ ...c, claim: `SAMPLE, not a result for your claim: ${c.claim}` })),
 });
 
-// Our abort fires at CALL_TIMEOUT_MS and the SDK reports it as any other
-// no-response failure, so a timeout is told from a DNS failure or a reset by how
-// long the call ran. A second under the budget, for clock slack.
+// Our abort fires at CALL_TIMEOUT_MS and the SDK reports it as a no-response
+// failure like a DNS error or a reset, but its message names what happened:
+// `AbortError` when the request was aborted, "timed out reading the response
+// body" when the body read was. A reset says `fetch failed`. Both the message
+// and the elapsed time must say timeout, a second under the budget for clock
+// slack, so a reset 27 s in is still an error.
+const TIMEOUT_MESSAGE = /AbortError|timed out reading the response body/;
 const ranOutOfBudget = (err, startedAt) =>
-  isNoResponse(err) && Date.now() - startedAt >= CALL_TIMEOUT_MS - 1000;
+  isNoResponse(err) && TIMEOUT_MESSAGE.test(String(err.message)) && Date.now() - startedAt >= CALL_TIMEOUT_MS - 1000;
 
 // Fast 3-model panel verdict (~15s) — one entry per claim found in the
 // text. Well under Zapier's 30s action timeout, so a live run is a plain

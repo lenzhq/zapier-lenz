@@ -696,49 +696,70 @@ describe('creates.assess', () => {
   // call budget shows a marked example and says so.
   describe('while loading a sample, when the check runs out of the call budget', () => {
     const T = Date.UTC(2026, 9, 23, 10, 30, 0);
+    const ABORT = 'POST /assess failed after 1 attempts: AbortError: This operation was aborted';
+    const RESET = 'POST /assess failed after 1 attempts: TypeError: fetch failed';
     const bundleFor = (isLoadingSample) => ({
       authData: { access_token: 'lenz_good' },
       inputData: { text: 'A long paragraph with many claims.' },
       meta: isLoadingSample ? { isLoadingSample: true } : {},
     });
+    let now;
+    beforeEach(() => {
+      now = jest.spyOn(Date, 'now').mockReturnValue(T);
+    });
+    afterEach(() => {
+      now.mockRestore();
+    });
     // The clock advances inside the call, the way a real abort at 28 s would.
-    const clientThatFailsAfter = (elapsedMs, now) =>
+    const clientThatFails = (message, elapsedMs) =>
       mockClient({
         assess: jest.fn(async () => {
           now.mockReturnValue(T + elapsedMs);
-          throw new LenzError({ message: 'aborted' });
+          throw new LenzError({ message });
         }),
       });
 
     it('returns the example, marked, with a message, instead of an error', async () => {
-      const now = jest.spyOn(Date, 'now').mockReturnValue(T);
-      LenzClient.mockImplementation(() => clientThatFailsAfter(28000, now));
+      LenzClient.mockImplementation(() => clientThatFails(ABORT, 28000));
 
       const result = await appTester(App.creates.assess.operation.perform, bundleFor(true));
-      now.mockRestore();
 
       expect(result.status).toBe('ok');
       expect(result.claims[0].claim).toMatch(/^SAMPLE, not a result for your claim/);
-      expect(result.message).toMatch(/did not finish within Zapier's 30 seconds/);
+      expect(result.message).toMatch(/did not get a result within Zapier's 30 seconds/);
+      expect(result.message).toMatch(/may still finish and use credits/);
     });
 
-    it('still throws a replay for a failure that was not a timeout (no response, fast)', async () => {
-      const now = jest.spyOn(Date, 'now').mockReturnValue(T);
-      LenzClient.mockImplementation(() => clientThatFailsAfter(200, now));
+    it('does the same when it was the response body read that was aborted', async () => {
+      LenzClient.mockImplementation(() =>
+        clientThatFails('POST /assess timed out reading the response body', 28000),
+      );
+      const result = await appTester(App.creates.assess.operation.perform, bundleFor(true));
+      expect(result.claims[0].claim).toMatch(/^SAMPLE/);
+    });
+
+    it('still throws a replay for a no-response failure that was not an abort, even 27.5 s in', async () => {
+      LenzClient.mockImplementation(() => clientThatFails(RESET, 27500));
 
       const err = await captureCreateError(App.creates.assess.operation.perform, bundleFor(true));
-      now.mockRestore();
+
+      expect(err).toBeTruthy();
+      expect(err.name).toBe('ThrottledError');
+    });
+
+    it('still throws a replay for an abort that came early', async () => {
+      LenzClient.mockImplementation(() => clientThatFails(ABORT, 200));
+
+      const err = await captureCreateError(App.creates.assess.operation.perform, bundleFor(true));
 
       expect(err).toBeTruthy();
       expect(err.name).toBe('ThrottledError');
     });
 
     it('still throws a replay on a live run that times out', async () => {
-      const now = jest.spyOn(Date, 'now').mockReturnValue(T);
-      LenzClient.mockImplementation(() => clientThatFailsAfter(28000, now));
+      LenzClient.mockImplementation(() => clientThatFails(ABORT, 28000));
 
       const err = await captureCreateError(App.creates.assess.operation.perform, bundleFor(false));
-      now.mockRestore();
 
       expect(err).toBeTruthy();
       expect(err.name).toBe('ThrottledError');
