@@ -3,7 +3,7 @@
 User-facing changes to the Lenz integration for Zapier. Build and release
 mechanics live in [README.md](README.md#building-and-pushing).
 
-## Unreleased
+## 2.3.1
 
 - Fix: **Assess (Fast) no longer hides the claims it did not check.** A text with more claims than one call assesses (20) used to give 20 rows and nothing about the rest. The rest now come back in a new output, **Claims Not Checked** (`more_claims`), a list you can send on as their own steps. It is empty when there are none, and it is not the same as a row's **Other Claims Found**.
 - Fix: **Passed is empty when there is no verdict.** On Assess (Fast), an `Error` row, and on Verify a Claim a result with no real verdict, gave `Passed: false`, so a Zap's "claim failed" branch fired for a claim that was never checked. They now give an empty Passed, as the README has always said, and so does a verdict label this app does not know (one the API adds later), which used to give `false` too. A Zap that branched on "Passed is false" for an Error row will stop matching it: send an empty Passed (or `Verdict` is `Error`) to its own path.
