@@ -1,6 +1,6 @@
 'use strict';
 
-const { mapLenzError } = require('../lib/errors');
+const { mapLenzError, isNoResponse } = require('../lib/errors');
 const { replayKey, secondsToNextBucket, HOUR_MS } = require('../lib/replay-key');
 const { lenzClient, CALL_TIMEOUT_MS } = require('../client');
 const { languageField, LANGUAGE_HELP_TEXT_AUTO } = require('../lib/languages');
@@ -172,6 +172,31 @@ const shapeRow = (c) => ({
 const assessKey = (z, bundle) =>
   replayKey(z, bundle, [(bundle.inputData || {}).language, (bundle.inputData || {}).text], HOUR_MS);
 
+// What a Test shows when the check ran out of the call budget. Zapier gives a
+// test step 30 s and a long text with many claims can take longer (about one in
+// five with four or more claims), so the call is abandoned at CALL_TIMEOUT_MS.
+// A live run replays; a person testing in the editor is shown the example,
+// marked, and told why, rather than an error. The server may still finish the
+// check, and a Test and a live run share one Idempotency-Key (see assessKey),
+// so clicking Test again in the same hour can be answered from the stored result.
+const EDITOR_TIMEOUT_MESSAGE =
+  "Lenz did not finish within Zapier's 30 seconds for a test, so this is a sample, not a result for " +
+  'your claim. Try a shorter text, or click Test again.';
+
+const EDITOR_TIMED_OUT = Symbol('editor test ran out of the call budget');
+
+const editorTimeoutSample = () => ({
+  ...SAMPLE,
+  message: EDITOR_TIMEOUT_MESSAGE,
+  claims: SAMPLE.claims.map((c) => ({ ...c, claim: `SAMPLE, not a result for your claim: ${c.claim}` })),
+});
+
+// Our abort fires at CALL_TIMEOUT_MS and the SDK reports it as any other
+// no-response failure, so a timeout is told from a DNS failure or a reset by how
+// long the call ran. A second under the budget, for clock slack.
+const ranOutOfBudget = (err, startedAt) =>
+  isNoResponse(err) && Date.now() - startedAt >= CALL_TIMEOUT_MS - 1000;
+
 // Fast 3-model panel verdict (~15s) — one entry per claim found in the
 // text. Well under Zapier's 30s action timeout, so a live run is a plain
 // sync call.
@@ -196,6 +221,8 @@ const perform = async (z, bundle) => {
   }
 
   const client = lenzClient(bundle);
+  const isEditorTest = Boolean(bundle.meta && bundle.meta.isLoadingSample);
+  const startedAt = Date.now();
   const result = await client
     .assess({
       text: bundle.inputData.text,
@@ -214,7 +241,12 @@ const perform = async (z, bundle) => {
       // 90s; creates/extract_claims.js pins it the same way.
       timeoutMs: CALL_TIMEOUT_MS,
     })
-    .catch((err) => mapLenzError(z, err));
+    .catch((err) => {
+      if (isEditorTest && ranOutOfBudget(err, startedAt)) return EDITOR_TIMED_OUT;
+      return mapLenzError(z, err);
+    });
+
+  if (result === EDITOR_TIMED_OUT) return editorTimeoutSample();
 
   if (!result.claims || result.claims.length === 0) {
     // The earlier shape says why in `error`; the newer one in a `failure`

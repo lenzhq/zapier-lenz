@@ -7,7 +7,7 @@ jest.mock('lenz-io', () => {
   return { ...actual, Lenz: jest.fn() };
 });
 
-const { Lenz: LenzClient, LenzValidationError } = require('lenz-io');
+const { Lenz: LenzClient, LenzError, LenzValidationError } = require('lenz-io');
 const App = require('../index');
 
 const appTester = zapier.createAppTester(App);
@@ -688,6 +688,61 @@ describe('creates.assess', () => {
     const [testCall, liveCall] = client.assess.mock.calls;
     expect(testCall[0].idempotencyKey).toBeTruthy();
     expect(testCall[0].idempotencyKey).toBe(liveCall[0].idempotencyKey);
+  });
+
+  // A long text can take longer than Zapier's 30 s for a test step. The SDK's abort
+  // arrives as a no-response error, which is a ThrottledError (a replay) on a live
+  // run. In the editor that read as a failed test, so a test that ran out of the
+  // call budget shows a marked example and says so.
+  describe('while loading a sample, when the check runs out of the call budget', () => {
+    const T = Date.UTC(2026, 9, 23, 10, 30, 0);
+    const bundleFor = (isLoadingSample) => ({
+      authData: { access_token: 'lenz_good' },
+      inputData: { text: 'A long paragraph with many claims.' },
+      meta: isLoadingSample ? { isLoadingSample: true } : {},
+    });
+    // The clock advances inside the call, the way a real abort at 28 s would.
+    const clientThatFailsAfter = (elapsedMs, now) =>
+      mockClient({
+        assess: jest.fn(async () => {
+          now.mockReturnValue(T + elapsedMs);
+          throw new LenzError({ message: 'aborted' });
+        }),
+      });
+
+    it('returns the example, marked, with a message, instead of an error', async () => {
+      const now = jest.spyOn(Date, 'now').mockReturnValue(T);
+      LenzClient.mockImplementation(() => clientThatFailsAfter(28000, now));
+
+      const result = await appTester(App.creates.assess.operation.perform, bundleFor(true));
+      now.mockRestore();
+
+      expect(result.status).toBe('ok');
+      expect(result.claims[0].claim).toMatch(/^SAMPLE, not a result for your claim/);
+      expect(result.message).toMatch(/did not finish within Zapier's 30 seconds/);
+    });
+
+    it('still throws a replay for a failure that was not a timeout (no response, fast)', async () => {
+      const now = jest.spyOn(Date, 'now').mockReturnValue(T);
+      LenzClient.mockImplementation(() => clientThatFailsAfter(200, now));
+
+      const err = await captureCreateError(App.creates.assess.operation.perform, bundleFor(true));
+      now.mockRestore();
+
+      expect(err).toBeTruthy();
+      expect(err.name).toBe('ThrottledError');
+    });
+
+    it('still throws a replay on a live run that times out', async () => {
+      const now = jest.spyOn(Date, 'now').mockReturnValue(T);
+      LenzClient.mockImplementation(() => clientThatFailsAfter(28000, now));
+
+      const err = await captureCreateError(App.creates.assess.operation.perform, bundleFor(false));
+      now.mockRestore();
+
+      expect(err).toBeTruthy();
+      expect(err.name).toBe('ThrottledError');
+    });
   });
 
   // The API retired `ambiguous` on 2026-09-12 (lenz-io 2.13.0 changelog): a
