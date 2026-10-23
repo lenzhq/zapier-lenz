@@ -7,7 +7,7 @@ jest.mock('lenz-io', () => {
   return { ...actual, Lenz: jest.fn() };
 });
 
-const { Lenz: LenzClient, LenzValidationError } = require('lenz-io');
+const { Lenz: LenzClient, LenzError, LenzValidationError } = require('lenz-io');
 const App = require('../index');
 
 const appTester = zapier.createAppTester(App);
@@ -70,12 +70,16 @@ describe('creates.verify_claim', () => {
     const result = await appTester(App.creates.verify_claim.operation.perform, bundle);
 
     // Fully canned Eiffel-Tower example — the real input claim is NOT spliced
-    // in, so a chained test reads as obvious example data, not a mismatch.
+    // in, so a verdict is never attached to the user's own text.
     expect(result).toMatchObject({
       status: 'completed',
       verification_id: 'ab12cd34',
       claim: expect.stringContaining('Eiffel Tower'),
     });
+    // And it says so where a person looks first: the Claim field, not only the
+    // two prose fields. Without that a test reads as a wrong answer.
+    expect(result.claim).toMatch(/^SAMPLE/);
+    expect(result.claim).not.toContain('A different claim.');
     // Free usage() call only; NO credit-spending verify submission.
     expect(client.usage).toHaveBeenCalled();
     expect(client.verify).not.toHaveBeenCalled();
@@ -602,15 +606,164 @@ describe('creates.assess', () => {
     expect(result).toMatchObject({ status: 'no_claim', message: 'No claim found.' });
   });
 
-  it('stubs sample data and makes NO real call while loading a sample (no assess credit spent on a test click)', async () => {
+  // Test in the Zap editor checks the claim the user mapped, for real: ~15 s and
+  // one credit per claim, inside the editor's 30 s. A canned example answered
+  // "Spotify was founded in 2020" with the Eiffel Tower and read as a wrong answer.
+  it('while loading a sample: checks the mapped text for real, under the call budget, and returns that answer', async () => {
+    const client = mockClient({
+      assess: jest.fn().mockResolvedValue({
+        claims: [{ claim: 'Spotify was founded in 2020.', verdict: 'False', confidence: 'high', verification_url: null }],
+      }),
+    });
+    LenzClient.mockImplementation(() => client);
+
+    const bundle = {
+      authData: { access_token: 'lenz_good' },
+      inputData: { text: 'Spotify was founded in 2020.' },
+      meta: { isLoadingSample: true },
+    };
+    const result = await appTester(App.creates.assess.operation.perform, bundle);
+
+    expect(client.assess).toHaveBeenCalledTimes(1);
+    expect(client.assess).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Spotify was founded in 2020.', timeoutMs: 28000 }),
+    );
+    expect(result.status).toBe('ok');
+    expect(result.claims[0]).toMatchObject({ claim: 'Spotify was founded in 2020.', verdict: 'False', passed: false });
+  });
+
+  it('while loading a sample with nothing mapped yet: returns the example and makes no call', async () => {
     const client = mockClient({ assess: jest.fn() });
     LenzClient.mockImplementation(() => client);
 
-    const bundle = { authData: { access_token: 'lenz_good' }, inputData: { text: 'A' }, meta: { isLoadingSample: true } };
-    const result = await appTester(App.creates.assess.operation.perform, bundle);
-
-    expect(result.status).toBe('ok');
+    for (const inputData of [undefined, {}, { text: '   ' }]) {
+      const bundle = { authData: { access_token: 'lenz_good' }, inputData, meta: { isLoadingSample: true } };
+      const result = await appTester(App.creates.assess.operation.perform, bundle);
+      expect(result.status).toBe('ok');
+      expect(result.claims[0].claim).toContain('Eiffel Tower');
+    }
     expect(client.assess).not.toHaveBeenCalled();
+  });
+
+  it('while loading a sample: a mapped value that is not a string counts as nothing mapped', async () => {
+    const client = mockClient({ assess: jest.fn() });
+    LenzClient.mockImplementation(() => client);
+
+    for (const text of [0, false, 123, {}, ['a']]) {
+      const bundle = {
+        authData: { access_token: 'lenz_good' },
+        inputData: { text },
+        meta: { isLoadingSample: true },
+      };
+      const result = await appTester(App.creates.assess.operation.perform, bundle);
+      expect(result.claims[0].claim).toContain('Eiffel Tower');
+    }
+    expect(client.assess).not.toHaveBeenCalled();
+  });
+
+  // Test and a live run of the same Zap share one Idempotency-Key (it is built
+  // from the Zap, the language, the text and the hour, not from isLoadingSample),
+  // so a Test followed by a live run in the same hour is answered from the stored
+  // result. The CHANGELOG says so; this pins it.
+  it('sends the same Idempotency-Key from the editor Test and from a live run in the same hour', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(Date.UTC(2026, 9, 23, 10, 30, 0));
+    const client = mockClient({
+      assess: jest.fn().mockResolvedValue({
+        claims: [{ claim: 'A', verdict: 'True', confidence: 'high', verification_url: null }],
+      }),
+    });
+    LenzClient.mockImplementation(() => client);
+
+    const base = {
+      authData: { access_token: 'lenz_good' },
+      inputData: { text: 'A' },
+    };
+    await appTester(App.creates.assess.operation.perform, {
+      ...base,
+      meta: { isLoadingSample: true, zap: { id: 7 } },
+    });
+    await appTester(App.creates.assess.operation.perform, { ...base, meta: { zap: { id: 7 } } });
+    now.mockRestore();
+
+    const [testCall, liveCall] = client.assess.mock.calls;
+    expect(testCall[0].idempotencyKey).toBeTruthy();
+    expect(testCall[0].idempotencyKey).toBe(liveCall[0].idempotencyKey);
+  });
+
+  // A long text can take longer than Zapier's 30 s for a test step. The SDK's abort
+  // arrives as a no-response error, which is a ThrottledError (a replay) on a live
+  // run. In the editor that read as a failed test, so a test that ran out of the
+  // call budget shows a marked example and says so.
+  describe('while loading a sample, when the check runs out of the call budget', () => {
+    const T = Date.UTC(2026, 9, 23, 10, 30, 0);
+    const ABORT = 'POST /assess failed after 1 attempts: AbortError: This operation was aborted';
+    const RESET = 'POST /assess failed after 1 attempts: TypeError: fetch failed';
+    const bundleFor = (isLoadingSample) => ({
+      authData: { access_token: 'lenz_good' },
+      inputData: { text: 'A long paragraph with many claims.' },
+      meta: isLoadingSample ? { isLoadingSample: true } : {},
+    });
+    let now;
+    beforeEach(() => {
+      now = jest.spyOn(Date, 'now').mockReturnValue(T);
+    });
+    afterEach(() => {
+      now.mockRestore();
+    });
+    // The clock advances inside the call, the way a real abort at 28 s would.
+    const clientThatFails = (message, elapsedMs) =>
+      mockClient({
+        assess: jest.fn(async () => {
+          now.mockReturnValue(T + elapsedMs);
+          throw new LenzError({ message });
+        }),
+      });
+
+    it('returns the example, marked, with a message, instead of an error', async () => {
+      LenzClient.mockImplementation(() => clientThatFails(ABORT, 28000));
+
+      const result = await appTester(App.creates.assess.operation.perform, bundleFor(true));
+
+      expect(result.status).toBe('ok');
+      expect(result.claims[0].claim).toMatch(/^SAMPLE, not a result for your claim/);
+      expect(result.message).toMatch(/did not get a result within Zapier's 30 seconds/);
+      expect(result.message).toMatch(/may still finish and use credits/);
+    });
+
+    it('does the same when it was the response body read that was aborted', async () => {
+      LenzClient.mockImplementation(() =>
+        clientThatFails('POST /assess timed out reading the response body', 28000),
+      );
+      const result = await appTester(App.creates.assess.operation.perform, bundleFor(true));
+      expect(result.claims[0].claim).toMatch(/^SAMPLE/);
+    });
+
+    it('still throws a replay for a no-response failure that was not an abort, even 27.5 s in', async () => {
+      LenzClient.mockImplementation(() => clientThatFails(RESET, 27500));
+
+      const err = await captureCreateError(App.creates.assess.operation.perform, bundleFor(true));
+
+      expect(err).toBeTruthy();
+      expect(err.name).toBe('ThrottledError');
+    });
+
+    it('still throws a replay for an abort that came early', async () => {
+      LenzClient.mockImplementation(() => clientThatFails(ABORT, 200));
+
+      const err = await captureCreateError(App.creates.assess.operation.perform, bundleFor(true));
+
+      expect(err).toBeTruthy();
+      expect(err.name).toBe('ThrottledError');
+    });
+
+    it('still throws a replay on a live run that times out', async () => {
+      LenzClient.mockImplementation(() => clientThatFails(ABORT, 28000));
+
+      const err = await captureCreateError(App.creates.assess.operation.perform, bundleFor(false));
+
+      expect(err).toBeTruthy();
+      expect(err.name).toBe('ThrottledError');
+    });
   });
 
   // The API retired `ambiguous` on 2026-09-12 (lenz-io 2.13.0 changelog): a

@@ -1,6 +1,6 @@
 'use strict';
 
-const { mapLenzError } = require('../lib/errors');
+const { mapLenzError, isNoResponse } = require('../lib/errors');
 const { replayKey, secondsToNextBucket, HOUR_MS } = require('../lib/replay-key');
 const { lenzClient, CALL_TIMEOUT_MS } = require('../client');
 const { languageField, LANGUAGE_HELP_TEXT_AUTO } = require('../lib/languages');
@@ -172,14 +172,54 @@ const shapeRow = (c) => ({
 const assessKey = (z, bundle) =>
   replayKey(z, bundle, [(bundle.inputData || {}).language, (bundle.inputData || {}).text], HOUR_MS);
 
+// What a Test shows when the check ran out of the call budget. Zapier gives a
+// test step 30 s and a long text with many claims can take longer (about one in
+// five with four or more claims), so the call is abandoned at CALL_TIMEOUT_MS.
+// A live run replays; a person testing in the editor is shown the example,
+// marked, and told why, rather than an error. The server may still finish the
+// check and charge for it, and a Test and a live run share one Idempotency-Key
+// (see assessKey), so clicking Test again in the same hour can be answered from
+// the stored result; a different text, or a new hour, is a new check.
+const EDITOR_TIMEOUT_MESSAGE =
+  "This test did not get a result within Zapier's 30 seconds, so this is a sample, not a result for " +
+  'your claim. The check may still finish and use credits. Click Test again within the hour to get ' +
+  'its stored answer, or try a shorter text (a different text is a new check).';
+
+const EDITOR_TIMED_OUT = Symbol('editor test ran out of the call budget');
+
+const editorTimeoutSample = () => ({
+  ...SAMPLE,
+  message: EDITOR_TIMEOUT_MESSAGE,
+  claims: SAMPLE.claims.map((c) => ({ ...c, claim: `SAMPLE, not a result for your claim: ${c.claim}` })),
+});
+
+// Our abort fires at CALL_TIMEOUT_MS and the SDK reports it as a no-response
+// failure like a DNS error or a reset, but its message names what happened:
+// `AbortError` when the request was aborted, "timed out reading the response
+// body" when the body read was. A reset says `fetch failed`. Both the message
+// and the elapsed time must say timeout, a second under the budget for clock
+// slack, so a reset 27 s in is still an error.
+const TIMEOUT_MESSAGE = /AbortError|timed out reading the response body/;
+const ranOutOfBudget = (err, startedAt) =>
+  isNoResponse(err) && TIMEOUT_MESSAGE.test(String(err.message)) && Date.now() - startedAt >= CALL_TIMEOUT_MS - 1000;
+
 // Fast 3-model panel verdict (~15s) — one entry per claim found in the
 // text. Well under Zapier's 30s action timeout, so a live run is a plain
-// sync call. Editor testing (isLoadingSample) returns stubbed sample data and
-// makes NO real call, so a user never spends credits just for clicking "Test
-// step" while building their Zap. Auth is already validated at connection
-// time.
+// sync call.
+//
+// Editor testing (isLoadingSample) checks the mapped text for real, like a live
+// run: about 15 s against the editor's 30 s (the 28 s call budget stays), and
+// one credit per claim assessed. The same Zap sending the same text again in
+// the same hour bucket gets the stored answer back, free (see assessKey; a Test
+// and a live run share that key). It used to return a canned Eiffel Tower
+// verdict, which read as a wrong answer for whatever the user had mapped. Only
+// a test with no text mapped yet gets the example, because there is nothing to
+// check. Only a string counts as mapped text: a number or an object is not
+// something the field produces.
 const perform = async (z, bundle) => {
-  if (bundle.meta && bundle.meta.isLoadingSample) {
+  const rawText = (bundle.inputData || {}).text;
+  const mappedText = typeof rawText === 'string' ? rawText.trim() : '';
+  if (bundle.meta && bundle.meta.isLoadingSample && !mappedText) {
     // Copied, not returned by reference: on a warm container the platform
     // could mutate the module-level object and every later user of that
     // container would see it. creates/verify_claim.js already does this.
@@ -187,6 +227,8 @@ const perform = async (z, bundle) => {
   }
 
   const client = lenzClient(bundle);
+  const isEditorTest = Boolean(bundle.meta && bundle.meta.isLoadingSample);
+  const startedAt = Date.now();
   const result = await client
     .assess({
       text: bundle.inputData.text,
@@ -205,7 +247,12 @@ const perform = async (z, bundle) => {
       // 90s; creates/extract_claims.js pins it the same way.
       timeoutMs: CALL_TIMEOUT_MS,
     })
-    .catch((err) => mapLenzError(z, err));
+    .catch((err) => {
+      if (isEditorTest && ranOutOfBudget(err, startedAt)) return EDITOR_TIMED_OUT;
+      return mapLenzError(z, err);
+    });
+
+  if (result === EDITOR_TIMED_OUT) return editorTimeoutSample();
 
   if (!result.claims || result.claims.length === 0) {
     // The earlier shape says why in `error`; the newer one in a `failure`
@@ -298,7 +345,7 @@ module.exports = {
         type: 'text',
         required: true,
         helpText:
-          'The claim to check. If it contains several claims, each is assessed separately. Up to 10,000 characters; longer input is cut off without warning, so send a long document to Extract Claims first.',
+          'The claim to check. If it contains several claims, each is assessed separately. Up to 10,000 characters; longer input is cut off without warning, so send a long document to Extract Claims first. Clicking Test checks this claim for real and uses 1 credit per claim assessed, like a turned-on Zap.',
       },
       languageField(LANGUAGE_HELP_TEXT_AUTO),
     ],
