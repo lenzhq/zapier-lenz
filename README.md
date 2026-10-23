@@ -312,13 +312,14 @@ with neither 1.3.3 nor 1.3.4 ever pushed, because 1.3.2 existed. 2.3.0 was refus
 2026-10-11 with "Version 2.3.0 requires 2.2.x to exist" while no 2.2.x did; pushing 2.2.0
 first cleared it.
 
-**After a promote, post the note.** A promote is a CLI action, so no workflow sees it. Post the one-line note to #key-system-events the way the SDK repos do on publish (the webhook is the same one they hold as `KEY_SYSTEM_EVENTS_WEBHOOK_URL`; pass it in the environment, never in a file):
+**After a promote, post the note.** A promote is a CLI action, so no workflow sees it. Post the one-line note to #key-system-events the way the SDK repos do on publish. The webhook is the #key-system-events webhook URL (Discord channel settings, Integrations; the SDK repos hold it as a repo secret, which cannot be read back). Enter it so it stays out of your shell history and out of any file:
 
 ```bash
-KEY_SYSTEM_EVENTS_WEBHOOK_URL=<webhook> bash scripts/announce-release.sh 2.3.1
+read -rs KEY_SYSTEM_EVENTS_WEBHOOK_URL; export KEY_SYSTEM_EVENTS_WEBHOOK_URL
+bash scripts/announce-release.sh 2.3.1
 ```
 
-`ANNOUNCE_DRY_RUN=1` prints the note and sends nothing.
+The script posts only when the version is the one in `package.json` and the webhook looks like a Discord webhook URL, and it hands the URL to curl on stdin, not as an argument. `ANNOUNCE_DRY_RUN=1` prints the note and sends nothing.
 
 **Do not run `zapier push` from Windows.** `zapier-platform-cli` 19.1.0 copies the
 project into `%TEMP%\zapier-<hash>` and archives it with that path embedded, so the
