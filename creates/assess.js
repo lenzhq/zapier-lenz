@@ -174,12 +174,21 @@ const assessKey = (z, bundle) =>
 
 // Fast 3-model panel verdict (~15s) — one entry per claim found in the
 // text. Well under Zapier's 30s action timeout, so a live run is a plain
-// sync call. Editor testing (isLoadingSample) returns stubbed sample data and
-// makes NO real call, so a user never spends credits just for clicking "Test
-// step" while building their Zap. Auth is already validated at connection
-// time.
+// sync call.
+//
+// Editor testing (isLoadingSample) checks the mapped text for real, like a live
+// run: about 15 s against the editor's 30 s (the 28 s call budget stays), and
+// one credit per claim assessed. The same Zap sending the same text again in
+// the same hour bucket gets the stored answer back, free (see assessKey; a Test
+// and a live run share that key). It used to return a canned Eiffel Tower
+// verdict, which read as a wrong answer for whatever the user had mapped. Only
+// a test with no text mapped yet gets the example, because there is nothing to
+// check. Only a string counts as mapped text: a number or an object is not
+// something the field produces.
 const perform = async (z, bundle) => {
-  if (bundle.meta && bundle.meta.isLoadingSample) {
+  const rawText = (bundle.inputData || {}).text;
+  const mappedText = typeof rawText === 'string' ? rawText.trim() : '';
+  if (bundle.meta && bundle.meta.isLoadingSample && !mappedText) {
     // Copied, not returned by reference: on a warm container the platform
     // could mutate the module-level object and every later user of that
     // container would see it. creates/verify_claim.js already does this.
@@ -298,7 +307,7 @@ module.exports = {
         type: 'text',
         required: true,
         helpText:
-          'The claim to check. If it contains several claims, each is assessed separately. Up to 10,000 characters; longer input is cut off without warning, so send a long document to Extract Claims first.',
+          'The claim to check. If it contains several claims, each is assessed separately. Up to 10,000 characters; longer input is cut off without warning, so send a long document to Extract Claims first. Clicking Test checks this claim for real and uses 1 credit per claim assessed, like a turned-on Zap.',
       },
       languageField(LANGUAGE_HELP_TEXT_AUTO),
     ],

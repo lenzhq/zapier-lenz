@@ -23,9 +23,11 @@ function isPassingVerdict(verdict) {
 // Realistic, internally coherent example (Eiffel Tower) — Zapier's build
 // guidelines want representative sample values ("'Bob', not 'string'"), not
 // placeholder text, for public review. The "this is a test sample" signal
-// lives in the action description (shown above the fields) and in the two
-// prose fields a user is likely to map into a downstream step on its own —
-// key_finding and executive_summary — NOT in the structured field values. A
+// lives in the action description (shown above the fields), in the two prose
+// fields a user is likely to map into a downstream step on its own —
+// key_finding and executive_summary — and in the Claim, the first thing read
+// in a test (a bare example claim beside a verdict read as a wrong answer to
+// whatever the user had mapped). The other structured values stay plain. A
 // coherent example also means a chained editor test (e.g. a final "send
 // email" step) reads as example data, never a mismatched real result; that
 // is why key_finding carries the marker too rather than a bare factual
@@ -37,7 +39,7 @@ const SAMPLE = {
   status: 'completed',
   passed: true,
   verification_id: 'ab12cd34',
-  claim: 'The Eiffel Tower is 330 metres tall.',
+  claim: 'SAMPLE, not a result for your claim: The Eiffel Tower is 330 metres tall.',
   verdict: 'True',
   confidence: 'high',
   lenz_score: 9,
@@ -511,7 +513,7 @@ module.exports = {
         type: 'text',
         required: true,
         helpText:
-          'The claim to investigate in depth. Up to 10,000 characters; longer input is cut off without warning. Clicking Test shows an example verdict so you can map the output fields; a turned-on Zap verifies this claim and returns the real result.',
+          'The claim to investigate in depth. Up to 10,000 characters; longer input is cut off without warning. Clicking Test does not check this claim: it shows an example verdict, marked SAMPLE, so you can map the output fields; a turned-on Zap verifies this claim and returns the real result.',
       },
       {
         key: 'sourceUrl',

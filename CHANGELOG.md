@@ -3,6 +3,11 @@
 User-facing changes to the Lenz integration for Zapier. Build and release
 mechanics live in [README.md](README.md#building-and-pushing).
 
+## 2.3.1
+
+- Update: **Test in the Zap editor now checks your claim for real on Assess (Fast).** It used to return a built-in example (the Eiffel Tower claim), which looked like a wrong answer for whatever you had mapped. A test now takes about 15 seconds and uses 1 credit per claim assessed, like a turned-on Zap. The same Zap sending the same text and language again within the same clock hour gets the stored answer back at no charge, whether that was a test or a live run; a new hour is a new check. With no text mapped yet, Test still shows the example. No output field changes.
+- Update: Verify a Claim's Test still shows an example, because a real check takes about 90 seconds and 10 credits, longer than the 30 seconds Zapier gives a step. The example's **Claim** now starts with `SAMPLE, not a result for your claim`, so it cannot be read as a verdict on your text. Review a Draft, Check Citations, Ask Follow-Up and Extract Claims are unchanged.
+
 ## 2.3.0
 
 - Update: when Lenz finds no public record of a claim, Verify a Claim gives the verdict `No Public Record`, an empty **Lenz Score**, and an empty **Passed** (not `false`): no public record would show this. Assess (Fast) reads such a row the same way. A Review a Draft that has such a claim lists it under Issues with that verdict, and its Outcome is `issues_found`. Send an empty Passed to its own path rather than the "failed" one. On the 2026-10-11 response version a failed verification's **Failure Reason** is one of `not_a_claim` (nothing to check), `upstream_unavailable`, `internal` or `cancelled`, where it used to name the pipeline step that stopped; **Failure Class** and **Retryable** are unchanged.
