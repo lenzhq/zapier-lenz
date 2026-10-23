@@ -2,7 +2,7 @@
 
 const { mapLenzError } = require('../lib/errors');
 const { NO_FAILURE } = require('../lib/jobs');
-const { isObject, readFailure, outputCode } = require('../lib/shapes');
+const { isObject, readFailure, outputCode, passedFrom } = require('../lib/shapes');
 const {
   parseSignedCallback,
   requireWebhookSecretWhileTesting,
@@ -11,14 +11,6 @@ const {
 } = require('../lib/signed-callback');
 const { lenzClient } = require('../client');
 const { languageField, LANGUAGE_HELP_TEXT_AUTO } = require('../lib/languages');
-
-// `passed` for a verdict label. 'No Public Record' is neither a pass nor a
-// failure: Lenz found no public record of the claim, which does not make it
-// false, so it is null, like every answer that is not a verdict.
-function isPassingVerdict(verdict) {
-  if (verdict === 'No Public Record') return null;
-  return verdict === 'True' || verdict === 'Mostly True';
-}
 
 // Realistic, internally coherent example (Eiffel Tower) — Zapier's build
 // guidelines want representative sample values ("'Bob', not 'string'"), not
@@ -225,7 +217,7 @@ const perform = async (z, bundle) => {
   // (lib/signed-callback.js) and returns the sample.
   if (bundle.meta && bundle.meta.isLoadingSample) {
     await requireWebhookSecretWhileTesting(z, client, 'Verify a Claim');
-    return { ...SAMPLE };
+    return structuredClone(SAMPLE);
   }
 
   const callbackUrl = z.generateCallbackUrl();
@@ -324,27 +316,31 @@ const fromSignedCallback = (bundle) => {
 };
 
 // A failed verification, from the signed callback in either shape, read into
-// what this output has always given for a failed callback. The earlier
-// (flat) payload carries the failure CODE in `error` and no `failure_reason`;
-// the newer one nests a `failure: { code, detail, ... }` block on the
-// verification. Both read the same: `error` is the code (`not_a_claim` for
-// "nothing checkable"), `failure_reason` stays empty as it always has on
-// this path, and the class and retryable flag come from the block.
+// the same two fields the status route gives:
+//
+//   error           what happened, as a sentence
+//   failure_reason  the machine word (`not_a_claim` for "nothing checkable",
+//                   or the earlier name of the step that stopped)
+//
+// The newer payload nests a `failure: { code, detail, ... }` block on the
+// verification, read exactly as a status body is (failedFromBody). The earlier
+// (flat) payload carries only the code, in `error`, and no sentence: the code
+// goes to `failure_reason` and `error` says "Pipeline stopped: <code>.", the
+// words the API itself uses for a failure it has no sentence for. Until 2.3.1
+// both paths put the code in `error` and left `failure_reason` empty on this
+// one, so a Zap that branched on Failure Reason saw nothing on a live run.
+const CODE_ONLY = /^[a-z][a-z0-9_]*$/;
+
 const failedFromCallback = (event, nested) => {
   const raw = event.raw || {};
   const block = (nested && nested.failure) || raw.failure;
-  if (isObject(block)) {
-    const f = readFailure({ failure: block });
-    return {
-      error: outputCode(f.code, 'not_a_claim'),
-      failure_reason: '',
-      failure_class: f.failureClass,
-      retryable: f.retryable,
-    };
-  }
+  if (isObject(block)) return failedFromBody({ failure: block });
+
+  const said = typeof event.error === 'string' ? event.error : '';
+  const isCode = CODE_ONLY.test(said);
   return {
-    error: event.error,
-    failure_reason: raw.failure_reason,
+    error: isCode ? `Pipeline stopped: ${said}.` : said,
+    failure_reason: (typeof raw.failure_reason === 'string' && raw.failure_reason) || (isCode ? said : ''),
     failure_class: event.failureClass,
     retryable: event.retryable,
   };
@@ -369,7 +365,7 @@ const failedFromBody = (body) => {
 const shapeCompleted = (taskId, result) => ({
       task_id: taskId,
       status: 'completed',
-      passed: isPassingVerdict(result.verdict),
+      passed: passedFrom(result.verdict),
       verification_id: result.verification_id || null,
       claim: result.claim || '',
       verdict: result.verdict || null,

@@ -113,6 +113,11 @@ const ALLOWED = {
   // An assessed row that failed on our side, and a review that could assess no claim.
   assess__list_mixed_rows: { claims: COLLAPSED },
   review__get_failed_every_assessment_failed: { error: SENTENCE, failure_reason: COLLAPSED },
+  // A failed callback in the earlier shape carries only the code, so its `error`
+  // reads "Pipeline stopped: <code>."; the newer one carries the API's sentence.
+  webhook__verification_failed_insufficient_evidence: { error: SENTENCE },
+  webhook__verification_failed_not_a_claim: { error: SENTENCE },
+  webhook__verification_failed_upstream_unavailable: { error: SENTENCE },
   // The failed poll's `error` is the API's sentence about the failure.
   verify__status_cancelled_durable: { error: SENTENCE },
   verify__status_failed_durable: { error: SENTENCE },

@@ -145,7 +145,7 @@ const perform = (z, bundle) => {
   if (isSample) {
     // Copied, not returned by reference — see the same note in
     // creates/assess.js and creates/verify_claim.js.
-    return Promise.resolve({ ...SAMPLE });
+    return Promise.resolve(structuredClone(SAMPLE));
   }
 
   const client = lenzClient(bundle);

@@ -843,7 +843,8 @@ describe('creates.assess', () => {
     expect(result.claims[1]).toEqual(
       expect.objectContaining({
         verdict: 'Error',
-        passed: false,
+        // No verdict, so no pass or fail: an empty Passed, as the README says.
+        passed: null,
         error_code: 'no_claim',
         hint: 'Send a statement of fact, not a greeting.',
         identified_claims: [],
@@ -948,7 +949,7 @@ describe('creates.assess', () => {
   // A transient failure inside a 200. The same condition thrown as a typed
   // 503 is mapped to ThrottledError and replayed (test/errors.test.js), so a
   // row-shaped one must not quietly read as "checked and did not pass" —
-  // which is what `status: ok, passed: false` says to a Filter.
+  // which is what `status: ok` and a verdict row says to a Filter.
   describe('transient Error rows', () => {
     const transientRow = (code) => ({
       claim: 'A',
@@ -1032,7 +1033,7 @@ describe('creates.assess', () => {
       expect(result.status).toBe('ok');
       expect(result.claims[0]).toEqual(expect.objectContaining({ passed: true, error_code: '' }));
       expect(result.claims[1]).toEqual(
-        expect.objectContaining({ passed: false, error_code: 'upstream_unavailable' }),
+        expect.objectContaining({ passed: null, error_code: 'upstream_unavailable' }),
       );
     });
 
@@ -1103,7 +1104,7 @@ describe('creates.assess', () => {
       for (const row of [final('internal'), failedRow({ code: 'upstream_unavailable', failure_class: 'internal', retryable: false })]) {
         const result = await runOk([row]);
         expect(result.status).toBe('ok');
-        expect(result.claims[0]).toEqual(expect.objectContaining({ verdict: 'Error', confidence: 'low', passed: false }));
+        expect(result.claims[0]).toEqual(expect.objectContaining({ verdict: 'Error', confidence: 'low', passed: null }));
       }
     });
 
