@@ -225,7 +225,7 @@ more than it looks. Since 1.5.0:
 | Condition | What Zapier does | Counts as an error? |
 |---|---|---|
 | Out of credits (402) | Halts the run with a top-up link | No |
-| Check Citations: the balance runs out after the check was accepted (the API counts the citations, finds the balance short and fails the check `insufficient_credits`) | Halts the run with the API's sentence and a top-up link, like a 402. The step is not retried on its own: add credits and the Zap checks again on its next trigger (a paid plan can also replay the whole Zap from its history, which repeats the earlier steps) | No |
+| Check Citations: the balance runs out after the check was accepted (2.3.1 and later) (the API counts the citations, finds the balance short and fails the check `insufficient_credits`) | Halts the run with the API's sentence and a top-up link, like a 402. The step is not retried on its own: add credits and the Zap checks again on its next trigger (a paid plan can also replay the whole Zap from its history, which repeats the earlier steps) | No |
 | Daily `/extract` cap (429) | Waits the stated time and replays | No |
 | Lenz at capacity, providers down, or citation checking unavailable (503) | Waits the stated time and replays | No |
 | Assess (Fast): every claim came back `Error` with `upstream_unavailable` or `timeout` | Waits until the next hour begins and replays — Error rows are free, so nothing was charged. The wait is tied to the hour because the replay key is; a sooner replay would be handed the same stored rows | No |
