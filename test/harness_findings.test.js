@@ -165,8 +165,7 @@ describe('3. A failed Verify from the signed callback', () => {
       failure_class: 'invalid_input',
       retryable: false,
     });
-    expect(out.error).not.toBe('not_a_claim');
-    expect(out.error.length).toBeGreaterThan(20);
+    expect(out.error).toBe('No claim in the input could be checked against public evidence.');
   });
 
   it('does the same from a nested failure block, using the server detail for Error', async () => {

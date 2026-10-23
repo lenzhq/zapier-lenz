@@ -86,7 +86,10 @@ const intended = (name, frozen) => {
   }
   if (name.startsWith('webhook__verification_failed_') && want.status === 'failed' && want.failure_reason === '') {
     const code = want.error;
-    want.error = `Pipeline stopped: ${code}.`;
+    want.error =
+      code === 'not_a_claim'
+        ? 'No claim in the input could be checked against public evidence.'
+        : `Pipeline stopped: ${code}.`;
     want.failure_reason = code;
   }
   return want;
@@ -463,8 +466,8 @@ describe('creates.verify_claim reads the failure block and the nested callback',
       resume({ rawRequest: signed(envelope('verification.failed', { ...body, task_id: TASK_ID })) }),
     );
     // Read as the status route reads it: the sentence in `error`, the code in
-    // `failure_reason` (until 2.3.1 this path put the code in `error` and left
-    // `failure_reason` empty).
+    // `failure_reason` (before this change this path put the code in `error` and
+    // left `failure_reason` empty).
     expect(out).toMatchObject({
       status: 'failed',
       error: body.failure.detail,

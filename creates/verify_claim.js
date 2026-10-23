@@ -326,10 +326,16 @@ const fromSignedCallback = (bundle) => {
 // verification, read exactly as a status body is (failedFromBody). The earlier
 // (flat) payload carries only the code, in `error`, and no sentence: the code
 // goes to `failure_reason` and `error` says "Pipeline stopped: <code>.", the
-// words the API itself uses for a failure it has no sentence for. Until 2.3.1
-// both paths put the code in `error` and left `failure_reason` empty on this
-// one, so a Zap that branched on Failure Reason saw nothing on a live run.
+// words the API itself uses for a failure it has no sentence for, except for
+// "nothing to check", which gets the sentence the newer payload carries for it.
+// Before this change both payloads put the code in `error` and left
+// `failure_reason` empty on this path, so a Zap that branched on Failure Reason
+// saw nothing on a live run. The CODE is the same on both routes; the sentence
+// can differ in wording, because the status route gets its own from the API.
 const CODE_ONLY = /^[a-z][a-z0-9_]*$/;
+const SENTENCE_FOR_CODE = {
+  not_a_claim: 'No claim in the input could be checked against public evidence.',
+};
 
 const failedFromCallback = (event, nested) => {
   const raw = event.raw || {};
@@ -339,7 +345,7 @@ const failedFromCallback = (event, nested) => {
   const said = typeof event.error === 'string' ? event.error : '';
   const isCode = CODE_ONLY.test(said);
   return {
-    error: isCode ? `Pipeline stopped: ${said}.` : said,
+    error: isCode ? SENTENCE_FOR_CODE[said] || `Pipeline stopped: ${said}.` : said,
     failure_reason: (typeof raw.failure_reason === 'string' && raw.failure_reason) || (isCode ? said : ''),
     failure_class: event.failureClass,
     retryable: event.retryable,
