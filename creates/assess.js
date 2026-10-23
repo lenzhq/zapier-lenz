@@ -111,6 +111,11 @@ const rowRetryable = (c) => {
   return EARLIER_TRANSIENT_CODES.has(rowErrorCode(c));
 };
 
+// The top-level overflow list is documented as a list of claims (strings), and
+// it feeds a later step's Claim field, so anything that is not a non-empty
+// string is dropped. A row's own list keeps passing through as it always has.
+const claimStrings = (list) => list.filter((x) => typeof x === 'string' && x.trim() !== '');
+
 const moreClaims = (c) =>
   Array.isArray(c.more_claims) ? c.more_claims : Array.isArray(c.identified_claims) ? c.identified_claims : [];
 
@@ -267,7 +272,7 @@ const perform = async (z, bundle) => {
       not_a_claim: true,
       // Deprecated on the API, always empty; see NO_ERROR.
       candidate_claims: [],
-      more_claims: moreClaims(result),
+      more_claims: claimStrings(moreClaims(result)),
       claims: [],
     };
   }
@@ -323,7 +328,7 @@ const perform = async (z, bundle) => {
     status: 'ok',
     ...NO_ERROR,
     not_a_claim: nothingCheckable,
-    more_claims: moreClaims(result),
+    more_claims: claimStrings(moreClaims(result)),
     claims: rows,
   };
 };

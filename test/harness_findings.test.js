@@ -11,6 +11,8 @@
 //     the code and says what went wrong in Error, as the status route does.
 //  4. A sample returned from a warm container is a fresh copy.
 
+const fs = require('fs');
+const path = require('path');
 const zapier = require('zapier-platform-core');
 
 jest.mock('lenz-io', () => {
@@ -71,6 +73,14 @@ describe('1. Assess: claims past the limit', () => {
     expect((await assessOut({ claims: [verdictRow(1)] })).more_claims).toEqual([]);
     expect((await assessOut({ claims: [verdictRow(1)], more_claims: null })).more_claims).toEqual([]);
     expect((await assessOut({ claims: [verdictRow(1)], more_claims: 'nope' })).more_claims).toEqual([]);
+  });
+
+  it('drops anything that is not a non-empty string from the top-level list', async () => {
+    const out = await assessOut({
+      claims: [verdictRow(1)],
+      more_claims: ['claim', null, 42, { claim: 'x' }, '', '   ', 'another'],
+    });
+    expect(out.more_claims).toEqual(['claim', 'another']);
   });
 
   it('keeps a row-level list and the top-level list apart', async () => {
@@ -187,6 +197,47 @@ describe('3. A failed Verify from the signed callback', () => {
       error: 'A research provider was down.',
       retryable: true,
     });
+  });
+});
+
+describe('3b. Every recorded failed callback, exactly', () => {
+  const NAMES = [
+    'webhook__verification_failed_not_a_claim',
+    'webhook__verification_failed_insufficient_evidence',
+    'webhook__verification_failed_upstream_unavailable',
+  ];
+  const fixture = (shape, name) =>
+    JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', shape, `${name}.json`), 'utf-8'));
+  const run = (body) => {
+    mockClient();
+    return appTester(App.creates.verify_claim.operation.performResume, {
+      authData: AUTH,
+      outputData: { task_id: body.task_id },
+      rawRequest: signed(body),
+    });
+  };
+
+  it.each(NAMES)('%s, earlier shape: the code in Failure Reason, a sentence in Error', async (name) => {
+    const body = fixture('legacy', name);
+    const out = await run(body);
+    expect(out.failure_reason).toBe(body.error);
+    expect(out.error).toBe(
+      body.error === 'not_a_claim'
+        ? 'No claim in the input could be checked against public evidence.'
+        : `Pipeline stopped: ${body.error}.`,
+    );
+    expect(out.failure_class).toBe(body.failure_class);
+    expect(out.retryable).toBe(body.retryable);
+  });
+
+  it.each(NAMES)('%s, newer shape: the API\'s own detail in Error, its code in Failure Reason', async (name) => {
+    const body = fixture('canonical', name);
+    const out = await run(body);
+    const block = body.verification.failure;
+    expect(out.error).toBe(block.detail);
+    expect(out.failure_reason).toBe(block.code === 'no_checkable_claim' ? 'not_a_claim' : block.code);
+    expect(out.failure_class).toBe(block.failure_class);
+    expect(out.retryable).toBe(block.retryable);
   });
 });
 
