@@ -92,6 +92,11 @@ const intended = (name, frozen) => {
         : `Pipeline stopped: ${code}.`;
     want.failure_reason = code;
   }
+  if (Array.isArray(want.sources)) {
+    for (const s of want.sources) {
+      if (s && typeof s === 'object' && !('origin' in s)) s.origin = '';
+    }
+  }
   return want;
 };
 

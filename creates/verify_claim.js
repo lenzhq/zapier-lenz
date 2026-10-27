@@ -2,7 +2,14 @@
 
 const { mapLenzError } = require('../lib/errors');
 const { NO_FAILURE } = require('../lib/jobs');
-const { isObject, readFailure, outputCode, passedFrom } = require('../lib/shapes');
+const {
+  isObject,
+  readFailure,
+  outputCode,
+  passedFrom,
+  suppliedSourcesField,
+  mapSuppliedSources,
+} = require('../lib/shapes');
 const {
   parseSignedCallback,
   requireWebhookSecretWhileTesting,
@@ -53,6 +60,7 @@ const SAMPLE = {
       // 'unknown' sentinel to '' (lenz/api/verification_payload.py:119), so
       // this is never null and never the literal "unknown".
       date: '2026-01-15',
+      origin: 'web',
     },
   ],
   language: 'en',
@@ -222,18 +230,24 @@ const perform = async (z, bundle) => {
 
   const callbackUrl = z.generateCallbackUrl();
 
+  const payload = {
+    claim: bundle.inputData.claim,
+    sourceUrl: bundle.inputData.sourceUrl || undefined,
+    language: bundle.inputData.language || undefined,
+    // `|| undefined` so a blank field is omitted from the request body
+    // entirely and the server applies its own default, rather than us
+    // sending an empty string it would have to interpret.
+    depth: bundle.inputData.depth || undefined,
+    visibility: bundle.inputData.visibility || undefined,
+    webhookUrl: callbackUrl,
+  };
+  const supplied = mapSuppliedSources(bundle.inputData.supplied_sources);
+  if (supplied.length > 0) {
+    payload.supplied_sources = supplied;
+  }
+
   return client
-    .verify({
-      claim: bundle.inputData.claim,
-      sourceUrl: bundle.inputData.sourceUrl || undefined,
-      language: bundle.inputData.language || undefined,
-      // `|| undefined` so a blank field is omitted from the request body
-      // entirely and the server applies its own default, rather than us
-      // sending an empty string it would have to interpret.
-      depth: bundle.inputData.depth || undefined,
-      visibility: bundle.inputData.visibility || undefined,
-      webhookUrl: callbackUrl,
-    })
+    .verify(payload)
     // Every key on every branch (see NO_FAILURE). This is what Zapier parks
     // as outputData and, if the callback never arrives, what the user sees.
     .then((accepted) => ({
@@ -397,6 +411,7 @@ const shapeCompleted = (taskId, result) => ({
         url: s.url || '',
         snippet: s.snippet || '',
         date: s.date || '',
+        origin: s.origin || '',
       })),
       language: result.language || '',
       domain: result.domain || '',
@@ -580,6 +595,7 @@ module.exports = {
         helpText:
           'Leave blank for Private, which is the default and means only your account can read the result. Unlisted makes it readable by anyone holding its Verification ID or its lenz.io link, but it is never listed in the public Library or search.',
       },
+      suppliedSourcesField(),
     ],
     perform,
     performResume,
@@ -691,6 +707,7 @@ module.exports = {
           { key: 'snippet', label: 'Snippet' },
           // Publication date of the source, not of this check.
           { key: 'date', label: 'Published' },
+          { key: 'origin', label: 'Source Origin' },
         ],
       },
       // Passthroughs the API always sends and this action used to drop.
