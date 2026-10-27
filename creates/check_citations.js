@@ -12,7 +12,12 @@ const {
 } = require('../lib/signed-callback');
 const { shapeCitation, shapeCitationIssue, CITATION_CHILDREN, CITATION_ISSUE_CHILDREN } = require('../lib/citations');
 const { NO_FAILURE, isTerminal, shapeJobFailure, citationLimit } = require('../lib/jobs');
-const { readFailure } = require('../lib/shapes');
+const {
+  readFailure,
+  isObject,
+  mapSuppliedSources,
+  suppliedSourcesField,
+} = require('../lib/shapes');
 
 // Check Citations: POST /citecheck reads each source a draft cites and checks
 // whether it says what the draft attributes to it. Usually seconds, but the
@@ -21,8 +26,8 @@ const { readFailure } = require('../lib/shapes');
 // the signed `citecheck.completed` / `citecheck.failed` body carries the full
 // check.
 //
-// Text only. The API also takes up to 20 explicit statement/URL pairs, which
-// a Zap step cannot express well; a draft with its links is what a Zap holds.
+// Text or explicit statement/source pairs. The signed `citecheck.completed` /
+// `citecheck.failed` body carries the full check.
 
 const ACTION_LABEL = 'Check Citations';
 
@@ -173,14 +178,68 @@ const fromSignedCitecheck = (bundle) => {
   return { output: shapeCitecheck(citecheckId, event.citecheck), check: event.citecheck };
 };
 
+const pairsField = () => ({
+  key: 'pairs',
+  label: 'Citation Pairs',
+  children: [
+    { key: 'statement', label: 'Statement', type: 'string', helpText: 'Statement or claim to check.' },
+    { key: 'url', label: 'Source URL', type: 'string', helpText: 'Optional HTTP(S) URL of the source.' },
+    { key: 'doi', label: 'Source DOI', type: 'string', helpText: 'Optional DOI of the source.' },
+    { key: 'cite', label: 'Source Citation', type: 'string', helpText: 'Optional structured legal or academic citation.' },
+    { key: 'pair_source_text', label: 'Source Text', type: 'text', helpText: 'Optional full text or excerpt of the source document.' },
+    { key: 'pair_published_date', label: 'Published Date', type: 'string', helpText: 'Optional publication date (YYYY-MM-DD).' },
+  ],
+});
+
+const mapCitationPairs = (rows) => {
+  if (!Array.isArray(rows)) return [];
+  const pairs = [];
+  for (const row of rows) {
+    if (!isObject(row)) continue;
+    const rawStatement = typeof row.statement === 'string' ? row.statement : '';
+    if (!rawStatement.trim()) continue;
+    const pair = { statement: rawStatement.trim() };
+    const rawUrl = typeof row.url === 'string' ? row.url : '';
+    if (rawUrl.trim()) pair.url = rawUrl.trim();
+    const rawDoi = typeof row.doi === 'string' ? row.doi : '';
+    if (rawDoi.trim()) pair.doi = rawDoi.trim();
+    const rawCite = typeof row.cite === 'string' ? row.cite : '';
+    if (rawCite.trim()) pair.cite = rawCite.trim();
+    const rawSourceText =
+      typeof row.pair_source_text === 'string'
+        ? row.pair_source_text
+        : typeof row.source_text === 'string'
+          ? row.source_text
+          : '';
+    if (rawSourceText.trim()) pair.source_text = rawSourceText.trim();
+    const rawPublishedDate =
+      typeof row.pair_published_date === 'string'
+        ? row.pair_published_date
+        : typeof row.published_date === 'string'
+          ? row.published_date
+          : '';
+    if (rawPublishedDate.trim()) pair.published_date = rawPublishedDate.trim();
+    pairs.push(pair);
+  }
+  return pairs;
+};
+
 const citecheckInput = (bundle) => {
   const input = bundle.inputData || {};
-  return {
-    text: input.text,
+  const pairs = mapCitationPairs(input.pairs);
+  const supplied = mapSuppliedSources(input.supplied_sources);
+  const hasPairs = pairs.length > 0;
+  const res = {
+    text: hasPairs ? undefined : (input.text || undefined),
+    pairs: hasPairs ? pairs : undefined,
     // 1 to 20 on the server: 0 or blank is the default (20), more is 20.
-    maxCitations: citationLimit(input.maxCitations),
+    maxCitations: hasPairs ? undefined : citationLimit(input.maxCitations),
     language: input.language || undefined,
   };
+  if (supplied.length > 0) {
+    res.supplied_sources = supplied;
+  }
+  return res;
 };
 
 // Replay-stable (lib/replay-key.js): every checked citation costs a credit,
@@ -189,7 +248,20 @@ const citecheckInput = (bundle) => {
 // the key to a body that includes `webhook_url` (check_idempotency_body in
 // lenz/api/citecheck.py).
 const citecheckKey = (z, bundle, input, callbackUrl) =>
-  replayKey(z, bundle, ['citecheck', callbackUrl, input.text, input.maxCitations, input.language], HOUR_MS);
+  replayKey(
+    z,
+    bundle,
+    [
+      'citecheck',
+      callbackUrl,
+      input.text,
+      input.maxCitations,
+      input.language,
+      input.pairs ? JSON.stringify(input.pairs) : '',
+      input.supplied_sources ? JSON.stringify(input.supplied_sources) : '',
+    ],
+    HOUR_MS,
+  );
 
 const perform = async (z, bundle) => {
   const client = lenzClient(bundle);
@@ -249,10 +321,12 @@ module.exports = {
         key: 'text',
         label: 'Draft',
         type: 'text',
-        required: true,
+        required: false,
         helpText:
-          'A draft with its sources: markdown links, bare URLs, DOIs (doi: or doi.org) or [1]-style markers with a reference list. Up to 50,000 characters; a longer draft is refused, not cut. Clicking Test shows an example check so you can map the output fields; a turned-on Zap checks this draft.',
+          'A draft with its sources: markdown links, bare URLs, DOIs (doi: or doi.org) or [1]-style markers with a reference list. Up to 50,000 characters; a longer draft is refused, not cut. Provide either Draft or Citation Pairs. Clicking Test shows an example check so you can map the output fields; a turned-on Zap checks this draft.',
       },
+      pairsField(),
+      suppliedSourcesField(),
       {
         key: 'maxCitations',
         // A maximum, and blank is "all of them": the label says so, because

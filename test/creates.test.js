@@ -9,6 +9,7 @@ jest.mock('lenz-io', () => {
 
 const { Lenz: LenzClient, LenzError, LenzValidationError } = require('lenz-io');
 const App = require('../index');
+const { mapSuppliedSources } = require('../lib/shapes');
 
 const appTester = zapier.createAppTester(App);
 
@@ -51,6 +52,48 @@ describe('creates.verify_claim', () => {
       expect.objectContaining({
         claim: 'The Eiffel Tower is 330 metres tall.',
         webhookUrl: 'https://auth-json-server.zapier-staging.com/echo',
+      }),
+    );
+  });
+
+  it('forwards supplied_sources when provided to perform', async () => {
+    const client = mockClient({
+      verify: jest.fn().mockResolvedValue({ task_id: 'task_123' }),
+    });
+    LenzClient.mockImplementation(() => client);
+
+    const bundle = {
+      authData: { access_token: 'lenz_good' },
+      inputData: {
+        claim: 'The Eiffel Tower is 330 metres tall.',
+        supplied_sources: [
+          {
+            source_text: 'The tower stands 330 metres tall.',
+            source_url: 'https://example.com/eiffel',
+            source_doi: '10.1234/eiffel',
+            source_cite: 'Eiffel 2026',
+            source_title: 'Eiffel Facts',
+            source_published_date: '2026-01-15',
+          },
+        ],
+      },
+    };
+    const result = await appTester(App.creates.verify_claim.operation.perform, bundle);
+
+    expect(result).toMatchObject({ task_id: 'task_123', status: 'processing' });
+    expect(client.verify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        claim: 'The Eiffel Tower is 330 metres tall.',
+        supplied_sources: [
+          {
+            text: 'The tower stands 330 metres tall.',
+            url: 'https://example.com/eiffel',
+            doi: '10.1234/eiffel',
+            cite: 'Eiffel 2026',
+            title: 'Eiffel Facts',
+            published_date: '2026-01-15',
+          },
+        ],
       }),
     );
   });
@@ -1733,7 +1776,7 @@ describe('the completed verdict carries what the API actually sends', () => {
 
   // snippet is the quotable half of a citation; dropping it meant a Zap could
   // link a source but never quote it.
-  it('keeps all five source fields, not just title and url', async () => {
+  it('keeps all source fields, including origin', async () => {
     const result = await resume(COMPLETED);
     expect(result.sources[0]).toEqual({
       source_name: 'Tour Eiffel',
@@ -1741,6 +1784,7 @@ describe('the completed verdict carries what the API actually sends', () => {
       url: 'https://www.toureiffel.paris',
       snippet: 'The tower stands 330 metres tall.',
       date: '2026-01-15',
+      origin: '',
     });
   });
 
@@ -1914,5 +1958,93 @@ describe('suggested_rewrite', () => {
       authData: { access_token: 'lenz_good' },
     });
     expect(rows.map((r) => r.suggested_rewrite)).toEqual(['y', '']);
+  });
+});
+
+describe('mapSuppliedSources', () => {
+  it('returns empty array for non-array inputs', () => {
+    for (const bad of [undefined, null, 'string', 123, true, {}]) {
+      expect(mapSuppliedSources(bad)).toEqual([]);
+    }
+  });
+
+  it('skips non-object rows and rows with empty or blank text', () => {
+    const rows = [
+      null,
+      undefined,
+      42,
+      'just a string',
+      {},
+      { source_text: '' },
+      { source_text: '   ' },
+      { text: '' },
+      { text: '   ' },
+      { source_text: 123 },
+    ];
+    expect(mapSuppliedSources(rows)).toEqual([]);
+  });
+
+  it('maps source_text and text with trimming', () => {
+    const rows = [
+      { source_text: '  First doc text  ' },
+      { text: '  Second doc text  ' },
+    ];
+    expect(mapSuppliedSources(rows)).toEqual([
+      { text: 'First doc text' },
+      { text: 'Second doc text' },
+    ]);
+  });
+
+  it('maps all optional fields with fallback and trimming', () => {
+    const rows = [
+      {
+        source_text: 'Doc 1',
+        source_url: '  https://example.com/1  ',
+        source_doi: '  10.1000/182  ',
+        source_cite: '  410 U.S. 113  ',
+        source_title: '  Doc One  ',
+        source_published_date: '  2026-05-01  ',
+      },
+      {
+        text: 'Doc 2',
+        url: '  https://example.com/2  ',
+        doi: '  10.1000/183  ',
+        cite: '  500 U.S. 1  ',
+        title: '  Doc Two  ',
+        published_date: '  2026-05-02  ',
+      },
+    ];
+    expect(mapSuppliedSources(rows)).toEqual([
+      {
+        text: 'Doc 1',
+        url: 'https://example.com/1',
+        doi: '10.1000/182',
+        cite: '410 U.S. 113',
+        title: 'Doc One',
+        published_date: '2026-05-01',
+      },
+      {
+        text: 'Doc 2',
+        url: 'https://example.com/2',
+        doi: '10.1000/183',
+        cite: '500 U.S. 1',
+        title: 'Doc Two',
+        published_date: '2026-05-02',
+      },
+    ]);
+  });
+
+  it('omits empty or whitespace optional fields', () => {
+    const rows = [
+      {
+        source_text: 'Doc 3',
+        source_url: '   ',
+        source_doi: '',
+        source_cite: '   ',
+        source_title: '',
+        source_published_date: '   ',
+      },
+    ];
+    expect(mapSuppliedSources(rows)).toEqual([{ text: 'Doc 3' }]);
   });
 });

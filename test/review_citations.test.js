@@ -169,6 +169,34 @@ describe('creates.review_draft perform', () => {
     expect(keys[2]).not.toBe(keys[0]);
   });
 
+  it('forwards supplied_sources and differentiates the idempotency key', async () => {
+    const client = mockClient();
+    const run = (supplied_sources) =>
+      appTester(review.perform, {
+        authData: AUTH,
+        inputData: { text: 'Draft.', supplied_sources },
+        meta: { zap: { id: 7 } },
+      });
+
+    await run([
+      {
+        source_text: 'Private background context.',
+        source_url: 'https://example.com/context',
+      },
+    ]);
+    await run([]);
+
+    const calls = client.review.mock.calls;
+    expect(calls[0][0].supplied_sources).toEqual([
+      {
+        text: 'Private background context.',
+        url: 'https://example.com/context',
+      },
+    ]);
+    expect(calls[1][0].supplied_sources).toBeUndefined();
+    expect(calls[0][0].idempotencyKey).not.toBe(calls[1][0].idempotencyKey);
+  });
+
   it('while testing: only the free usage check, then the sample', async () => {
     const client = mockClient();
     const out = await appTester(review.perform, { authData: AUTH, inputData: { text: 'x' }, meta: { isLoadingSample: true } });
@@ -408,6 +436,94 @@ describe('creates.check_citations', () => {
         idempotencyKey: expect.stringMatching(/^[0-9a-f]{64}$/),
       }),
     );
+  });
+
+  it('submits citation pairs omitting text and maxCitations, and maps pair fields', async () => {
+    const client = mockClient();
+    const out = await appTester(cite.perform, {
+      authData: AUTH,
+      inputData: {
+        text: 'This should be omitted when pairs are provided.',
+        maxCitations: '5',
+        pairs: [
+          null,
+          'invalid row',
+          { statement: '' },
+          { statement: '   ' },
+          {
+            statement: '  Statement one  ',
+            url: '  https://example.com/one  ',
+            doi: '  10.1000/1  ',
+            cite: '  Cite 1  ',
+            pair_source_text: '  Full text one  ',
+            pair_published_date: '  2026-01-01  ',
+          },
+          {
+            statement: 'Statement two',
+            source_text: 'Full text two',
+            published_date: '2026-02-02',
+          },
+        ],
+      },
+    });
+
+    expect(out).toMatchObject({ citecheck_id: CITECHECK_ID, status: 'queued' });
+    expect(client.citecheck).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: undefined,
+        maxCitations: undefined,
+        pairs: [
+          {
+            statement: 'Statement one',
+            url: 'https://example.com/one',
+            doi: '10.1000/1',
+            cite: 'Cite 1',
+            source_text: 'Full text one',
+            published_date: '2026-01-01',
+          },
+          {
+            statement: 'Statement two',
+            source_text: 'Full text two',
+            published_date: '2026-02-02',
+          },
+        ],
+        webhookUrl: CALLBACK,
+      }),
+    );
+  });
+
+  it('forwards supplied_sources to citecheck and differentiates idempotency key', async () => {
+    const client = mockClient();
+    const run = (supplied_sources, pairs) =>
+      appTester(cite.perform, {
+        authData: AUTH,
+        inputData: { text: 'See [1].', supplied_sources, pairs },
+        meta: { zap: { id: 8 } },
+      });
+
+    await run([
+      {
+        source_text: 'Supplied source text.',
+        source_url: 'https://example.com/source',
+      },
+    ]);
+    await run([], [{ statement: 'Direct statement', url: 'https://example.com' }]);
+    await run([]);
+
+    const calls = client.citecheck.mock.calls;
+    expect(calls[0][0].supplied_sources).toEqual([
+      {
+        text: 'Supplied source text.',
+        url: 'https://example.com/source',
+      },
+    ]);
+    expect(calls[1][0].supplied_sources).toBeUndefined();
+    expect(calls[2][0].supplied_sources).toBeUndefined();
+
+    const keys = calls.map(([c]) => c.idempotencyKey);
+    expect(keys[0]).not.toBe(keys[1]);
+    expect(keys[1]).not.toBe(keys[2]);
+    expect(keys[0]).not.toBe(keys[2]);
   });
 
   it('while testing: only the free usage check, then the sample', async () => {

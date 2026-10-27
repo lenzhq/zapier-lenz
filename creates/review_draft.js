@@ -10,7 +10,12 @@ const {
   isWebhookSecretMissing,
   webhookSecretMissing,
 } = require('../lib/signed-callback');
-const { isObject, searchedPages } = require('../lib/shapes');
+const {
+  isObject,
+  searchedPages,
+  suppliedSourcesField,
+  mapSuppliedSources,
+} = require('../lib/shapes');
 const { shapeCitationIssue, CITATION_ISSUE_CHILDREN } = require('../lib/citations');
 const { NO_FAILURE, isTerminal, shapeJobFailure, optionalInteger, citationLimit } = require('../lib/jobs');
 
@@ -205,7 +210,8 @@ const fromSignedReview = (bundle) => {
 
 const reviewInput = (bundle) => {
   const input = bundle.inputData || {};
-  return {
+  const supplied = mapSuppliedSources(input.supplied_sources);
+  const res = {
     text: input.text,
     language: input.language || undefined,
     depth: input.depth || undefined,
@@ -215,6 +221,10 @@ const reviewInput = (bundle) => {
     maxCitations: citationLimit(input.maxCitations),
     visibility: input.visibility || undefined,
   };
+  if (supplied.length > 0) {
+    res.supplied_sources = supplied;
+  }
+  return res;
 };
 
 // The replay-stable Idempotency-Key (lib/replay-key.js). Review is the most
@@ -242,6 +252,7 @@ const reviewKey = (z, bundle, input, callbackUrl) =>
       input.maxVerifications,
       input.maxCitations,
       input.visibility,
+      input.supplied_sources ? JSON.stringify(input.supplied_sources) : '',
     ],
     HOUR_MS,
   );
@@ -356,6 +367,7 @@ module.exports = {
         helpText:
           'Who can open the deep checks this review creates. Leave blank for Private. Unlisted makes their lenz.io pages readable by anyone with the link, never listed publicly.',
       },
+      suppliedSourcesField(),
     ],
     perform,
     performResume,
