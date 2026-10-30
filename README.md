@@ -47,7 +47,7 @@ only what the sample shows. These are the values the API actually sends:
 | `verdict` | Verify a Claim, Assess (Fast), New Verification Completed | `True`, `Mostly True`, `Mixed`, `Mostly False`, `False`, or `No Public Record`. On `No Public Record`, `lenz_score` is empty. Assess (Fast) also gives `Error` on a row that failed. |
 | `domain` | Verify a Claim | Same eight capitalised values as above, or empty. |
 | `status` | Verify a Claim | `completed`, `needs_input`, `failed`, or `processing`. Built by the integration. |
-| `reason` | Verify a Claim, when `status` is `needs_input` | `multi_claim` or `duplicate_found`. Empty otherwise. `clarification_required` was a third value until the API retired it on 2026-09-12; **Candidate Readings** is still emitted, always empty, so a Zap that maps it keeps working. |
+| `reason` | Verify a Claim, when `status` is `needs_input` | `multi_claim`. Empty otherwise. Two more values were retired by the API: `clarification_required` on 2026-09-12 and `duplicate_found` on 2026-09-26. Their fields (**Candidate Readings**, **Duplicate Verification ID**, **Duplicate URL**, **Similar Claims**) are still emitted, always empty, so a Zap that maps them keeps working. |
 | `claims[].rationale` | Assess (Fast) | Free text, not a value to filter on: the reasoning of a reviewer who agrees with the panel's verdict. It is a reviewer's note, not a checked source; for sourced evidence, call /verify. Empty on an `Error` row. `claims[].dissent` (**Reviewer Dissent**) is deprecated: the Lenz API no longer returns it, so it is always empty. The field stays so existing Zaps keep working. |
 | `claims[].searched_pages`, `issues[].searched_pages` (**Pages the Reviewers Looked At**) | Assess (Fast), Review a Draft | A list of pages, each with a **Title** and a **URL**: the pages the reviewers looked at while checking the claim. They are pages to look at, not checked sources that confirm the verdict; for sourced evidence, use Verify a Claim. A page appears only when its title is text and its link is an `http://` or `https://` address with no embedded sign-in. Empty when there are none, on an `Error` row, and until the Lenz API sends the field. On Review a Draft the pages shown are those of the claim the issue is about. |
 | `suggested_rewrite` | Verify a Claim, New Verification Completed | Free text: a suggested rewrite of `claim` that the verification's findings support, for a person to review before using it. **It has not been verified itself.** Empty for a true claim, when no correction is established, and on verifications from before Lenz added it. |
@@ -70,17 +70,16 @@ empty rather than `false`/`0` on a result with no verdict, since nothing was che
 ### When Lenz asks for input instead of answering
 
 **Verify a Claim** can stop before running the pipeline and hand back `status: needs_input`.
-It does that for three different reasons, and each carries data you can act on — so branch
-on `reason` rather than treating them as one case:
+Today it does that for one reason, and the step carries the data to act on:
 
 | `reason` | What Lenz found | What to map | What to do |
 |---|---|---|---|
 | `multi_claim` | Several separate claims in one input | **Claims Found** (line items: `text`, `domain`) | Fan out — a Verify step per item, or send them one at a time |
 | ~~`clarification_required`~~ | *Retired 2026-09-12.* A vague claim is now checked on its most likely reading instead of paused | **Candidate Readings** — still present, always empty | Nothing; it no longer occurs |
-| `duplicate_found` | A verification of this claim **already exists** | **Duplicate Verification ID** and **Duplicate URL**; the full list in **Similar Claims** | Reuse it — map the ID into **Ask Follow-Up**. Do **not** re-run: that spends a full check to reproduce an answer you already have |
+| ~~`duplicate_found`~~ | *Retired 2026-09-26.* Lenz no longer pauses on a claim close to one already checked or offers the earlier check; it verifies the claim it was given | **Duplicate Verification ID**, **Duplicate URL**, **Similar Claims** — still present, always empty | Nothing; it no longer occurs |
 
-Before 1.4.0 all three produced the same "rephrase and re-run" message and the data was
-dropped. For `duplicate_found` that advice was wrong and cost money.
+Before 1.4.0 every reason produced the same "rephrase and re-run" message and the data was
+dropped; 1.4.0 gave each its own message and fields.
 
 Two fields on Extract Claims look filterable and are not:
 
