@@ -149,21 +149,17 @@ const NO_INPUT_NEEDED = {
   duplicate_url: '',
 };
 
-// Lenz can stop a verification to ask for input rather than run the pipeline,
-// and it does so for THREE different reasons that need three different
-// responses. Until 1.4.0 all three collapsed into one "rephrase and re-run"
-// message and the data Lenz offered was thrown away. For duplicate_found that
-// advice was actively wrong: a verification of the claim already EXISTS, and
-// re-running spends a full 10-credit pipeline to reproduce it.
+// Lenz can stop a verification to ask for input rather than run the pipeline.
+// Today the only reason it does is `multi_claim` (lenz/api/public_authed.py,
+// /verify/status: claims: [{ claim, domain }]). The API retired
+// `clarification_required` (candidates: [string]) on 2026-09-12 and
+// `duplicate_found` (similar_claims: [{ verification_id, claim, verdict,
+// confidence, lenz_score, url }]) on 2026-09-26, with the near-duplicate
+// picker. Their branches below stay only because their output fields do:
+// Zaps built on 1.4.0+ map Candidate Readings and the Duplicate fields, which
+// must stay present (empty) on every result.
 //
-// The server shapes (lenz/api/public_authed.py, /verify/status):
-//   multi_claim             claims:         [{ text, domain }]
-//   clarification_required  candidates:     [string]
-//   duplicate_found         similar_claims: [{ verification_id, claim, verdict,
-//                                              confidence, lenz_score, url,
-//                                              distance }]
-//
-// `candidates` is normalised to `[{ text }]` so all three lists share the
+// `candidates` is normalised to `[{ text }]` so every list shares the
 // line-item shape a Zap can iterate; a bare string array is not mappable
 // per-item in the editor.
 function shapeNeedsInput(status) {
@@ -646,20 +642,17 @@ module.exports = {
       { key: 'failure_class', label: 'Failure Class' },
       { key: 'retryable', label: 'Retryable', type: 'boolean' },
       // needs_input fields — populated only when Status is 'needs_input',
-      // empty otherwise. Which of the three lists is filled depends on Reason:
+      // empty otherwise:
       //
-      //   reason           multi_claim | clarification_required |
-      //                    duplicate_found
+      //   reason           multi_claim (the only reason the API still sends)
       //   message          What to do about it, in a sentence.
       //   claims           multi_claim: the separate claims Lenz found, one
       //                    line item each — fan out into a Verify step per item.
-      //   candidates       clarification_required: the possible readings, one
-      //                    line item each — pick one and re-run with it.
-      //   similar_claims   duplicate_found: verifications that already exist
-      //                    for this claim.
-      //   duplicate_verification_id / duplicate_url
-      //                    The first of those, lifted out so it maps straight
-      //                    into Ask Follow-Up without a line-item step.
+      //   candidates       Always empty: clarification_required, retired
+      //                    2026-09-12, filled it.
+      //   similar_claims / duplicate_verification_id / duplicate_url
+      //                    Always empty: duplicate_found, retired 2026-09-26,
+      //                    filled them. Kept so Zaps that map them still work.
       { key: 'reason', label: 'Input Needed Reason' },
       { key: 'message', label: 'Message' },
       {

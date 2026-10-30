@@ -6,6 +6,7 @@ mechanics live in [README.md](README.md#building-and-pushing).
 ## Unreleased
 
 - Docs: the Review a Draft Status row now says why a review can come back `queued`, `assessing` or `verifying` (Zapier resumes on the first message to its callback address, and a covered account's deep check can send a certificate message first) and how to read the finished review by its Review ID. Nothing the action does changes.
+- Docs: Verify a Claim's `needs_input` reason is now documented as `multi_claim` only. The README still listed `duplicate_found`, which the Lenz API retired on 2026-09-26. Its fields (Duplicate Verification ID, Duplicate URL, Similar Claims) stay on every result, always empty. Nothing the action does changes.
 
 ## 2.3.1
 

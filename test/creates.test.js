@@ -192,7 +192,13 @@ describe('creates.verify_claim', () => {
 
     const bundle = { authData: { access_token: 'lenz_good' }, inputData: { claim: '' } };
 
-    await expect(appTester(App.creates.verify_claim.operation.perform, bundle)).rejects.toThrow('Text is required.');
+    const err = await appTester(App.creates.verify_claim.operation.perform, bundle).catch((e) => e);
+    // The class, not only the message: a mapping that re-wrapped this as a
+    // ThrottledError or HaltedError would keep the text and change what
+    // Zapier does with the run.
+    expect(err).toBeInstanceOf(LenzValidationError);
+    // appTester appends its own "What happened:" trace after the message.
+    expect(err.message.startsWith('Text is required.')).toBe(true);
   });
 
   it('performResume fetches the terminal status and shapes a completed verdict', async () => {
