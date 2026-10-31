@@ -321,7 +321,7 @@ module.exports = {
         type: 'text',
         required: true,
         helpText:
-          'The text to review, such as an AI-written answer, an article or an email. Up to 50,000 characters; longer text is cut and the Input Truncated output says so. Clicking Test shows an example review so you can map the output fields; a turned-on Zap reviews this draft.',
+          'The text to review, such as an AI-written answer, an article or an email (up to 50,000 characters; longer text is cut and the Input Truncated output says so), or one public http(s) URL to a web page, Google Doc, YouTube video, or image (.png, .jpg, .jpeg, .webp). Clicking Test shows an example review so you can map the output fields; a turned-on Zap reviews this draft.',
       },
       languageField(),
       {
