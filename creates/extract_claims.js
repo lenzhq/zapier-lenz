@@ -204,7 +204,7 @@ module.exports = {
     // labels. This description is the only place a user building a Filter on
     // Status can learn what to compare against.
     description:
-      'Pulls the verifiable factual claims out of a block of text, or out of a public web page, Google Doc, YouTube video, or image given its URL, without checking them. Status is "ready" when claims were found, "not_a_claim" when none were, or "no_match" when a Focus excluded all of them.',
+      'Pulls the verifiable factual claims out of a block of text, or out of a public web page, Google Doc, PDF, YouTube video, or image given its URL, without checking them. Status is "ready" when claims were found, "not_a_claim" when none were, or "no_match" when a Focus excluded all of them.',
   },
   operation: {
     inputFields: [
@@ -214,7 +214,7 @@ module.exports = {
         type: 'text',
         required: true,
         helpText:
-          "The text to pull claims from, or a single public web page, Google Doc, YouTube video, or image URL. Lenz reads the page, a Google Doc, a YouTube video's transcript, or an image (.png, .jpg, .jpeg, .webp), and extracts the claims from its first 50,000 characters; pages behind a login can't be read. A Zap step has 30 seconds and a page read can take longer, so for a long page send its text instead.",
+          "The text to pull claims from, or a single public web page, Google Doc, PDF, YouTube video, or image URL. Lenz reads the page, a Google Doc, a PDF (.pdf), a YouTube video's transcript, or an image (.png, .jpg, .jpeg, .webp), and extracts the claims from its first 50,000 characters; pages behind a login can't be read. A Zap step has 30 seconds and a page read can take longer, so for a long page send its text instead.",
       },
       languageField(LANGUAGE_HELP_TEXT_AUTO),
       {
