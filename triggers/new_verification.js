@@ -4,12 +4,12 @@ const { mapLenzError } = require('../lib/errors');
 const { lenzClient } = require('../client');
 const { modifiedAtFrom } = require('../lib/shapes');
 
-// A list item as this trigger has always emitted it. The newer response shape
-// says `completed_at` where the earlier one said `modified_at` (set only when
-// the completion fell on a later UTC day than the creation, else null); the
-// item takes the earlier key, computed by that rule, in the same place.
-const asEarlierItem = (item) => {
-  if (!item || typeof item !== 'object' || !('completed_at' in item) || 'modified_at' in item) return item;
+// A list item as this trigger has always emitted it. The API says
+// `completed_at`; this output has always said `modified_at` (set only when the
+// completion fell on a later UTC day than the creation, else null), so the
+// item takes that key, computed by that rule, in the same place.
+const asOutputItem = (item) => {
+  if (!item || typeof item !== 'object' || !('completed_at' in item)) return item;
   const out = {};
   for (const [key, value] of Object.entries(item)) {
     if (key === 'completed_at') out.modified_at = modifiedAtFrom(item);
@@ -64,7 +64,7 @@ const perform = async (z, bundle) => {
   // only bites if a future/older server omits it — but a field that is ''
   // on one surface and undefined on the other silently breaks a Zap that
   // maps it.
-  return result.items.map(asEarlierItem).map((item) => ({
+  return result.items.map(asOutputItem).map((item) => ({
     id: item.verification_id,
     ...item,
     key_finding: item.key_finding || '',

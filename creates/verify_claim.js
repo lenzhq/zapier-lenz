@@ -164,9 +164,8 @@ const NO_INPUT_NEEDED = {
 // per-item in the editor.
 function shapeNeedsInput(status) {
   const reason = status.reason || '';
-  // Each option is `{ claim, domain }`, or `{ text, domain }` in the earlier
-  // shape. The output keeps `text`.
-  const claims = (status.claims || []).map((c) => ({ text: c.claim || c.text || '', domain: c.domain || '' }));
+  // Each option is `{ claim, domain }`. The output keeps its own key, `text`.
+  const claims = (status.claims || []).map((c) => ({ text: c.claim || '', domain: c.domain || '' }));
   const candidates = (status.candidates || []).map((text) => ({ text: String(text || '') }));
   const similar = (status.similar_claims || []).map((s) => ({
     verification_id: s.verification_id || '',
@@ -302,18 +301,12 @@ const fromSignedCallback = (bundle) => {
   const taskId = bundle.outputData && bundle.outputData.task_id;
   if (!taskId || event.taskId !== taskId) return { fallback: 'callback is for a different task' };
 
-  // The verification itself is `result` in the flat payload and the `result`
-  // of the nested `verification` object in the enveloped one.
+  // The callback nests the verification, the same body a poll returns, under
+  // `verification`.
   const nested = isObject(event.raw && event.raw.verification) ? event.raw.verification : null;
 
   if (event.event === 'verification.completed') {
-    const flat = event.result;
-    const result =
-      flat && typeof flat === 'object' && Object.keys(flat).length > 0
-        ? flat
-        : nested && isObject(nested.result)
-          ? nested.result
-          : null;
+    const result = nested && isObject(nested.result) ? nested.result : null;
     if (!result || Object.keys(result).length === 0) {
       return { fallback: 'completed callback carried no result' };
     }
@@ -325,30 +318,21 @@ const fromSignedCallback = (bundle) => {
   return { fallback: `event ${event.event || 'unknown'} is read from the status route` };
 };
 
-// A failed verification, from the signed callback in either shape, read into
-// the same two fields the status route gives:
+// A failed verification, from the signed callback, read into the same two
+// fields the status route gives:
 //
 //   error           what happened, as a sentence
-//   failure_reason  the machine word (`not_a_claim` for "nothing checkable",
-//                   or the earlier name of the step that stopped)
+//   failure_reason  the machine word (`not_a_claim` for "nothing checkable")
 //
-// The newer payload nests a `failure: { code, detail, ... }` block on the
-// verification, read exactly as a status body is (failedFromBody). The earlier
-// (flat) payload carries only the code, in `error`, and no sentence: the code
-// goes to `failure_reason` and `error` says "Pipeline stopped: <code>.", the
-// words the API itself uses for a failure it has no sentence for, except for
-// "nothing to check", which gets the sentence the newer payload carries for it.
-// Before this change both payloads put the code in `error` and left
-// `failure_reason` empty on this path, so a Zap that branched on Failure Reason
-// saw nothing on a live run. The CODE is the same on both routes; the sentence
-// can differ in wording, because the status route gets its own from the API.
+// The payload nests a `failure: { code, detail, ... }` block on the
+// verification, read exactly as a status body is (failedFromBody).
 const CODE_ONLY = /^[a-z][a-z0-9_]*$/;
 const SENTENCE_FOR_CODE = {
   not_a_claim: 'No claim in the input could be checked against public evidence.',
 };
 
 const failedFromCallback = (event, nested) => {
-  const raw = event.raw || {};
+  const raw = (event && event.raw) || {};
   const block = (nested && nested.failure) || raw.failure;
   if (isObject(block)) return failedFromBody({ failure: block });
 
@@ -362,11 +346,11 @@ const failedFromCallback = (event, nested) => {
   };
 };
 
-// A failed status body (poll or detail), in either shape, as the pieces
-// `shapeFailed` takes. `failure_reason` keeps the earlier spelling of the
-// "nothing checkable" code.
+// A failed status body (poll or detail) as the pieces `shapeFailed` takes.
+// `failure_reason` keeps this output's spelling of the "nothing checkable"
+// code.
 const failedFromBody = (body) => {
-  const f = readFailure(body);
+  const f = readFailure(body.failure);
   return {
     error: f.detail,
     failure_reason: outputCode(f.code, 'not_a_claim'),

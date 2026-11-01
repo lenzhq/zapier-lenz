@@ -119,10 +119,10 @@ const shapeCitecheck = (citecheckId, check) => {
     citation_issue_count: issues.length,
     citation_issues: issues,
     citations: (c.citations || []).map(shapeCitation),
-    // The draft cited more sources than Citations to Check allowed.
-    // `citation_limit_exceeded` (found > limit) is the newer name for the same
-    // fact; the output key stays `citation_limit_reached`.
-    citation_limit_reached: (summary.citation_limit_exceeded ?? summary.citation_limit_reached) === true,
+    // The draft cited more sources than Citations to Check allowed. Read from
+    // the API's `citation_limit_exceeded` (found > limit); the output key stays
+    // `citation_limit_reached`.
+    citation_limit_reached: summary.citation_limit_exceeded === true,
     credits_charged: (c.credits && c.credits.charged) ?? 0,
     created_at: c.created_at || '',
     completed_at: c.completed_at || '',
@@ -152,7 +152,7 @@ const SHORT_BALANCE = 'insufficient_credits';
 
 const haltIfShortBalance = (z, citecheckId, check) => {
   if (!check || check.status !== 'failed') return;
-  const failure = readFailure({ failure: check.failure });
+  const failure = readFailure(check.failure);
   if (failure.code !== SHORT_BALANCE) return;
   const said = failure.hint || failure.detail || 'The Lenz balance ran out after this citation check was accepted.';
   throw new z.errors.HaltedError(

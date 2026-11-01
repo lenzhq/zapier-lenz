@@ -3,8 +3,13 @@
 User-facing changes to the Lenz integration for Zapier. Build and release
 mechanics live in [README.md](README.md#building-and-pushing).
 
-## Unreleased
+## 2.4.0
 
+- Update: internal only. The actions read only the Lenz API's 2026-10-11 response shape,
+  the one 2.3.0 already asks for; the code that also read the earlier (2026-05-13) shape
+  is gone. **No output changes**: for every recorded API response, every action and the
+  trigger give the same fields, in the same order, with the same values as 2.3.0. Like
+  2.3.0, it needs a Lenz API that serves 2026-10-11.
 - Docs: the Review a Draft Status row now says why a review can come back `queued`, `assessing` or `verifying` (Zapier resumes on the first message to its callback address, and a covered account's deep check can send a certificate message first) and how to read the finished review by its Review ID. Nothing the action does changes.
 - Docs: Verify a Claim's `needs_input` reason is now documented as `multi_claim` only. The README still listed `duplicate_found`, which the Lenz API retired on 2026-09-26. Its fields (Duplicate Verification ID, Duplicate URL, Similar Claims) stay on every result, always empty. Nothing the action does changes.
 

@@ -44,9 +44,9 @@ const capture = (fn, bundle) =>
     (e) => e,
   );
 
-describe.each(['legacy', 'canonical'])('a short balance, %s shape', (shape) => {
-  const hook = () => short(`${shape}__webhook_citecheck_failed_insufficient_credits`);
-  const get = () => short(`${shape}__get_failed_insufficient_credits`);
+describe('a short balance', () => {
+  const hook = () => short('canonical__webhook_citecheck_failed_insufficient_credits');
+  const get = () => short('canonical__get_failed_insufficient_credits');
 
   it('halts from the signed callback, with the API\'s own sentence and where to add credits', async () => {
     mockClient();
@@ -88,7 +88,7 @@ describe.each(['legacy', 'canonical'])('a short balance, %s shape', (shape) => {
   it.each(['citecheck__get_failed_no_citations', 'citecheck__get_failed_upstream_unavailable'])(
     'still returns %s as data, as it always has',
     async (name) => {
-      const check = loadFixture(shape, name);
+      const check = loadFixture(name);
       mockClient({ getCitecheck: jest.fn().mockResolvedValue(check) });
       const out = await appTester(resume, { authData: AUTH, outputData: { citecheck_id: check.citecheck_id } });
       expect(out.status).toBe('failed');
@@ -131,7 +131,7 @@ describe.each(['legacy', 'canonical'])('a short balance, %s shape', (shape) => {
   });
 
   it('does not touch a completed check', async () => {
-    const check = loadFixture(shape, 'citecheck__get_completed_clean');
+    const check = loadFixture('citecheck__get_completed_clean');
     mockClient({ getCitecheck: jest.fn().mockResolvedValue(check) });
     const out = await appTester(resume, { authData: AUTH, outputData: { citecheck_id: check.citecheck_id } });
     expect(out.status).toBe('completed');
