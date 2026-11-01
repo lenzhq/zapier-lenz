@@ -5,6 +5,7 @@ mechanics live in [README.md](README.md#building-and-pushing).
 
 ## Unreleased
 
+- Feature: **File upload support on Extract Claims and Review a Draft.** Both actions now accept either **Text** (draft/text string) or **File** (a document or image up to 10 MiB, passed from a previous step or as a public `https://` URL), supporting `.docx`, `.pdf`, `.png`, `.jpg`, and `.webp`. Providing both or neither is rejected before sending. Files are downloaded safely (bounded to 10 MiB, SSRF/private network protection) and submitted via multipart endpoints (`POST /api/v1/extract/file` and `POST /api/v1/review/file`). File refusal errors (`empty_file`, `file_too_large`, `unsupported_file_type`, etc.) halt the Zap gracefully on live runs and show a clear configuration error during editor testing.
 - Docs: the Review a Draft Status row now says why a review can come back `queued`, `assessing` or `verifying` (Zapier resumes on the first message to its callback address, and a covered account's deep check can send a certificate message first) and how to read the finished review by its Review ID. Nothing the action does changes.
 - Docs: Verify a Claim's `needs_input` reason is now documented as `multi_claim` only. The README still listed `duplicate_found`, which the Lenz API retired on 2026-09-26. Its fields (Duplicate Verification ID, Duplicate URL, Similar Claims) stay on every result, always empty. Nothing the action does changes.
 

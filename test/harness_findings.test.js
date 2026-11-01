@@ -254,7 +254,7 @@ describe('4. Samples are fresh copies', () => {
     const op = App.creates[key].operation;
     const bundle = {
       authData: AUTH,
-      inputData: { text: '', claim: '', draft: '' },
+      inputData: { text: key === 'assess' ? '' : 'Sample text', claim: '', draft: '' },
       meta: { isLoadingSample: true },
     };
     const first = await appTester(op.perform, bundle);

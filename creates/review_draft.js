@@ -4,6 +4,7 @@ const { mapLenzError } = require('../lib/errors');
 const { lenzClient } = require('../client');
 const { languageField } = require('../lib/languages');
 const { replayKey, HOUR_MS } = require('../lib/replay-key');
+const { downloadFileUrl } = require('../lib/upload');
 const {
   parseSignedCallback,
   requireWebhookSecretWhileTesting,
@@ -246,7 +247,7 @@ const reviewKey = (z, bundle, input, callbackUrl) =>
     [
       'review',
       callbackUrl,
-      input.text,
+      input.file_sha256 || input.text,
       input.language,
       input.depth,
       input.maxVerifications,
@@ -258,25 +259,86 @@ const reviewKey = (z, bundle, input, callbackUrl) =>
   );
 
 const perform = async (z, bundle) => {
+  const isSample = Boolean(bundle.meta && bundle.meta.isLoadingSample);
   const client = lenzClient(bundle);
+  const inputData = bundle.inputData || {};
+
+  const rawText = typeof inputData.text === 'string' ? inputData.text.trim() : '';
+  const rawFile = typeof inputData.file === 'string' ? inputData.file.trim() : '';
+  const hasText = Boolean(rawText);
+  const hasFile = Boolean(rawFile);
+
+  if (hasText && hasFile) {
+    const msg = 'Provide either Text or File, not both.';
+    if (isSample) {
+      throw new z.errors.Error(msg, 'InvalidInput', 400);
+    }
+    throw new z.errors.HaltedError(msg);
+  }
+
+  if (!hasText && !hasFile) {
+    const msg = 'Provide either Text or File.';
+    if (isSample) {
+      throw new z.errors.Error(msg, 'InvalidInput', 400);
+    }
+    throw new z.errors.HaltedError(msg);
+  }
 
   // Editor testing never runs a real two-to-four-minute review and never
   // spends credits: only the free webhook-secret check, then the sample.
-  if (bundle.meta && bundle.meta.isLoadingSample) {
+  if (isSample) {
     await requireWebhookSecretWhileTesting(z, client, ACTION_LABEL);
     return structuredClone(SAMPLE);
   }
 
   const input = reviewInput(bundle);
   const callbackUrl = z.generateCallbackUrl();
+
+  if (hasFile) {
+    const deadline = Date.now() + 28_000;
+    try {
+      const downloaded = await downloadFileUrl(z, rawFile, {
+        isSample,
+        timeoutMs: Math.max(1_000, deadline - Date.now()),
+      });
+      const fileSha256 = z.hash('sha256', downloaded.buffer, 'hex');
+      const idempotencyKey = reviewKey(z, bundle, { ...input, file_sha256: fileSha256 }, callbackUrl);
+      const remainingMs = Math.max(1_000, deadline - Date.now());
+      const accepted = await client.reviewFile(
+        {
+          file: downloaded.buffer,
+          filename: downloaded.filename,
+          contentType: downloaded.contentType,
+          webhookUrl: callbackUrl,
+          idempotencyKey,
+          language: input.language,
+          depth: input.depth,
+          maxVerifications: input.maxVerifications,
+          maxCitations: input.maxCitations,
+          visibility: input.visibility,
+          suppliedSources: input.supplied_sources,
+        },
+        { timeout: remainingMs },
+      );
+      return {
+        ...EMPTY_RESULT,
+        ...NO_FAILURE,
+        review_id: accepted.review_id,
+        status: accepted.status || 'queued',
+      };
+    } catch (err) {
+      if (isWebhookSecretMissing(err)) throw webhookSecretMissing(z, ACTION_LABEL);
+      return mapLenzError(z, err, { remainingIsCredits: true, isSample });
+    }
+  }
+
+  const idempotencyKey = reviewKey(z, bundle, input, callbackUrl);
   return client
     .review({
       ...input,
       webhookUrl: callbackUrl,
-      idempotencyKey: reviewKey(z, bundle, input, callbackUrl),
+      idempotencyKey,
     })
-    // What Zapier parks as outputData and, if the callback never arrives,
-    // what the user sees.
     .then((accepted) => ({
       ...EMPTY_RESULT,
       ...NO_FAILURE,
@@ -287,7 +349,7 @@ const perform = async (z, bundle) => {
       if (isWebhookSecretMissing(err)) throw webhookSecretMissing(z, ACTION_LABEL);
       // A review's 402 counts `remaining` in credits too (its citation
       // refusal states no other balance in the newer shape).
-      return mapLenzError(z, err, { remainingIsCredits: true });
+      return mapLenzError(z, err, { remainingIsCredits: true, isSample });
     });
 };
 
@@ -319,9 +381,17 @@ module.exports = {
         key: 'text',
         label: 'Draft',
         type: 'text',
-        required: true,
+        required: false,
         helpText:
-          'The text to review, such as an AI-written answer, an article or an email (up to 50,000 characters; longer text is cut and the Input Truncated output says so), or one public http(s) URL to a web page, Google Doc, PDF (.pdf), YouTube video, or image (.png, .jpg, .jpeg, .webp). Clicking Test shows an example review so you can map the output fields; a turned-on Zap reviews this draft.',
+          'The text to review, such as an AI-written answer, an article or an email (up to 50,000 characters; longer text is cut and the Input Truncated output says so), or one public http(s) URL to a web page, Google Doc, PDF (.pdf), YouTube video, or image (.png, .jpg, .jpeg, .webp). Clicking Test shows an example review so you can map the output fields; a turned-on Zap reviews this draft. Provide either Text or File, not both.',
+      },
+      {
+        key: 'file',
+        label: 'File',
+        type: 'file',
+        required: false,
+        helpText:
+          'A document or image to review (.docx, .pdf up to 100 pages, .png, .jpg, .webp up to 10 MB) passed from a previous step or as a public https:// URL. Provide either Text or File, not both.',
       },
       languageField(),
       {

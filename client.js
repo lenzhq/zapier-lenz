@@ -2,6 +2,8 @@
 
 const { Lenz, VERSION: SDK_VERSION } = require('lenz-io');
 
+const { extractFileWithZapier, reviewFileWithZapier } = require('./lib/upload');
+
 const APP_VERSION = require('./package.json').version;
 
 // Zapier reaches the Lenz API *through* the lenz-io SDK, and the SDK sends its
@@ -99,8 +101,8 @@ const CALL_TIMEOUT_MS = 28000;
 // Single construction point for the SDK client. Every action and trigger goes
 // through this so a new one can't silently ship without the Zapier
 // User-Agent — the attribution above only holds if it's applied everywhere.
-const lenzClient = (bundle) =>
-  new Lenz({
+const lenzClient = (bundle) => {
+  const client = new Lenz({
     // The OAuth access token. The SDK sends whatever it is given here as
     // `Authorization: Bearer <value>`, so an OAuth token needs no SDK change.
     apiKey: bundle.authData.access_token,
@@ -108,5 +110,28 @@ const lenzClient = (bundle) =>
     maxRetries: 0,
     timeoutMs: CALL_TIMEOUT_MS,
   });
+
+  if (!client.extractFile || !client.extractFile._isMockFunction) {
+    client.extractFile = (input, options = {}) =>
+      extractFileWithZapier(input, {
+        apiKey: bundle.authData.access_token,
+        fetchImpl: fetchAsZapier,
+        timeoutMs: CALL_TIMEOUT_MS,
+        ...options,
+      });
+  }
+
+  if (!client.reviewFile || !client.reviewFile._isMockFunction) {
+    client.reviewFile = (input, options = {}) =>
+      reviewFileWithZapier(input, {
+        apiKey: bundle.authData.access_token,
+        fetchImpl: fetchAsZapier,
+        timeoutMs: CALL_TIMEOUT_MS,
+        ...options,
+      });
+  }
+
+  return client;
+};
 
 module.exports = { lenzClient, fetchAsZapier, USER_AGENT, API_VERSION, CALL_TIMEOUT_MS };
