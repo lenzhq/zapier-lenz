@@ -1257,6 +1257,97 @@ describe('creates.extract_claims', () => {
     expect(result).toMatchObject({ status: 'ready', claim: 'A' });
   });
 
+  describe('file upload support', () => {
+    it('rejects when both text and file are provided (live: HaltedError, sample: Error)', async () => {
+      const liveErr = await captureCreateError(App.creates.extract_claims.operation.perform, {
+        authData: { access_token: 'lenz_good' },
+        inputData: { text: 'Some text', file: 'https://example.com/doc.pdf' },
+      });
+      expect(liveErr.name).toBe('HaltedError');
+      expect(liveErr.message).toContain('Provide either Text or File, not both.');
+
+      const sampleErr = await captureCreateError(App.creates.extract_claims.operation.perform, {
+        authData: { access_token: 'lenz_good' },
+        inputData: { text: 'Some text', file: 'https://example.com/doc.pdf' },
+        meta: { isLoadingSample: true },
+      });
+      expect(sampleErr.name).not.toBe('HaltedError');
+      expect(sampleErr.message).toContain('Provide either Text or File, not both.');
+    });
+
+    it('rejects when neither text nor file is provided (live: HaltedError, sample: Error)', async () => {
+      const liveErr = await captureCreateError(App.creates.extract_claims.operation.perform, {
+        authData: { access_token: 'lenz_good' },
+        inputData: { text: '', file: '' },
+      });
+      expect(liveErr.name).toBe('HaltedError');
+      expect(liveErr.message).toContain('Provide either Text or File.');
+
+      const sampleErr = await captureCreateError(App.creates.extract_claims.operation.perform, {
+        authData: { access_token: 'lenz_good' },
+        inputData: { text: '', file: '' },
+        meta: { isLoadingSample: true },
+      });
+      expect(sampleErr.name).not.toBe('HaltedError');
+      expect(sampleErr.message).toContain('Provide either Text or File.');
+    });
+
+    it('processes file upload with download and extractFile call', async () => {
+      const mockFetch = jest.fn().mockImplementation(async (url) => {
+        if (url.includes('example.com')) {
+          return new Response(Buffer.from('docx content here'), {
+            status: 200,
+            headers: {
+              'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+              'Content-Disposition': 'attachment; filename="draft.docx"',
+            },
+          });
+        }
+        return new Response(
+          JSON.stringify({
+            status: 'ready',
+            claim: 'Claim from file',
+            identified_claims: ['Claim from file'],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      });
+
+      const client = mockClient({
+        extractFile: jest.fn().mockResolvedValue({
+          status: 'ready',
+          claim: 'Claim from file',
+          identified_claims: ['Claim from file'],
+        }),
+      });
+      LenzClient.mockImplementation(() => client);
+
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = mockFetch;
+      try {
+        const bundle = {
+          authData: { access_token: 'lenz_good' },
+          inputData: { file: 'https://example.com/draft.docx', language: 'en' },
+        };
+        const result = await appTester(App.creates.extract_claims.operation.perform, bundle);
+
+        expect(result).toMatchObject({ status: 'ready', claim: 'Claim from file' });
+        expect(client.extractFile).toHaveBeenCalledWith(
+          expect.objectContaining({
+            filename: 'draft.docx',
+            contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            language: 'en',
+          }),
+          expect.objectContaining({
+            idempotencyKey: expect.any(String),
+          }),
+        );
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  });
+
   it('stubs sample data and makes NO real call while loading a sample (consistent with the other creates)', async () => {
     const client = mockClient({ extract: jest.fn() });
     LenzClient.mockImplementation(() => client);

@@ -782,3 +782,136 @@ describe('a citation limit above the 20 one run takes counts as 20', () => {
     expect(client.review.mock.calls.map(([input]) => input.maxCitations)).toEqual([20, 5, undefined]);
   });
 });
+
+describe('Review a Draft: file upload support', () => {
+  it('rejects when both text and file are provided (live: HaltedError)', async () => {
+    const err = await capture(review.perform, {
+      authData: AUTH,
+      inputData: { text: 'Some text', file: 'https://example.com/doc.pdf' },
+    });
+    expect(err.name).toBe('HaltedError');
+    expect(err.message).toContain('Provide either Text or File, not both.');
+  });
+
+  it('rejects when neither text nor file is provided (live: HaltedError)', async () => {
+    const err = await capture(review.perform, {
+      authData: AUTH,
+      inputData: { text: '', file: '' },
+    });
+    expect(err.name).toBe('HaltedError');
+    expect(err.message).toContain('Provide either Text or File.');
+  });
+
+  it('rejects when both text and file are provided (sample: Error with code InvalidInput)', async () => {
+    const err = await appTester(review.perform, {
+      authData: AUTH,
+      inputData: { text: 'Some text', file: 'https://example.com/doc.pdf' },
+      meta: { isLoadingSample: true },
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(zapier.errors.Error);
+    expect(err.name).not.toBe('HaltedError');
+    expect(err.message).toContain('Provide either Text or File, not both.');
+    expect(err.message).toContain('"code":"InvalidInput"');
+    expect(err.message).toContain('"status":400');
+  });
+
+  it('rejects when neither text nor file is provided (sample: Error with code InvalidInput)', async () => {
+    const err = await appTester(review.perform, {
+      authData: AUTH,
+      inputData: {},
+      meta: { isLoadingSample: true },
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(zapier.errors.Error);
+    expect(err.name).not.toBe('HaltedError');
+    expect(err.message).toContain('Provide either Text or File.');
+    expect(err.message).toContain('"code":"InvalidInput"');
+    expect(err.message).toContain('"status":400');
+  });
+
+  it('downloads file and calls reviewFile on live run', async () => {
+    const mockFetch = jest.fn().mockImplementation(async (url) => {
+      if (url.includes('example.com')) {
+        return new Response(Buffer.from('%PDF-1.4 sample pdf content'), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': 'attachment; filename="statement.pdf"',
+          },
+        });
+      }
+      return new Response(JSON.stringify({ review_id: 'rev_file_1', status: 'queued' }), {
+        status: 202,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    const client = mockClient({
+      reviewFile: jest.fn().mockResolvedValue({ review_id: 'rev_file_1', status: 'queued' }),
+    });
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mockFetch;
+    try {
+      const bundle = {
+        authData: AUTH,
+        inputData: {
+          file: 'https://example.com/statement.pdf',
+          depth: 'low',
+          maxVerifications: '3',
+          visibility: 'private',
+        },
+      };
+      const result = await appTester(review.perform, bundle);
+
+      expect(result).toMatchObject({ review_id: 'rev_file_1', status: 'queued' });
+      expect(client.reviewFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filename: 'statement.pdf',
+          contentType: 'application/pdf',
+          depth: 'low',
+          maxVerifications: 3,
+          visibility: 'private',
+          idempotencyKey: expect.any(String),
+        }),
+        expect.objectContaining({
+          timeout: expect.any(Number),
+        }),
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('generates the same idempotency key for identical file bytes at different URLs', async () => {
+    const client = mockClient({
+      reviewFile: jest.fn().mockResolvedValue({ review_id: 'rev_file_2', status: 'queued' }),
+    });
+
+    const mockFetch = jest.fn().mockImplementation(async () =>
+      new Response(Buffer.from('fixed file bytes'), {
+        status: 200,
+        headers: { 'Content-Type': 'application/pdf' },
+      }),
+    );
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mockFetch;
+    try {
+      const run = (fileUrl) =>
+        appTester(review.perform, {
+          authData: AUTH,
+          inputData: { file: fileUrl },
+          meta: { zap: { id: 10 } },
+        });
+
+      await run('https://example.com/file_a.pdf');
+      await run('https://example.com/file_b.pdf');
+
+      const keyA = client.reviewFile.mock.calls[0][0].idempotencyKey;
+      const keyB = client.reviewFile.mock.calls[1][0].idempotencyKey;
+      expect(keyA).toBe(keyB);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
