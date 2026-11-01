@@ -830,7 +830,7 @@ describe('Review a Draft: file upload support', () => {
 
   it('downloads file and calls reviewFile on live run', async () => {
     const mockFetch = jest.fn().mockImplementation(async (url) => {
-      if (url.includes('example.com')) {
+      if (new URL(url).hostname === 'example.com') {
         return new Response(Buffer.from('%PDF-1.4 sample pdf content'), {
           status: 200,
           headers: {

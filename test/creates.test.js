@@ -1294,7 +1294,7 @@ describe('creates.extract_claims', () => {
 
     it('processes file upload with download and extractFile call', async () => {
       const mockFetch = jest.fn().mockImplementation(async (url) => {
-        if (url.includes('example.com')) {
+        if (new URL(url).hostname === 'example.com') {
           return new Response(Buffer.from('docx content here'), {
             status: 200,
             headers: {
