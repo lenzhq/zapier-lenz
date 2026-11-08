@@ -5,6 +5,7 @@ mechanics live in [README.md](README.md#building-and-pushing).
 
 ## 2.4.0
 
+- Update: **Serbian** (`sr`) is now in the Language dropdown on every action. Lenz answers in Serbian in the Latin script, also when the text it checks is in Cyrillic. Nothing else changes.
 - Update: internal only. The actions read only the Lenz API's 2026-10-11 response shape,
   the one 2.3.0 already asks for; the code that also read the earlier (2026-05-13) shape
   is gone. **No output changes**: for every recorded API response, every action and the

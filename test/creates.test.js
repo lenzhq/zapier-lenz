@@ -1571,7 +1571,7 @@ describe('creates.ask', () => {
 });
 
 // #17 — `language` was free text described as "ISO 639-1", but the API
-// accepts exactly twelve codes and 422s everything else. A 422 becomes a
+// accepts exactly thirteen codes and 422s everything else. A 422 becomes a
 // plain z.errors.Error, which counts toward the error rate that turns a Zap
 // off, so `English` or `en-US` in that box failed EVERY run with nothing in
 // the editor to explain it.
@@ -1597,6 +1597,7 @@ describe('language is a closed set on every action', () => {
     'no',
     'fi',
     'bg',
+    'sr',
   ];
 
   const languageFieldOf = (action) =>
@@ -1614,6 +1615,7 @@ describe('language is a closed set on every action', () => {
     const choices = languageFieldOf('verify_claim').choices;
     expect(choices[0]).toEqual({ value: 'en', sample: 'en', label: 'English' });
     expect(choices[11]).toEqual({ value: 'bg', sample: 'bg', label: 'Bulgarian' });
+    expect(choices[12]).toEqual({ value: 'sr', sample: 'sr', label: 'Serbian' });
     for (const choice of choices) {
       expect(choice.label).not.toBe(choice.value);
     }
@@ -1642,7 +1644,7 @@ describe('language is a closed set on every action', () => {
 });
 
 // `auto` answers in the language of the text on assess, verify and ask. It is
-// wording only: the dropdown keeps its twelve codes, the value is entered as a
+// wording only: the dropdown keeps its thirteen codes, the value is entered as a
 // custom value, and whatever is in the field goes to the API as typed.
 describe('language "auto"', () => {
   const fieldOf = (action) =>
@@ -1659,8 +1661,8 @@ describe('language "auto"', () => {
     },
   );
 
-  it.each(['assess', 'verify_claim', 'ask', 'extract_claims'])('%s keeps the dropdown to the twelve codes', (action) => {
-    expect(fieldOf(action).choices).toHaveLength(12);
+  it.each(['assess', 'verify_claim', 'ask', 'extract_claims'])('%s keeps the dropdown to the thirteen codes', (action) => {
+    expect(fieldOf(action).choices).toHaveLength(13);
     expect(fieldOf(action).choices.map((c) => c.value)).not.toContain('auto');
   });
 
