@@ -30,6 +30,16 @@ Lenz is in Zapier's public App Directory (in Beta): https://zapier.com/apps/lenz
 
 Verify a Claim and Assess (Fast) return a `passed` boolean (derived from the verdict) alongside the raw verdict and confidence — and, on Verify a Claim, the sourced citations — so you can wire a **Filter** step directly off the result — e.g. only continue the Zap when a claim passed. Review a Draft and Check Citations return `clean` instead: true only when the job finished and found nothing wrong.
 
+### Supplied Sources
+
+**Verify a Claim**, **Check Citations** and **Review a Draft** (with Draft text or a File)
+take **Supplied Sources**: sources you provide, such as a paywalled report or an internal
+document, that Lenz checks against as well as what it finds on the web. Each line item
+needs **Source Text** (the full text or an excerpt); **Source URL**, **Source DOI**,
+**Source Citation**, **Source Title** and **Source Published Date** are optional. A line
+with no Source Text is skipped. On Verify a Claim, each returned source says where it came
+from in **Source Origin**: `web` or `supplied`.
+
 ### Values to filter on
 
 A **Filter** or **Paths** step compares against exact strings, and the Zap editor offers
@@ -46,15 +56,15 @@ only what the sample shows. These are the values the API actually sends:
 | `passed` | Verify a Claim, Assess (Fast) | `true` for a True or Mostly True verdict, `false` for Mixed, Mostly False and False, and **empty** when `verdict` is `No Public Record` (Lenz found no public record of the claim) or there is no verdict at all. Branch on `passed` **is true**, and send an empty `passed` to its own path. |
 | `verdict` | Verify a Claim, Assess (Fast), New Verification Completed | `True`, `Mostly True`, `Mixed`, `Mostly False`, `False`, or `No Public Record`. On `No Public Record`, `lenz_score` is empty. Assess (Fast) also gives `Error` on a row that failed. |
 | `domain` | Verify a Claim | Same eight capitalised values as above, or empty. |
-| `status` | Verify a Claim | `completed`, `needs_input`, `failed`, or `processing`. Built by the integration. |
+| `status` | Verify a Claim | `completed`, `needs_input`, `failed`, or `processing`. Built by the integration. A check stopped elsewhere (the Stop button on lenz.io) reads `failed`, with `failure_class` `cancelled` and `retryable` false. |
 | `reason` | Verify a Claim, when `status` is `needs_input` | `multi_claim`. Empty otherwise. Two more values were retired by the API: `clarification_required` on 2026-09-12 and `duplicate_found` on 2026-09-26. Their fields (**Candidate Readings**, **Duplicate Verification ID**, **Duplicate URL**, **Similar Claims**) are still emitted, always empty, so a Zap that maps them keeps working. |
 | `claims[].rationale` | Assess (Fast) | Free text, not a value to filter on: the reasoning of a reviewer who agrees with the panel's verdict. It is a reviewer's note, not a checked source; for sourced evidence, call /verify. Empty on an `Error` row. `claims[].dissent` (**Reviewer Dissent**) is deprecated: the Lenz API no longer returns it, so it is always empty. The field stays so existing Zaps keep working. |
 | `claims[].searched_pages`, `issues[].searched_pages` (**Pages the Reviewers Looked At**) | Assess (Fast), Review a Draft | A list of pages, each with a **Title** and a **URL**: the pages the reviewers looked at while checking the claim. They are pages to look at, not checked sources that confirm the verdict; for sourced evidence, use Verify a Claim. A page appears only when its title is text and its link is an `http://` or `https://` address with no embedded sign-in. Empty when there are none, on an `Error` row, and until the Lenz API sends the field. On Review a Draft the pages shown are those of the claim the issue is about. |
 | `suggested_rewrite` | Verify a Claim, New Verification Completed | Free text: a suggested rewrite of `claim` that the verification's findings support, for a person to review before using it. **It has not been verified itself.** Empty for a true claim, when no correction is established, and on verifications from before Lenz added it. |
 | `depth` | Verify a Claim, when `status` is `completed` | `standard` or `low` — the depth the verdict was **produced** with, which is not always the one you asked for. Empty on every other status, and on verdicts from before Lenz recorded it. |
 | `visibility` | Verify a Claim, when `status` is `completed` | `private`, `unlisted` or `public`. You can only *request* the first two; `public` is read back when the verdict was served from an existing verification someone made public. Empty on every other status. |
-| `status` | Review a Draft | `completed` or `failed` once it ends. `queued`, `assessing` or `verifying` means Zapier resumed the step before the review ended; **Message** then says so and gives the **Review ID**. Zapier resumes a step on the first message Lenz sends to its callback address, and for an account with warranty coverage a deep check of the review can send a certificate message before the review ends, so this can happen (it has not been seen in practice). The review still finishes in Lenz, but this Zap step does not receive its result later: read it by its Review ID (`GET /api/v1/reviews/{review_id}`). Filter on `completed` so the Zap only goes on with a finished review. |
-| `status` | Check Citations | `completed` or `failed`; `queued` or `checking` means it had not ended yet (see **Message**). |
+| `status` | Review a Draft | `completed` or `failed` once it ends; a review stopped elsewhere reads `failed` with `failure_class` `cancelled`. `queued`, `assessing` or `verifying` means Zapier resumed the step before the review ended; **Message** then says so and gives the **Review ID**. Zapier resumes a step on the first message Lenz sends to its callback address, and for an account with warranty coverage a deep check of the review can send a certificate message before the review ends, so this can happen (it has not been seen in practice). The review still finishes in Lenz, but this Zap step does not receive its result later: read it by its Review ID (`GET /api/v1/reviews/{review_id}`). Filter on `completed` so the Zap only goes on with a finished review. |
+| `status` | Check Citations | `completed` or `failed` (a check stopped elsewhere reads `failed` with `failure_class` `cancelled`); `queued` or `checking` means it had not ended yet (see **Message**). |
 | `outcome` | Review a Draft, Check Citations | `clean`, `issues_found`, `incomplete` (some checks failed and nothing wrong was found in the rest) or `unchecked`. Empty until the job ends. |
 | `issues[].source` (**Checked By**) | Review a Draft | `assessment` (the quick check) or `verification` (a deep check, which also has a **Key Finding** and a **Lenz Page**). |
 | `citations_skipped` | Review a Draft | Why citations you asked for were **not** checked: `url_input`, `switched_off` or `insufficient_credits`. Empty otherwise. When set, **Clean** says nothing about the citations. |

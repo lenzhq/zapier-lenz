@@ -11,7 +11,7 @@ const {
   webhookSecretMissing,
 } = require('../lib/signed-callback');
 const { shapeCitation, shapeCitationIssue, CITATION_CHILDREN, CITATION_ISSUE_CHILDREN } = require('../lib/citations');
-const { NO_FAILURE, isTerminal, shapeJobFailure, citationLimit } = require('../lib/jobs');
+const { NO_FAILURE, isTerminal, outputStatus, jobFailure, citationLimit } = require('../lib/jobs');
 const {
   readFailure,
   isObject,
@@ -107,7 +107,8 @@ const shapeCitecheck = (citecheckId, check) => {
   const summary = c.summary || {};
   const counts = summary.citation_checks || {};
   const issues = (c.citation_issues || []).map(shapeCitationIssue);
-  const status = c.status || 'queued';
+  const apiStatus = c.status || 'queued';
+  const status = outputStatus(apiStatus);
   return {
     citecheck_id: c.citecheck_id || citecheckId,
     status,
@@ -126,7 +127,7 @@ const shapeCitecheck = (citecheckId, check) => {
     credits_charged: (c.credits && c.credits.charged) ?? 0,
     created_at: c.created_at || '',
     completed_at: c.completed_at || '',
-    ...(status === 'failed' ? shapeJobFailure(c.failure) : NO_FAILURE),
+    ...(status === 'failed' ? jobFailure(apiStatus, c.failure) : NO_FAILURE),
     message: isTerminal(status)
       ? ''
       : `This citation check was still running when Zapier resumed the step. It will finish in Lenz; its Citation Check ID is ${c.citecheck_id || citecheckId}.`,
@@ -166,7 +167,9 @@ const fromSignedCitecheck = (bundle) => {
   if (!parsed.event) return parsed;
   const event = parsed.event;
   const citecheckId = bundle.outputData && bundle.outputData.citecheck_id;
-  if (event.event !== 'citecheck.completed' && event.event !== 'citecheck.failed') {
+  // `citecheck.cancelled` ends the check too (2026-10-11 shape); it reads as a
+  // failed check with Failure Class `cancelled`.
+  if (!['citecheck.completed', 'citecheck.failed', 'citecheck.cancelled'].includes(event.event)) {
     return { fallback: `event ${event.event || 'unknown'} is not the citation check's result` };
   }
   if (!citecheckId || event.citecheckId !== citecheckId) {

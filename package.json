@@ -4,7 +4,7 @@
   "description": "Fact-check claims and catch AI hallucinations with Lenz - verified, sourced verdicts inside your Zaps.",
   "license": "MIT",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12"
   },
   "homepage": "https://lenz.io",
   "repository": {
@@ -15,7 +15,7 @@
     "test": "jest --testTimeout 10000 && zapier-platform validate --without-style"
   },
   "dependencies": {
-    "lenz-io": "^2.18.0",
+    "lenz-io": "^3.6.0",
     "undici": "^6.29.1",
     "zapier-platform-core": "19.1.0"
   },
