@@ -136,3 +136,45 @@ describe('list output fields declare the children their sample carries', () => {
     expect(missing).toEqual([]);
   });
 });
+
+// Zapier's promote pre-check D008 ("invalid markdown link in help text")
+// refused 2.4.0: Review a Draft's File help said "a public https:// URL", and
+// a bare scheme reads as a broken link. Neither `npm test` nor `zapier
+// validate` runs D008; it surfaces only at promote, after the upload. So every
+// input help text is held to it here: a URL scheme only as the start of a
+// whole URL, and a markdown link only to a whole http(s) URL.
+describe('input help texts pass Zapier’s link check (D008)', () => {
+  const helpTexts = [];
+  const collect = (where, fields) => {
+    for (const field of fields || []) {
+      if (typeof field !== 'object' || field === null) continue; // a dynamic-field function
+      if (typeof field.helpText === 'string') helpTexts.push([`${where}.${field.key}`, field.helpText]);
+      collect(`${where}.${field.key}`, field.children);
+    }
+  };
+  for (const [kind, defs] of [
+    ['creates', App.creates],
+    ['triggers', App.triggers],
+    ['searches', App.searches],
+  ]) {
+    for (const [key, def] of Object.entries(defs || {})) {
+      const fields = def.operation && def.operation.inputFields;
+      collect(`${kind}.${key}`, Array.isArray(fields) ? fields : []);
+    }
+  }
+  collect('authentication', App.authentication && App.authentication.fields);
+
+  it('finds the help texts', () => {
+    expect(helpTexts.length).toBeGreaterThan(20);
+  });
+
+  it.each(helpTexts)('%s has no bare URL scheme', (_where, text) => {
+    // `https://` must be followed by a host, as in https://lenz.io.
+    expect(text).not.toMatch(/\bhttps?:\/\/(?![A-Za-z0-9])/i);
+  });
+
+  it.each(helpTexts)('%s links only to whole http(s) URLs', (_where, text) => {
+    const targets = [...text.matchAll(/\]\(([^)]*)\)/g)].map((m) => m[1]);
+    expect(targets.filter((t) => !/^https?:\/\/[^\s/]+\.[^\s]+$/i.test(t))).toEqual([]);
+  });
+});

@@ -397,7 +397,7 @@ module.exports = {
         type: 'file',
         required: false,
         helpText:
-          'A document or image to review (.docx, .pdf up to 100 pages, .png, .jpg, .webp up to 10 MB) passed from a previous step or as a public https:// URL. Provide either Text or File, not both.',
+          'A document or image to review (.docx, .pdf up to 100 pages, .png, .jpg, .webp up to 10 MB) passed from a previous step or as a public HTTPS link. Provide either Text or File, not both.',
       },
       languageField(),
       {
