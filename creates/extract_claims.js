@@ -183,14 +183,11 @@ const perform = async (z, bundle) => {
     throw new z.errors.HaltedError(msg);
   }
 
-  if (!hasText && !hasFile) {
-    if (!isSample || ('text' in inputData || 'file' in inputData)) {
-      const msg = 'Provide either Text or File.';
-      if (isSample) {
-        throw new z.errors.Error(msg, 'InvalidInput', 422);
-      }
-      throw new z.errors.HaltedError(msg);
-    }
+  // Neither is only a problem on a live run. In the editor, Test runs before
+  // the user has mapped Text or File (an unmapped field arrives as ''), and it
+  // must still return the sample so the output fields can be mapped.
+  if (!hasText && !hasFile && !isSample) {
+    throw new z.errors.HaltedError('Provide either Text or File.');
   }
 
   if (isSample) {

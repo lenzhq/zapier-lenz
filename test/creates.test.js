@@ -7,6 +7,14 @@ jest.mock('lenz-io', () => {
   return { ...actual, Lenz: jest.fn() };
 });
 
+// File downloads go through undici's own fetch (lib/upload.js, guardedFetch).
+// Route it to whatever globalThis.fetch a test installs, so the download
+// stubs below keep working; the guarded Agent is tested in upload.test.js.
+jest.mock('undici', () => ({
+  ...jest.requireActual('undici'),
+  fetch: (...args) => globalThis.fetch(...args),
+}));
+
 const { Lenz: LenzClient, LenzError, LenzValidationError } = require('lenz-io');
 const App = require('../index');
 const { mapSuppliedSources } = require('../lib/shapes');
@@ -1303,21 +1311,22 @@ describe('creates.extract_claims', () => {
       expect(sampleErr.message).toContain('Provide either Text or File, not both.');
     });
 
-    it('rejects when neither text nor file is provided (live: HaltedError, sample: Error)', async () => {
+    it('halts a live run that has neither text nor file', async () => {
       const liveErr = await captureCreateError(App.creates.extract_claims.operation.perform, {
         authData: { access_token: 'lenz_good' },
         inputData: { text: '', file: '' },
       });
       expect(liveErr.name).toBe('HaltedError');
       expect(liveErr.message).toContain('Provide either Text or File.');
+    });
 
-      const sampleErr = await captureCreateError(App.creates.extract_claims.operation.perform, {
+    it('returns the sample when Test runs before Text or File is mapped', async () => {
+      const result = await appTester(App.creates.extract_claims.operation.perform, {
         authData: { access_token: 'lenz_good' },
         inputData: { text: '', file: '' },
         meta: { isLoadingSample: true },
       });
-      expect(sampleErr.name).not.toBe('HaltedError');
-      expect(sampleErr.message).toContain('Provide either Text or File.');
+      expect(result.claim).toBeTruthy();
     });
 
     it('processes file upload with download and extractFile call', async () => {

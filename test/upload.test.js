@@ -12,6 +12,9 @@ const {
   reviewFileWithZapier,
   isPrivateIpv4,
   isPrivateOrReservedIp,
+  guardedLookup,
+  isBlockedAddress,
+  EXT_TO_MIME,
   MAX_FILE_BYTES,
 } = require('../lib/upload');
 const { FILE_REFUSAL_CODES } = require('../lib/errors');
@@ -738,6 +741,87 @@ describe('lib/upload.js', () => {
           { baseUrl: 'https://api.lenz.io', apiKey: 'test', fetchImpl: mockFetch },
         ),
       ).rejects.toThrow('Invalid JSON response from Lenz');
+    });
+
+    it('sends visibility private when Visibility is left blank, like the text path', async () => {
+      let sent;
+      const mockFetch = jest.fn(async (url, init) => {
+        sent = init.body;
+        return new Response(JSON.stringify({ review_id: 'r1', status: 'queued' }), { status: 202 });
+      });
+      await reviewFileWithZapier(
+        { file: Buffer.from('data'), filename: 'a.pdf', contentType: 'application/pdf' },
+        { apiKey: 'test', fetchImpl: mockFetch },
+      );
+      expect(sent.get('visibility')).toBe('private');
+    });
+  });
+
+  describe('generic content types', () => {
+    it.each([
+      ['binary/octet-stream', 'doc.pdf', 'application/pdf'],
+      ['application/x-download', 'report.docx', EXT_TO_MIME['.docx']],
+      ['text/plain', 'scan.png', 'image/png'],
+      ['', 'photo.jpeg', 'image/jpeg'],
+    ])('%s with %s is sent as %s', (type, name, expected) => {
+      expect(normalizeFilenameAndMime(name, type).contentType).toBe(expected);
+    });
+
+    it('keeps a supported type the server stated over the extension', () => {
+      expect(normalizeFilenameAndMime('download.bin', 'application/pdf').contentType).toBe('application/pdf');
+    });
+  });
+
+  describe('IPv6 ranges that carry or reach internal addresses', () => {
+    it.each([
+      ['2002:a9fe:a9fe::', '6to4 wrapping 169.254.169.254'],
+      ['2002:7f00:1::', '6to4 wrapping 127.0.0.1'],
+      ['2001:0:4136:e378:8000:63bf:3fff:fdd2', 'Teredo'],
+      ['fec0::1', 'site-local'],
+    ])('%s (%s) is refused', (ip) => {
+      expect(isPrivateOrReservedIp(ip)).toBe(true);
+    });
+
+    it('a 6to4 address wrapping a public IPv4 is allowed', () => {
+      expect(isPrivateOrReservedIp('2002:0808:0808::')).toBe(false); // 8.8.8.8
+    });
+  });
+
+  describe('DNS rebinding', () => {
+    const dns = require('node:dns');
+    afterEach(() => jest.restoreAllMocks());
+
+    it('guardedLookup refuses a private answer and passes a public one through', (done) => {
+      jest.spyOn(dns, 'lookup').mockImplementation((host, opts, cb) =>
+        cb(null, host === 'evil.test' ? [{ address: '169.254.169.254', family: 4 }] : [{ address: '93.184.216.34', family: 4 }]),
+      );
+      guardedLookup('evil.test', {}, (err) => {
+        expect(isBlockedAddress(err)).toBe(true);
+        guardedLookup('good.test', {}, (err2, address, family) => {
+          expect(err2).toBeNull();
+          expect(address).toBe('93.184.216.34');
+          expect(family).toBe(4);
+          done();
+        });
+      });
+    });
+
+    it('halts when the host answers public to the pre-check but internal at connect time', async () => {
+      // The rebinding attack: the early check (verifyDns) sees a public
+      // address, the connection's own lookup gets the metadata address.
+      jest
+        .spyOn(dns, 'lookup')
+        .mockImplementation((host, opts, cb) => cb(null, [{ address: '169.254.169.254', family: 4 }]));
+      const publicFirst = jest.fn().mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
+
+      const err = await downloadFileUrl(zStub, 'https://rebind.test/file.pdf', {
+        timeoutMs: 5000,
+        lookupImpl: publicFirst,
+      }).catch((e) => e);
+
+      expect(publicFirst).toHaveBeenCalled();
+      expect(err).toBeInstanceOf(zapier.errors.HaltedError);
+      expect(err.message).toContain('local, private, or metadata address');
     });
   });
 });

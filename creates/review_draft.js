@@ -1,7 +1,7 @@
 'use strict';
 
 const { mapLenzError } = require('../lib/errors');
-const { lenzClient } = require('../client');
+const { lenzClient, CALL_TIMEOUT_MS } = require('../client');
 const { languageField } = require('../lib/languages');
 const { replayKey, HOUR_MS } = require('../lib/replay-key');
 const { downloadFileUrl } = require('../lib/upload');
@@ -276,12 +276,11 @@ const perform = async (z, bundle) => {
     throw new z.errors.HaltedError(msg);
   }
 
-  if (!hasText && !hasFile) {
-    const msg = 'Provide either Text or File.';
-    if (isSample) {
-      throw new z.errors.Error(msg, 'InvalidInput', 400);
-    }
-    throw new z.errors.HaltedError(msg);
+  // Neither is only a problem on a live run. In the editor, Test runs before
+  // the user has mapped Draft or File (an unmapped field arrives as ''), and it
+  // must still run the webhook-secret check and return the sample.
+  if (!hasText && !hasFile && !isSample) {
+    throw new z.errors.HaltedError('Provide either Text or File.');
   }
 
   // Editor testing never runs a real two-to-four-minute review and never
@@ -295,7 +294,9 @@ const perform = async (z, bundle) => {
   const callbackUrl = z.generateCallbackUrl();
 
   if (hasFile) {
-    const deadline = Date.now() + 28_000;
+    // One budget for the download AND the upload: Zapier ends the step at
+    // ~30s, so the upload gets only what the download left.
+    const deadline = Date.now() + CALL_TIMEOUT_MS;
     try {
       const downloaded = await downloadFileUrl(z, rawFile, {
         isSample,
@@ -318,7 +319,9 @@ const perform = async (z, bundle) => {
           visibility: input.visibility,
           suppliedSources: input.supplied_sources,
         },
-        { timeout: remainingMs },
+        // `timeoutMs`, the key client.js's wrapper sets: passing `timeout`
+        // left the wrapper's full 28s in place after a slow download.
+        { timeoutMs: remainingMs },
       );
       return {
         ...EMPTY_RESULT,

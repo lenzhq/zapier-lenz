@@ -110,7 +110,12 @@ const lenzClient = (bundle) => {
     timeoutMs: CALL_TIMEOUT_MS,
   });
 
-  if (!client.extractFile || !client.extractFile._isMockFunction) {
+  // lenz-io 2.x has no multipart calls, so the app adds its own (lib/upload.js),
+  // on the same token, User-Agent, API version and budget as every SDK call.
+  // Added only where the client lacks them: a test's stand-in client keeps
+  // its own. An SDK upgrade that brings native file calls must decide which
+  // to use: check this before bumping lenz-io.
+  if (typeof client.extractFile !== 'function') {
     client.extractFile = (input, options = {}) =>
       extractFileWithZapier(input, {
         apiKey: bundle.authData.access_token,
@@ -120,7 +125,7 @@ const lenzClient = (bundle) => {
       });
   }
 
-  if (!client.reviewFile || !client.reviewFile._isMockFunction) {
+  if (typeof client.reviewFile !== 'function') {
     client.reviewFile = (input, options = {}) =>
       reviewFileWithZapier(input, {
         apiKey: bundle.authData.access_token,

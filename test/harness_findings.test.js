@@ -241,7 +241,9 @@ describe('4. Samples are fresh copies', () => {
     const op = App.creates[key].operation;
     const bundle = {
       authData: AUTH,
-      inputData: { text: key === 'assess' ? '' : 'Sample text', claim: '', draft: '' },
+      // Unmapped fields arrive as '', which is what Test sees before the user
+      // maps anything: every action must still return its sample.
+      inputData: { text: '', claim: '', draft: '' },
       meta: { isLoadingSample: true },
     };
     const first = await appTester(op.perform, bundle);
