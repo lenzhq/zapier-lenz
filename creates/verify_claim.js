@@ -315,6 +315,12 @@ const fromSignedCallback = (bundle) => {
   if (event.event === 'verification.failed') {
     return { output: shapeFailed(taskId, failedFromCallback(event, nested)) };
   }
+  // Stopped elsewhere (the website's Stop button). The 2026-10-11 shape the
+  // app asks for names it on its own; Status keeps its values (see
+  // asCancelled).
+  if (event.event === 'verification.cancelled') {
+    return { output: shapeFailed(taskId, asCancelled(failedFromCallback(event, nested))) };
+  }
   return { fallback: `event ${event.event || 'unknown'} is read from the status route` };
 };
 
@@ -358,6 +364,19 @@ const failedFromBody = (body) => {
     retryable: f.retryable,
   };
 };
+
+// A cancelled run (status `cancelled`, or a `*.cancelled` callback) in the
+// 2026-10-11 shape. Status stays in the vocabulary Zaps already branch on: it
+// reads `failed` with Failure Class `cancelled`, the way the earlier shape
+// said it, so a Zap filtering on `completed` / `failed` sees it end instead of
+// "still running". Defaults fill only what the API left out.
+const asCancelled = (failure) => ({
+  ...failure,
+  error: failure.error || 'Cancelled.',
+  failure_reason: failure.failure_reason || 'cancelled',
+  failure_class: failure.failure_class || 'cancelled',
+  retryable: typeof failure.retryable === 'boolean' ? failure.retryable : false,
+});
 
 // Both the callback and getStatus() build `result` with the same server
 // function (build_verification_detail in lenz/api/verification_payload.py), so
@@ -466,6 +485,10 @@ const performResume = async (z, bundle) => {
 
   if (status.status === 'failed') {
     return shapeFailed(bundle.outputData.task_id, failedFromBody(status));
+  }
+
+  if (status.status === 'cancelled') {
+    return shapeFailed(bundle.outputData.task_id, asCancelled(failedFromBody(status)));
   }
 
   // Anything else: Lenz's callback fired before the pipeline reached a terminal

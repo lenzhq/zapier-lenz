@@ -18,7 +18,7 @@ const {
   mapSuppliedSources,
 } = require('../lib/shapes');
 const { shapeCitationIssue, CITATION_ISSUE_CHILDREN } = require('../lib/citations');
-const { NO_FAILURE, isTerminal, shapeJobFailure, optionalInteger, citationLimit } = require('../lib/jobs');
+const { NO_FAILURE, isTerminal, outputStatus, jobFailure, optionalInteger, citationLimit } = require('../lib/jobs');
 
 // Review a Draft: POST /review reads a whole draft, quick-checks every claim
 // in it, deep-checks the ones that look wrong or uncertain, and (when asked)
@@ -138,7 +138,8 @@ const shapeReview = (reviewId, review) => {
   const pages = pagesByClaim(r.claims);
   const issues = (r.issues || []).map((row) => shapeIssue(row, pages));
   const citationIssues = (r.citation_issues || []).map(shapeCitationIssue);
-  const status = r.status || 'queued';
+  const apiStatus = r.status || 'queued';
+  const status = outputStatus(apiStatus);
   return {
     review_id: r.review_id || reviewId,
     status,
@@ -172,7 +173,7 @@ const shapeReview = (reviewId, review) => {
     language: r.language || '',
     created_at: r.created_at || '',
     completed_at: r.completed_at || '',
-    ...(status === 'failed' ? shapeJobFailure(r.failure) : NO_FAILURE),
+    ...(status === 'failed' ? jobFailure(apiStatus, r.failure) : NO_FAILURE),
     // A review that has not ended yet is NOT a failure: Lenz posted to the
     // callback before the review finished (see fromSignedReview). Say so,
     // rather than send failure fields about a job that will most likely
@@ -197,7 +198,9 @@ const fromSignedReview = (bundle) => {
   if (!parsed.event) return parsed;
   const event = parsed.event;
   const reviewId = bundle.outputData && bundle.outputData.review_id;
-  if (event.event !== 'review.completed' && event.event !== 'review.failed') {
+  // `review.cancelled` ends the review too (2026-10-11 shape); it reads as a
+  // failed review with Failure Class `cancelled`.
+  if (!['review.completed', 'review.failed', 'review.cancelled'].includes(event.event)) {
     return { fallback: `event ${event.event || 'unknown'} is not the review's result` };
   }
   if (!reviewId || event.reviewId !== reviewId) {

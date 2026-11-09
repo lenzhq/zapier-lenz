@@ -5,6 +5,9 @@ mechanics live in [README.md](README.md#building-and-pushing).
 
 ## 2.4.0
 
+- Feature: **Supplied Sources** on Verify a Claim, Check Citations and Review a Draft: sources you provide (Source Text, with an optional URL, DOI, citation, title and published date) that Lenz checks against beside the web. On Verify a Claim each source says where it came from in **Source Origin** (`web` or `supplied`).
+- Fix: **a check stopped elsewhere now ends the step.** A verification, review or citation check stopped with lenz.io's Stop button read as "still running" since 2.3.0, which asks for the API version that names such a job `cancelled`. It now reads `failed`, with Failure Class `cancelled` and Retryable false, as it did before 2.3.0, so a Zap that filters on Status sees it end.
+- Update: internal only. The app uses lenz-io 3.6 (was 2.18), the SDK release that sends Supplied Sources; 2.18 dropped them from every request. Outputs are unchanged, except that one error a step can stop with (a review whose result can no longer be read) is now named `LenzNotFoundError` instead of `LenzError`, with the same message. A required field left blank on a live run (an empty Claim) stops the step with "claim is required." instead of being sent; the step is not retried.
 - Update: **Serbian** (`sr`) is now in the Language dropdown on every action. Lenz answers in Serbian in the Latin script, also when the text it checks is in Cyrillic. Nothing else changes.
 - Update: internal only. The actions read only the Lenz API's 2026-10-11 response shape,
   the one 2.3.0 already asks for; the code that also read the earlier (2026-05-13) shape

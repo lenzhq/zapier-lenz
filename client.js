@@ -110,12 +110,15 @@ const lenzClient = (bundle) => {
     timeoutMs: CALL_TIMEOUT_MS,
   });
 
-  // lenz-io 2.x has no multipart calls, so the app adds its own (lib/upload.js),
-  // on the same token, User-Agent, API version and budget as every SDK call.
-  // Added only where the client lacks them: a test's stand-in client keeps
-  // its own. An SDK upgrade that brings native file calls must decide which
-  // to use: check this before bumping lenz-io.
-  if (typeof client.extractFile !== 'function') {
+  // The app's own multipart calls (lib/upload.js), on the same token,
+  // User-Agent, API version and budget as every SDK call. They REPLACE
+  // lenz-io 3.6's native extractFile/reviewFile, which take (file, options)
+  // where the actions pass ({ file, filename, contentType, ... }, options) and
+  // lack the app's 409 receipt and replay-key handling. A real client carries
+  // the SDK's as prototype methods, so only an OWN property (a test's
+  // stand-in client) is kept.
+  const own = (name) => Object.prototype.hasOwnProperty.call(client, name);
+  if (!own('extractFile')) {
     client.extractFile = (input, options = {}) =>
       extractFileWithZapier(input, {
         apiKey: bundle.authData.access_token,
@@ -125,7 +128,7 @@ const lenzClient = (bundle) => {
       });
   }
 
-  if (typeof client.reviewFile !== 'function') {
+  if (!own('reviewFile')) {
     client.reviewFile = (input, options = {}) =>
       reviewFileWithZapier(input, {
         apiKey: bundle.authData.access_token,
