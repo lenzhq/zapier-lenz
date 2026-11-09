@@ -52,7 +52,10 @@
         "functions": 88,
         "lines": 95
       }
-    }
+    },
+    "setupFilesAfterEnv": [
+      "<rootDir>/test/setup.js"
+    ]
   },
   "private": true,
   "main": "index.js"

@@ -32,16 +32,8 @@ const VERSION_HEADER = 'x-lenz-api-version';
 const WIRE = path.join(__dirname, 'fixtures', 'wire', 'canonical');
 const ORACLE = loadOracle();
 
-// zapier-platform-core ends the process once it has made 250 runs AND its
-// memory passes 450 MB (tools/memory-checker.js), a guard for long-lived
-// production workers. This file makes about 300 runs, which under coverage can
-// cross both marks, so the guard is shown a small figure while it runs.
-let memoryUsage;
-beforeAll(() => {
-  const real = process.memoryUsage.bind(process);
-  memoryUsage = jest.spyOn(process, 'memoryUsage').mockImplementation(() => ({ ...real(), rss: 1 }));
-});
-afterAll(() => memoryUsage.mockRestore());
+// This file makes about 300 runs, past zapier-platform-core's 250-run memory
+// guard: test/setup.js keeps the guard from ending the process, in every file.
 
 const json = (status, body, headers = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
