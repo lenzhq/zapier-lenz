@@ -4,6 +4,8 @@ const { mapLenzError } = require('../lib/errors');
 const { lenzClient, CALL_TIMEOUT_MS } = require('../client');
 const { languageField, LANGUAGE_HELP_TEXT_AUTO } = require('../lib/languages');
 const { isObject, NO_CHECKABLE_CLAIM } = require('../lib/shapes');
+const { downloadFileUrl } = require('../lib/upload');
+const { replayKey, HOUR_MS } = require('../lib/replay-key');
 
 // `perform` returns the API's response untouched, so every value here has to
 // be one the API actually sends — the editor builds Filter and Paths steps
@@ -105,8 +107,36 @@ const normaliseFocus = (raw) => String(raw || '').replace(/\s+/g, ' ').trim();
 // rule above, which exists precisely so we refuse nothing the server takes.
 const focusLength = (focus) => [...focus].length;
 
-const perform = (z, bundle) => {
+const formatExtraction = (result) => {
+  // `no_match` means claims WERE found and the focus excluded all of
+  // them. The unfocused list is deliberately never substituted, so an
+  // empty result here is a real answer rather than a failure — but it
+  // looks identical to "nothing here" unless it is named.
+  //
+  // `message` is set on EVERY path, empty when there is nothing to say:
+  // it is declared in outputFields, so omitting it on the other paths
+  // would be the missing-vs-empty trap again (a Filter treats "does not
+  // exist" and "is empty" as different conditions).
+  const message =
+    result && result.status === 'no_match'
+      ? 'Claims were found, but none of them fall within your Focus. Widen or reword it ' +
+        'and run again — the unfocused claims are deliberately not substituted.'
+      : '';
+  // `||` rather than an overwrite: today ExtractOut carries no `message`
+  // of its own, but if the API ever adds one (say, explaining a
+  // `not_a_claim`) it must not be silently blanked by the spread below.
+  const shaped = shapeExtraction(result || {});
+  return {
+    ...shaped,
+    message: message || (result && result.message) || '',
+    // True when nothing in the text can be checked.
+    not_a_claim: shaped.status === 'not_a_claim',
+  };
+};
+
+const perform = async (z, bundle) => {
   const isSample = Boolean(bundle.meta && bundle.meta.isLoadingSample);
+  const inputData = bundle.inputData || {};
 
   // Measured BEFORE the sample return, not after. Focus is a static field
   // typed once into the Zap, so a check that runs only on live runs lets the
@@ -120,7 +150,7 @@ const perform = (z, bundle) => {
   // number.
   // `|| {}` because this now runs BEFORE the sample return, and a bundle
   // loading a sample is not guaranteed to carry inputData at all.
-  const focus = normaliseFocus((bundle.inputData || {}).focus);
+  const focus = normaliseFocus(inputData.focus);
   const length = focusLength(focus);
   if (length > MAX_FOCUS_CHARS) {
     const tooLong =
@@ -140,6 +170,26 @@ const perform = (z, bundle) => {
     throw new z.errors.HaltedError(tooLong);
   }
 
+  const rawText = typeof inputData.text === 'string' ? inputData.text.trim() : '';
+  const rawFile = typeof inputData.file === 'string' ? inputData.file.trim() : '';
+  const hasText = Boolean(rawText);
+  const hasFile = Boolean(rawFile);
+
+  if (hasText && hasFile) {
+    const msg = 'Provide either Text or File, not both.';
+    if (isSample) {
+      throw new z.errors.Error(msg, 'InvalidInput', 422);
+    }
+    throw new z.errors.HaltedError(msg);
+  }
+
+  // Neither is only a problem on a live run. In the editor, Test runs before
+  // the user has mapped Text or File (an unmapped field arrives as ''), and it
+  // must still return the sample so the output fields can be mapped.
+  if (!hasText && !hasFile && !isSample) {
+    throw new z.errors.HaltedError('Provide either Text or File.');
+  }
+
   if (isSample) {
     // Copied, not returned by reference — see the same note in
     // creates/assess.js and creates/verify_claim.js.
@@ -147,10 +197,44 @@ const perform = (z, bundle) => {
   }
 
   const client = lenzClient(bundle);
+
+  if (hasFile) {
+    const deadline = Date.now() + CALL_TIMEOUT_MS;
+    try {
+      const downloaded = await downloadFileUrl(z, rawFile, {
+        timeoutMs: Math.max(1000, deadline - Date.now()),
+        isSample,
+      });
+      const fileSha256 = z.hash('sha256', downloaded.buffer, 'hex');
+      const idempotencyKey = replayKey(
+        z,
+        bundle,
+        ['extract', fileSha256, inputData.language || '', focus || ''],
+        HOUR_MS,
+      );
+      const result = await client.extractFile(
+        {
+          file: downloaded.buffer,
+          filename: downloaded.filename,
+          contentType: downloaded.contentType,
+          language: inputData.language || undefined,
+          focus: focus || undefined,
+        },
+        {
+          idempotencyKey,
+          timeoutMs: Math.max(1000, deadline - Date.now()),
+        },
+      );
+      return formatExtraction(result);
+    } catch (err) {
+      return mapLenzError(z, err, { isSample });
+    }
+  }
+
   return client
     .extract({
-      text: bundle.inputData.text,
-      language: bundle.inputData.language || undefined,
+      text: rawText,
+      language: inputData.language || undefined,
       focus: focus || undefined,
       // Pinned per call. Since lenz-io 2.13.0 `extract` waits
       // `max(client timeoutMs, 90s)` unless the call says otherwise — right
@@ -162,33 +246,8 @@ const perform = (z, bundle) => {
       // creates/assess.js pins its 45s floor the same way.
       timeoutMs: CALL_TIMEOUT_MS,
     })
-    .then((result) => {
-      // `no_match` means claims WERE found and the focus excluded all of
-      // them. The unfocused list is deliberately never substituted, so an
-      // empty result here is a real answer rather than a failure — but it
-      // looks identical to "nothing here" unless it is named.
-      //
-      // `message` is set on EVERY path, empty when there is nothing to say:
-      // it is declared in outputFields, so omitting it on the other paths
-      // would be the missing-vs-empty trap again (a Filter treats "does not
-      // exist" and "is empty" as different conditions).
-      const message =
-        result && result.status === 'no_match'
-          ? 'Claims were found, but none of them fall within your Focus. Widen or reword it ' +
-            'and run again — the unfocused claims are deliberately not substituted.'
-          : '';
-      // `||` rather than an overwrite: today ExtractOut carries no `message`
-      // of its own, but if the API ever adds one (say, explaining a
-      // `not_a_claim`) it must not be silently blanked by the spread below.
-      const shaped = shapeExtraction(result || {});
-      return {
-        ...shaped,
-        message: message || (result && result.message) || '',
-        // True when nothing in the text can be checked.
-        not_a_claim: shaped.status === 'not_a_claim',
-      };
-    })
-    .catch((err) => mapLenzError(z, err));
+    .then(formatExtraction)
+    .catch((err) => mapLenzError(z, err, { isSample }));
 };
 
 module.exports = {
@@ -210,9 +269,17 @@ module.exports = {
         key: 'text',
         label: 'Text',
         type: 'text',
-        required: true,
+        required: false,
         helpText:
-          "The text to pull claims from, or a single public web page, Google Doc, PDF, YouTube video, or image URL. Lenz reads the page, a Google Doc, a PDF (.pdf), a YouTube video's transcript, or an image (.png, .jpg, .jpeg, .webp), and extracts the claims from its first 50,000 characters; pages behind a login can't be read. A Zap step has 30 seconds and a page read can take longer, so for a long page send its text instead.",
+          "The text to pull claims from, or a single public web page, Google Doc, PDF, YouTube video, or image URL. Lenz reads the page, a Google Doc, a PDF (.pdf), a YouTube video's transcript, or an image (.png, .jpg, .jpeg, .webp), and extracts the claims from its first 50,000 characters; pages behind a login can't be read. A Zap step has 30 seconds and a page read can take longer, so for a long page send its text instead. Provide either Text or File, not both.",
+      },
+      {
+        key: 'file',
+        label: 'File',
+        type: 'file',
+        required: false,
+        helpText:
+          'A file (.docx, .pdf up to 100 pages, .png, .jpg, or .webp, up to 10 MB) to extract claims from instead of Text. Provide either Text or File, not both.',
       },
       languageField(LANGUAGE_HELP_TEXT_AUTO),
       {

@@ -13,8 +13,17 @@ jest.mock('lenz-io', () => {
   return { ...actual, Lenz: jest.fn() };
 });
 
+// File downloads go through undici's own fetch (lib/upload.js, guardedFetch).
+// Route it to whatever globalThis.fetch a test installs, so the download
+// stubs below keep working; the guarded Agent is tested in upload.test.js.
+jest.mock('undici', () => ({
+  ...jest.requireActual('undici'),
+  fetch: (...args) => globalThis.fetch(...args),
+}));
+
 const { Lenz: LenzClient, LenzError } = require('lenz-io');
 const App = require('../index');
+const { CALL_TIMEOUT_MS } = require('../client');
 
 const appTester = zapier.createAppTester(App);
 
@@ -780,5 +789,192 @@ describe('a citation limit above the 20 one run takes counts as 20', () => {
       await appTester(review.perform, { authData: AUTH, inputData: { text: 'x', maxCitations: value } });
     }
     expect(client.review.mock.calls.map(([input]) => input.maxCitations)).toEqual([20, 5, undefined]);
+  });
+});
+
+describe('Review a Draft: file upload support', () => {
+  it('rejects when both text and file are provided (live: HaltedError)', async () => {
+    const err = await capture(review.perform, {
+      authData: AUTH,
+      inputData: { text: 'Some text', file: 'https://example.com/doc.pdf' },
+    });
+    expect(err.name).toBe('HaltedError');
+    expect(err.message).toContain('Provide either Text or File, not both.');
+  });
+
+  it('rejects when neither text nor file is provided (live: HaltedError)', async () => {
+    const err = await capture(review.perform, {
+      authData: AUTH,
+      inputData: { text: '', file: '' },
+    });
+    expect(err.name).toBe('HaltedError');
+    expect(err.message).toContain('Provide either Text or File.');
+  });
+
+  it('rejects when both text and file are provided (sample: Error with code InvalidInput)', async () => {
+    const err = await appTester(review.perform, {
+      authData: AUTH,
+      inputData: { text: 'Some text', file: 'https://example.com/doc.pdf' },
+      meta: { isLoadingSample: true },
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(zapier.errors.Error);
+    expect(err.name).not.toBe('HaltedError');
+    expect(err.message).toContain('Provide either Text or File, not both.');
+    expect(err.message).toContain('"code":"InvalidInput"');
+    expect(err.message).toContain('"status":400');
+  });
+
+  it('returns the sample when Test runs before Draft or File is mapped', async () => {
+    // Test runs the free webhook-secret check (usage) before the sample.
+    mockClient();
+    for (const inputData of [{}, { text: '', file: '' }]) {
+      const result = await appTester(review.perform, {
+        authData: AUTH,
+        inputData,
+        meta: { isLoadingSample: true },
+      });
+      expect(result.issues.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('downloads file and calls reviewFile on live run', async () => {
+    const mockFetch = jest.fn().mockImplementation(async (url) => {
+      if (new URL(url).hostname === 'example.com') {
+        return new Response(Buffer.from('%PDF-1.4 sample pdf content'), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': 'attachment; filename="statement.pdf"',
+          },
+        });
+      }
+      return new Response(JSON.stringify({ review_id: 'rev_file_1', status: 'queued' }), {
+        status: 202,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    const client = mockClient({
+      reviewFile: jest.fn().mockResolvedValue({ review_id: 'rev_file_1', status: 'queued' }),
+    });
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mockFetch;
+    try {
+      const bundle = {
+        authData: AUTH,
+        inputData: {
+          file: 'https://example.com/statement.pdf',
+          depth: 'low',
+          maxVerifications: '3',
+          visibility: 'private',
+        },
+      };
+      const result = await appTester(review.perform, bundle);
+
+      expect(result).toMatchObject({ review_id: 'rev_file_1', status: 'queued' });
+      expect(client.reviewFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filename: 'statement.pdf',
+          contentType: 'application/pdf',
+          depth: 'low',
+          maxVerifications: 3,
+          visibility: 'private',
+          idempotencyKey: expect.any(String),
+        }),
+        expect.objectContaining({
+          timeoutMs: expect.any(Number),
+        }),
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('gives the upload only the time the download left, through the real client wrapper', async () => {
+    // The wrapper in client.js sets the full call budget, and an option the
+    // upload does not read (`timeout`) once left that in place after a slow
+    // download. Pin the budget the upload's abort signal actually gets.
+    jest.useFakeTimers({ doNotFake: ['setTimeout', 'setImmediate', 'nextTick', 'queueMicrotask'] });
+    const startedAt = Date.now();
+    const realTimeout = AbortSignal.timeout;
+    const budgets = [];
+    AbortSignal.timeout = (ms) => {
+      budgets.push(ms);
+      return realTimeout.call(AbortSignal, ms);
+    };
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = jest.fn(async (url) => {
+      if (String(url).startsWith('https://example.com/')) {
+        // The download takes 20s of the step's budget.
+        jest.setSystemTime(startedAt + 20_000);
+        return new Response(Buffer.from('%PDF-1.4 fake'), {
+          status: 200,
+          headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="a.pdf"' },
+        });
+      }
+      return new Response(JSON.stringify({ review_id: 'rev_t', status: 'queued' }), {
+        status: 202,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    // The real client wrapper, not a mock: what is under test is the options
+    // it forwards to the upload.
+    const realUpload = jest.requireActual('../lib/upload');
+    const client = mockClient({
+      reviewFile: jest.fn((input, options) =>
+        realUpload.reviewFileWithZapier(input, {
+          apiKey: 'lat_test',
+          fetchImpl: globalThis.fetch,
+          timeoutMs: CALL_TIMEOUT_MS,
+          ...options,
+        }),
+      ),
+    });
+    try {
+      await appTester(review.perform, { authData: AUTH, inputData: { file: 'https://example.com/a.pdf' } });
+      const uploadBudget = budgets[budgets.length - 1];
+      expect(client.reviewFile).toHaveBeenCalled();
+      // 28s total minus the 20s download: about 8s, never the full 28s.
+      expect(uploadBudget).toBeLessThanOrEqual(CALL_TIMEOUT_MS - 20_000);
+      expect(uploadBudget).toBeGreaterThan(0);
+    } finally {
+      AbortSignal.timeout = realTimeout;
+      globalThis.fetch = originalFetch;
+      jest.useRealTimers();
+    }
+  });
+
+  it('generates the same idempotency key for identical file bytes at different URLs', async () => {
+    const client = mockClient({
+      reviewFile: jest.fn().mockResolvedValue({ review_id: 'rev_file_2', status: 'queued' }),
+    });
+
+    const mockFetch = jest.fn().mockImplementation(async () =>
+      new Response(Buffer.from('fixed file bytes'), {
+        status: 200,
+        headers: { 'Content-Type': 'application/pdf' },
+      }),
+    );
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mockFetch;
+    try {
+      const run = (fileUrl) =>
+        appTester(review.perform, {
+          authData: AUTH,
+          inputData: { file: fileUrl },
+          meta: { zap: { id: 10 } },
+        });
+
+      await run('https://example.com/file_a.pdf');
+      await run('https://example.com/file_b.pdf');
+
+      const keyA = client.reviewFile.mock.calls[0][0].idempotencyKey;
+      const keyB = client.reviewFile.mock.calls[1][0].idempotencyKey;
+      expect(keyA).toBe(keyB);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

@@ -7,6 +7,14 @@ jest.mock('lenz-io', () => {
   return { ...actual, Lenz: jest.fn() };
 });
 
+// File downloads go through undici's own fetch (lib/upload.js, guardedFetch).
+// Route it to whatever globalThis.fetch a test installs, so the download
+// stubs below keep working; the guarded Agent is tested in upload.test.js.
+jest.mock('undici', () => ({
+  ...jest.requireActual('undici'),
+  fetch: (...args) => globalThis.fetch(...args),
+}));
+
 const { Lenz: LenzClient, LenzError, LenzValidationError } = require('lenz-io');
 const App = require('../index');
 const { mapSuppliedSources } = require('../lib/shapes');
@@ -1283,6 +1291,98 @@ describe('creates.extract_claims', () => {
     const result = await appTester(App.creates.extract_claims.operation.perform, bundle);
 
     expect(result).toMatchObject({ status: 'ready', claim: 'A', identified_claims: [], locations: null });
+  });
+
+  describe('file upload support', () => {
+    it('rejects when both text and file are provided (live: HaltedError, sample: Error)', async () => {
+      const liveErr = await captureCreateError(App.creates.extract_claims.operation.perform, {
+        authData: { access_token: 'lenz_good' },
+        inputData: { text: 'Some text', file: 'https://example.com/doc.pdf' },
+      });
+      expect(liveErr.name).toBe('HaltedError');
+      expect(liveErr.message).toContain('Provide either Text or File, not both.');
+
+      const sampleErr = await captureCreateError(App.creates.extract_claims.operation.perform, {
+        authData: { access_token: 'lenz_good' },
+        inputData: { text: 'Some text', file: 'https://example.com/doc.pdf' },
+        meta: { isLoadingSample: true },
+      });
+      expect(sampleErr.name).not.toBe('HaltedError');
+      expect(sampleErr.message).toContain('Provide either Text or File, not both.');
+    });
+
+    it('halts a live run that has neither text nor file', async () => {
+      const liveErr = await captureCreateError(App.creates.extract_claims.operation.perform, {
+        authData: { access_token: 'lenz_good' },
+        inputData: { text: '', file: '' },
+      });
+      expect(liveErr.name).toBe('HaltedError');
+      expect(liveErr.message).toContain('Provide either Text or File.');
+    });
+
+    it('returns the sample when Test runs before Text or File is mapped', async () => {
+      const result = await appTester(App.creates.extract_claims.operation.perform, {
+        authData: { access_token: 'lenz_good' },
+        inputData: { text: '', file: '' },
+        meta: { isLoadingSample: true },
+      });
+      expect(result.claim).toBeTruthy();
+    });
+
+    it('processes file upload with download and extractFile call', async () => {
+      const mockFetch = jest.fn().mockImplementation(async (url) => {
+        if (new URL(url).hostname === 'example.com') {
+          return new Response(Buffer.from('docx content here'), {
+            status: 200,
+            headers: {
+              'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+              'Content-Disposition': 'attachment; filename="draft.docx"',
+            },
+          });
+        }
+        return new Response(
+          JSON.stringify({
+            status: 'ready',
+            claim: 'Claim from file',
+            identified_claims: ['Claim from file'],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      });
+
+      const client = mockClient({
+        extractFile: jest.fn().mockResolvedValue({
+          status: 'ready',
+          claim: 'Claim from file',
+          identified_claims: ['Claim from file'],
+        }),
+      });
+      LenzClient.mockImplementation(() => client);
+
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = mockFetch;
+      try {
+        const bundle = {
+          authData: { access_token: 'lenz_good' },
+          inputData: { file: 'https://example.com/draft.docx', language: 'en' },
+        };
+        const result = await appTester(App.creates.extract_claims.operation.perform, bundle);
+
+        expect(result).toMatchObject({ status: 'ready', claim: 'Claim from file' });
+        expect(client.extractFile).toHaveBeenCalledWith(
+          expect.objectContaining({
+            filename: 'draft.docx',
+            contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            language: 'en',
+          }),
+          expect.objectContaining({
+            idempotencyKey: expect.any(String),
+          }),
+        );
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
   });
 
   it('stubs sample data and makes NO real call while loading a sample (consistent with the other creates)', async () => {

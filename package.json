@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "lenz-io": "^2.18.0",
+    "undici": "^6.29.1",
     "zapier-platform-core": "19.1.0"
   },
   "devDependencies": {

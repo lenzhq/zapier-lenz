@@ -241,6 +241,8 @@ describe('4. Samples are fresh copies', () => {
     const op = App.creates[key].operation;
     const bundle = {
       authData: AUTH,
+      // Unmapped fields arrive as '', which is what Test sees before the user
+      // maps anything: every action must still return its sample.
       inputData: { text: '', claim: '', draft: '' },
       meta: { isLoadingSample: true },
     };
