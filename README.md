@@ -92,8 +92,8 @@ it to `ready`. A lowercase `domain` needs capitalising the same way.
 
 ### Language
 
-All four actions take an optional **Language**, and it is a dropdown of the twelve codes
-the API accepts: `en` `es` `de` `fr` `it` `pt` `nl` `sv` `da` `no` `fi` `bg`. Anything
+All four actions take an optional **Language**, and it is a dropdown of the thirteen codes
+the API accepts: `en` `es` `de` `fr` `it` `pt` `nl` `sv` `da` `no` `fi` `bg` `sr`. Anything
 outside that set is refused with a 422, which counts as a failed run — so until 1.4.0,
 when this was a free-text box described only as "ISO 639-1", typing `English`, `en-US` or
 any unsupported code failed **every** run of that Zap with nothing in the editor to say
@@ -105,7 +105,7 @@ quietly changes the output.
 
 **`auto` on Assess, Verify a Claim, Ask Follow-Up, Review a Draft and Extract Claims.** To get
 the answer in the language of your text, enter `auto` as a custom value in the Language field
-(the dropdown lists the twelve codes only). On Ask Follow-Up it means the language of the claim
+(the dropdown lists the thirteen codes only). On Ask Follow-Up it means the language of the claim
 being discussed; on Review a Draft the review comes back in the language of the draft, one
 language for the whole review; on Extract Claims the claims are written in the language of the
 text (of the fetched page when **Text** is a URL), and a text too short to tell comes back in

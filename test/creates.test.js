@@ -422,11 +422,12 @@ describe('creates.verify_claim', () => {
         status: 'needs_input',
         reason: 'multi_claim',
         claims: [
-          { text: 'The Eiffel Tower is 330 metres tall.', domain: 'Science' },
-          { text: 'The Eiffel Tower was completed in 1889.', domain: 'History' },
+          { claim: 'The Eiffel Tower is 330 metres tall.', domain: 'Science' },
+          { claim: 'The Eiffel Tower was completed in 1889.', domain: 'History' },
         ],
       });
 
+      // The API's `claim` reads as the output's own key, `text`.
       expect(result.claims).toEqual([
         { text: 'The Eiffel Tower is 330 metres tall.', domain: 'Science' },
         { text: 'The Eiffel Tower was completed in 1889.', domain: 'History' },
@@ -542,10 +543,14 @@ describe('creates.verify_claim', () => {
     const client = mockClient({
       getStatus: jest.fn().mockResolvedValue({
         status: 'failed',
-        error: 'Pipeline stopped at: research_empty',
-        failure_reason: 'research_empty',
-        failure_class: 'upstream_unavailable',
-        retryable: true,
+        task_id: 'task_123',
+        failure: {
+          code: 'research_empty',
+          detail: 'Pipeline stopped at: research_empty',
+          hint: null,
+          failure_class: 'upstream_unavailable',
+          retryable: true,
+        },
       }),
     });
     LenzClient.mockImplementation(() => client);
@@ -562,9 +567,9 @@ describe('creates.verify_claim', () => {
     });
   });
 
-  it('performResume tolerates a legacy failed body without the 2026-08 fields', async () => {
+  it('performResume tolerates a failed body with no failure block', async () => {
     const client = mockClient({
-      getStatus: jest.fn().mockResolvedValue({ status: 'failed', error: 'boom' }),
+      getStatus: jest.fn().mockResolvedValue({ status: 'failed', task_id: 'task_123', failure: null }),
     });
     LenzClient.mockImplementation(() => client);
 
@@ -573,7 +578,7 @@ describe('creates.verify_claim', () => {
 
     expect(result).toMatchObject({
       status: 'failed',
-      error: 'boom',
+      error: 'Pipeline failed.',
       failure_reason: '',
       failure_class: '',
       retryable: null,
@@ -643,16 +648,21 @@ describe('creates.assess', () => {
     ]);
   });
 
-  it('surfaces error_code when no claim is found', async () => {
+  it('reports no_claim when no claim is found', async () => {
     const client = mockClient({
-      assess: jest.fn().mockResolvedValue({ claims: [], error: 'No claim found.', error_code: 'no_claim' }),
+      assess: jest.fn().mockResolvedValue({
+        status: 'no_checkable_claim',
+        claims: [],
+        failure: { code: 'no_checkable_claim', detail: 'No claim found.', hint: 'Send a claim.' },
+        more_claims: [],
+      }),
     });
     LenzClient.mockImplementation(() => client);
 
     const bundle = { authData: { access_token: 'lenz_good' }, inputData: { text: 'huh?' } };
     const result = await appTester(App.creates.assess.operation.perform, bundle);
 
-    expect(result).toMatchObject({ status: 'no_claim', message: 'No claim found.' });
+    expect(result).toMatchObject({ status: 'no_claim', message: 'No verifiable claim detected', not_a_claim: true });
   });
 
   // Test in the Zap editor checks the claim the user mapped, for real: ~15 s and
@@ -823,9 +833,9 @@ describe('creates.assess', () => {
   it('reports no_claim for an empty list whatever the error_code — ambiguous is retired', async () => {
     const client = mockClient({
       assess: jest.fn().mockResolvedValue({
+        status: 'error',
         claims: [],
-        error: 'Which one?',
-        error_code: 'ambiguous',
+        failure: { code: 'ambiguous', detail: 'Which one?' },
         candidate_claims: ['Reading A', 'Reading B'],
       }),
     });
@@ -850,25 +860,31 @@ describe('creates.assess', () => {
         claims: [
           {
             claim: 'The tower is tall and it was built in 1889.',
+            status: 'completed',
             verdict: 'True',
             confidence: 'high',
             language: 'en',
             rationale: 'Official figures agree.',
             dissent: null,
-            error_code: null,
-            hint: 'Also check: it was built in 1889.',
-            identified_claims: ['It was built in 1889.'],
+            more_claims: ['It was built in 1889.'],
+            failure: null,
           },
           {
             claim: 'hello',
-            verdict: 'Error',
+            status: 'failed',
+            verdict: null,
             confidence: null,
             language: 'en',
             rationale: null,
             dissent: null,
-            error_code: 'no_claim',
-            hint: 'Send a statement of fact, not a greeting.',
-            identified_claims: [],
+            more_claims: [],
+            failure: {
+              code: 'no_checkable_claim',
+              detail: 'No claim in the input could be checked.',
+              hint: 'Send a statement of fact, not a greeting.',
+              failure_class: 'invalid_input',
+              retryable: false,
+            },
           },
         ],
       }),
@@ -885,13 +901,14 @@ describe('creates.assess', () => {
         rationale: 'Official figures agree.',
         dissent: '',
         error_code: '',
-        hint: 'Also check: it was built in 1889.',
+        hint: 'Assessed the main claim only. Send identified_claims as their own items to check the rest.',
         identified_claims: ['It was built in 1889.'],
       }),
     );
     expect(result.claims[1]).toEqual(
       expect.objectContaining({
         verdict: 'Error',
+        confidence: 'low',
         // No verdict, so no pass or fail: an empty Passed, as the README says.
         passed: null,
         error_code: 'no_claim',
@@ -1000,14 +1017,25 @@ describe('creates.assess', () => {
   // row-shaped one must not quietly read as "checked and did not pass" —
   // which is what `status: ok` and a verdict row says to a Filter.
   describe('transient Error rows', () => {
-    const transientRow = (code) => ({
-      claim: 'A',
-      verdict: 'Error',
-      confidence: null,
-      error_code: code,
-      hint: 'Send it again.',
-      identified_claims: [],
-    });
+    // A failed row as the API sends it; `no_checkable_claim` reads as the
+    // output's `no_claim`.
+    const transientRow = (code) => {
+      const isTransient = ['upstream_unavailable', 'timeout'].includes(code);
+      return {
+        claim: 'A',
+        status: 'failed',
+        verdict: null,
+        confidence: null,
+        more_claims: [],
+        failure: {
+          code: code === 'no_claim' ? 'no_checkable_claim' : code,
+          detail: 'Not checked.',
+          hint: 'Send it again.',
+          failure_class: isTransient ? 'upstream_unavailable' : code === 'no_claim' ? 'invalid_input' : 'internal',
+          retryable: isTransient,
+        },
+      };
+    };
 
     it.each(['upstream_unavailable', 'timeout'])(
       'replays with ThrottledError when every row is %s — nothing was charged',
@@ -1067,7 +1095,7 @@ describe('creates.assess', () => {
       const client = mockClient({
         assess: jest.fn().mockResolvedValue({
           claims: [
-            { claim: 'A', verdict: 'True', confidence: 'high' },
+            { claim: 'A', status: 'completed', verdict: 'True', confidence: 'high', more_claims: [], failure: null },
             transientRow('upstream_unavailable'),
           ],
         }),
@@ -1245,16 +1273,16 @@ describe('creates.assess', () => {
 });
 
 describe('creates.extract_claims', () => {
-  it('passes the raw extraction result through', async () => {
+  it('reads the extraction into its output', async () => {
     const client = mockClient({
-      extract: jest.fn().mockResolvedValue({ status: 'ready', claim: 'A', identified_claims: ['A'] }),
+      extract: jest.fn().mockResolvedValue({ status: 'ready', claims: [{ claim: 'A', positions: null }], more_claims: [] }),
     });
     LenzClient.mockImplementation(() => client);
 
     const bundle = { authData: { access_token: 'lenz_good' }, inputData: { text: 'A' } };
     const result = await appTester(App.creates.extract_claims.operation.perform, bundle);
 
-    expect(result).toMatchObject({ status: 'ready', claim: 'A' });
+    expect(result).toMatchObject({ status: 'ready', claim: 'A', identified_claims: [], locations: null });
   });
 
   describe('file upload support', () => {
@@ -1365,7 +1393,7 @@ describe('creates.extract_claims', () => {
   it('pins the per-call timeout so the SDK 90s floor cannot exceed the Zapier budget', async () => {
     const { CALL_TIMEOUT_MS } = require('../client');
     const client = mockClient({
-      extract: jest.fn().mockResolvedValue({ status: 'ready', claim: 'A', identified_claims: [] }),
+      extract: jest.fn().mockResolvedValue({ status: 'ready', claims: [{ claim: 'A', positions: null }] }),
     });
     LenzClient.mockImplementation(() => client);
 
@@ -1400,7 +1428,7 @@ describe('creates.extract_claims', () => {
 
     it('sends the focus when given one', async () => {
       const client = mockClient({
-        extract: jest.fn().mockResolvedValue({ status: 'ready', claim: 'A', identified_claims: [] }),
+        extract: jest.fn().mockResolvedValue({ status: 'ready', claims: [{ claim: 'A', positions: null }] }),
       });
       LenzClient.mockImplementation(() => client);
 
@@ -1416,7 +1444,7 @@ describe('creates.extract_claims', () => {
 
     it('omits focus entirely when blank, so the wire format is unchanged', async () => {
       const client = mockClient({
-        extract: jest.fn().mockResolvedValue({ status: 'ready', claim: 'A', identified_claims: [] }),
+        extract: jest.fn().mockResolvedValue({ status: 'ready', claims: [{ claim: 'A', positions: null }] }),
       });
       LenzClient.mockImplementation(() => client);
 
@@ -1433,7 +1461,7 @@ describe('creates.extract_claims', () => {
     // string would refuse something the API would have taken.
     it('measures the limit after collapsing whitespace, not on the raw string', async () => {
       const client = mockClient({
-        extract: jest.fn().mockResolvedValue({ status: 'ready', claim: 'A', identified_claims: [] }),
+        extract: jest.fn().mockResolvedValue({ status: 'ready', claims: [{ claim: 'A', positions: null }] }),
       });
       LenzClient.mockImplementation(() => client);
 
@@ -1508,7 +1536,7 @@ describe('creates.extract_claims', () => {
     // typed — while the server, counting characters, would have accepted it.
     it('counts characters, not UTF-16 code units, so emoji are not double-counted', async () => {
       const client = mockClient({
-        extract: jest.fn().mockResolvedValue({ status: 'ready', claim: 'A', identified_claims: [] }),
+        extract: jest.fn().mockResolvedValue({ status: 'ready', claims: [{ claim: 'A', positions: null }] }),
       });
       LenzClient.mockImplementation(() => client);
 
@@ -1532,7 +1560,7 @@ describe('creates.extract_claims', () => {
       const client = mockClient({
         extract: jest
           .fn()
-          .mockResolvedValue({ status: 'no_match', claim: '', identified_claims: [] }),
+          .mockResolvedValue({ status: 'no_match', claims: [] }),
       });
       LenzClient.mockImplementation(() => client);
 
@@ -1548,9 +1576,9 @@ describe('creates.extract_claims', () => {
     // `message` is declared in outputFields, so it has to exist on every path
     // — the missing-vs-empty trap again.
     it('carries message EMPTY, not missing, on the ordinary paths', async () => {
-      for (const status of ['ready', 'not_a_claim']) {
+      for (const status of ['ready', 'no_checkable_claim']) {
         const client = mockClient({
-          extract: jest.fn().mockResolvedValue({ status, claim: 'A', identified_claims: [] }),
+          extract: jest.fn().mockResolvedValue({ status, claims: status === 'ready' ? [{ claim: 'A', positions: null }] : [] }),
         });
         LenzClient.mockImplementation(() => client);
 
@@ -1634,7 +1662,7 @@ describe('creates.ask', () => {
 });
 
 // #17 — `language` was free text described as "ISO 639-1", but the API
-// accepts exactly twelve codes and 422s everything else. A 422 becomes a
+// accepts exactly thirteen codes and 422s everything else. A 422 becomes a
 // plain z.errors.Error, which counts toward the error rate that turns a Zap
 // off, so `English` or `en-US` in that box failed EVERY run with nothing in
 // the editor to explain it.
@@ -1660,6 +1688,7 @@ describe('language is a closed set on every action', () => {
     'no',
     'fi',
     'bg',
+    'sr',
   ];
 
   const languageFieldOf = (action) =>
@@ -1677,6 +1706,7 @@ describe('language is a closed set on every action', () => {
     const choices = languageFieldOf('verify_claim').choices;
     expect(choices[0]).toEqual({ value: 'en', sample: 'en', label: 'English' });
     expect(choices[11]).toEqual({ value: 'bg', sample: 'bg', label: 'Bulgarian' });
+    expect(choices[12]).toEqual({ value: 'sr', sample: 'sr', label: 'Serbian' });
     for (const choice of choices) {
       expect(choice.label).not.toBe(choice.value);
     }
@@ -1705,7 +1735,7 @@ describe('language is a closed set on every action', () => {
 });
 
 // `auto` answers in the language of the text on assess, verify and ask. It is
-// wording only: the dropdown keeps its twelve codes, the value is entered as a
+// wording only: the dropdown keeps its thirteen codes, the value is entered as a
 // custom value, and whatever is in the field goes to the API as typed.
 describe('language "auto"', () => {
   const fieldOf = (action) =>
@@ -1722,8 +1752,8 @@ describe('language "auto"', () => {
     },
   );
 
-  it.each(['assess', 'verify_claim', 'ask', 'extract_claims'])('%s keeps the dropdown to the twelve codes', (action) => {
-    expect(fieldOf(action).choices).toHaveLength(12);
+  it.each(['assess', 'verify_claim', 'ask', 'extract_claims'])('%s keeps the dropdown to the thirteen codes', (action) => {
+    expect(fieldOf(action).choices).toHaveLength(13);
     expect(fieldOf(action).choices.map((c) => c.value)).not.toContain('auto');
   });
 
@@ -1760,7 +1790,7 @@ describe('language "auto"', () => {
 
     it('extract_claims sends it unchanged, or no language key when empty', async () => {
       const client = mockClient({
-        extract: jest.fn().mockResolvedValue({ status: 'ready', claim: 'A', identified_claims: [] }),
+        extract: jest.fn().mockResolvedValue({ status: 'ready', claims: [{ claim: 'A', positions: null }] }),
       });
       LenzClient.mockImplementation(() => client);
       await appTester(App.creates.extract_claims.operation.perform, {

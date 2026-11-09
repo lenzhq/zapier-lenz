@@ -1,9 +1,0 @@
-{
-  "status": "failed",
-  "task_id": "fa50185e37ad61160dbe4a785cdf7286",
-  "error": "Pipeline stopped: not_a_claim.",
-  "failure_reason": "not_a_claim",
-  "failure_class": "invalid_input",
-  "retryable": false,
-  "docs_url": "https://lenz.io/docs/errors#invalid-input"
-}

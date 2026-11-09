@@ -206,8 +206,8 @@ describe('3b. Every recorded failed callback, exactly', () => {
     'webhook__verification_failed_insufficient_evidence',
     'webhook__verification_failed_upstream_unavailable',
   ];
-  const fixture = (shape, name) =>
-    JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', shape, `${name}.json`), 'utf-8'));
+  const fixture = (name) =>
+    JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'canonical', `${name}.json`), 'utf-8'));
   const run = (body) => {
     mockClient();
     return appTester(App.creates.verify_claim.operation.performResume, {
@@ -217,21 +217,8 @@ describe('3b. Every recorded failed callback, exactly', () => {
     });
   };
 
-  it.each(NAMES)('%s, earlier shape: the code in Failure Reason, a sentence in Error', async (name) => {
-    const body = fixture('legacy', name);
-    const out = await run(body);
-    expect(out.failure_reason).toBe(body.error);
-    expect(out.error).toBe(
-      body.error === 'not_a_claim'
-        ? 'No claim in the input could be checked against public evidence.'
-        : `Pipeline stopped: ${body.error}.`,
-    );
-    expect(out.failure_class).toBe(body.failure_class);
-    expect(out.retryable).toBe(body.retryable);
-  });
-
-  it.each(NAMES)('%s, newer shape: the API\'s own detail in Error, its code in Failure Reason', async (name) => {
-    const body = fixture('canonical', name);
+  it.each(NAMES)('%s: the API\'s own detail in Error, its code in Failure Reason', async (name) => {
+    const body = fixture(name);
     const out = await run(body);
     const block = body.verification.failure;
     expect(out.error).toBe(block.detail);
