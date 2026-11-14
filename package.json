@@ -1,7 +1,7 @@
 {
   "name": "zapier-lenz",
   "version": "2.4.0",
-  "description": "Fact-check claims and catch AI hallucinations with Lenz - verified, sourced verdicts inside your Zaps.",
+  "description": "Check the facts, figures, and citations in your work with Lenz — sourced verdicts and reasoning inside your Zaps.",
   "license": "MIT",
   "engines": {
     "node": ">=22.12"

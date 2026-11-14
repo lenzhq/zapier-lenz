@@ -1,6 +1,6 @@
 # zapier-lenz
 
-This is a Zapier integration for **Lenz** — an audit-grade AI fact-checking API. It catches hallucinations and gives sourced, branch-ready verdicts on any claim or piece of text, not just a bare confidence score.
+This is a Zapier integration for **Lenz** — it checks the facts, figures, and citations in your work so you can sign off or publish with confidence, returning sourced, branch-ready verdicts on any claim, citation, or draft.
 
 [Zapier](https://zapier.com/) lets you connect apps into automated workflows ("Zaps") without writing code.
 
