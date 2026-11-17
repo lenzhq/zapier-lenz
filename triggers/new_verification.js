@@ -79,7 +79,7 @@ module.exports = {
   noun: 'Verification',
   display: {
     label: 'New Verification Completed',
-    description: 'Triggers when a fact-check finishes.',
+    description: 'Triggers when a verification finishes.',
   },
   operation: {
     type: 'polling',
