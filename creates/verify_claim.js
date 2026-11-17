@@ -523,7 +523,7 @@ module.exports = {
     // sit here; both moved to help text, which is where Zapier asks for extra
     // detail and the only place Markdown is documented to render.
     description:
-      'Runs the full fact-checking pipeline on one claim — research, debate, and panel review — and returns a sourced verdict with score and citations. Takes about 90 seconds.',
+      'Runs the full verification pipeline on one claim — research, debate, and panel review — and returns a sourced verdict with score and citations. Takes about 90 seconds.',
   },
   operation: {
     inputFields: [

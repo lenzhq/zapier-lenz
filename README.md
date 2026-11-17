@@ -173,7 +173,7 @@ nothing to indicate it happened.
 
 | Trigger | What it does |
 |---|---|
-| **New Verification Completed** | Polls for claims that finish fact-checking on the connected **account**. Runs on Zapier's standard polling interval (not instant) — for a claim you're actively submitting in the same Zap, use the **Verify a Claim** action instead, which waits and returns the result inline. |
+| **New Verification Completed** | Polls for claims that finish verification on the connected **account**. Runs on Zapier's standard polling interval (not instant) — for a claim you're actively submitting in the same Zap, use the **Verify a Claim** action instead, which waits and returns the result inline. |
 
 **The trigger is account-wide, not key-wide.** It fires for every completed verification
 the account owns, whichever surface produced it — a check you ran on the website, through
@@ -284,7 +284,7 @@ way to find the specific run.
 
 ## Example Zap
 
-A simple "fact-check gate" pattern — verify a claim before acting on it:
+A simple "verification gate" pattern — verify a claim before acting on it:
 
 ```
 [Form/Webhook trigger]  ──▶  [Lenz: Verify a Claim]  ──▶  [Filter]  ──▶  continue
