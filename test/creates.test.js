@@ -1671,7 +1671,7 @@ describe('creates.ask', () => {
 });
 
 // #17 — `language` was free text described as "ISO 639-1", but the API
-// accepts exactly thirteen codes and 422s everything else. A 422 becomes a
+// accepts exactly thirty-nine codes and 422s everything else. A 422 becomes a
 // plain z.errors.Error, which counts toward the error rate that turns a Zap
 // off, so `English` or `en-US` in that box failed EVERY run with nothing in
 // the editor to explain it.
@@ -1698,6 +1698,32 @@ describe('language is a closed set on every action', () => {
     'fi',
     'bg',
     'sr',
+    'ko',
+    'pl',
+    'ru',
+    'uk',
+    'hi',
+    'ar',
+    'ro',
+    'el',
+    'hu',
+    'cs',
+    'sk',
+    'sl',
+    'mk',
+    'hr',
+    'tr',
+    'sq',
+    'lt',
+    'lv',
+    'et',
+    'be',
+    'ca',
+    'eu',
+    'is',
+    'ga',
+    'cy',
+    'mt',
   ];
 
   const languageFieldOf = (action) =>
@@ -1744,7 +1770,7 @@ describe('language is a closed set on every action', () => {
 });
 
 // `auto` answers in the language of the text on assess, verify and ask. It is
-// wording only: the dropdown keeps its thirteen codes, the value is entered as a
+// wording only: the dropdown keeps its thirty-nine codes, the value is entered as a
 // custom value, and whatever is in the field goes to the API as typed.
 describe('language "auto"', () => {
   const fieldOf = (action) =>
@@ -1761,8 +1787,8 @@ describe('language "auto"', () => {
     },
   );
 
-  it.each(['assess', 'verify_claim', 'ask', 'extract_claims'])('%s keeps the dropdown to the thirteen codes', (action) => {
-    expect(fieldOf(action).choices).toHaveLength(13);
+  it.each(['assess', 'verify_claim', 'ask', 'extract_claims'])('%s keeps the dropdown to the thirty-nine codes', (action) => {
+    expect(fieldOf(action).choices).toHaveLength(39);
     expect(fieldOf(action).choices.map((c) => c.value)).not.toContain('auto');
   });
 
