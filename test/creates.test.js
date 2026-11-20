@@ -1383,6 +1383,117 @@ describe('creates.extract_claims', () => {
         globalThis.fetch = originalFetch;
       }
     });
+
+    it('processes audio file upload with download and extractFile call', async () => {
+      const mockFetch = jest.fn().mockImplementation(async (url) => {
+        if (new URL(url).hostname === 'example.com') {
+          return new Response(Buffer.from('ID3\x03\x00\x00\x00\x00\x00\x00test mp3'), {
+            status: 200,
+            headers: {
+              'Content-Type': 'audio/mpeg',
+              'Content-Disposition': 'attachment; filename="speech.mp3"',
+            },
+          });
+        }
+        return new Response(
+          JSON.stringify({
+            status: 'ready',
+            claim: 'Claim from audio',
+            identified_claims: ['Claim from audio'],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      });
+
+      const client = mockClient({
+        extractFile: jest.fn().mockResolvedValue({
+          status: 'ready',
+          claim: 'Claim from audio',
+          identified_claims: ['Claim from audio'],
+        }),
+      });
+      LenzClient.mockImplementation(() => client);
+
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = mockFetch;
+      try {
+        const bundle = {
+          authData: { access_token: 'lenz_good' },
+          inputData: { file: 'https://example.com/speech.mp3', language: 'en' },
+        };
+        const result = await appTester(App.creates.extract_claims.operation.perform, bundle);
+
+        expect(result).toMatchObject({ status: 'ready', claim: 'Claim from audio' });
+        expect(client.extractFile).toHaveBeenCalledWith(
+          expect.objectContaining({
+            filename: 'speech.mp3',
+            contentType: 'audio/mpeg',
+            language: 'en',
+          }),
+          expect.objectContaining({
+            idempotencyKey: expect.any(String),
+          }),
+        );
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('processes audio file upload with review_draft and reviewFile call', async () => {
+      const mockFetch = jest.fn().mockImplementation(async (url) => {
+        if (new URL(url).hostname === 'example.com') {
+          return new Response(
+            Buffer.concat([
+              Buffer.from('RIFF'),
+              Buffer.from([0x24, 0x00, 0x00, 0x00]),
+              Buffer.from('WAVE'),
+              Buffer.from('fmt '),
+            ]),
+            {
+              status: 200,
+              headers: {
+                'Content-Type': 'audio/wav',
+                'Content-Disposition': 'attachment; filename="interview.wav"',
+              },
+            },
+          );
+        }
+        return new Response(
+          JSON.stringify({ review_id: 'rev_audio_1', status: 'queued' }),
+          { status: 202, headers: { 'Content-Type': 'application/json' } },
+        );
+      });
+
+      const client = mockClient({
+        reviewFile: jest.fn().mockResolvedValue({ review_id: 'rev_audio_1', status: 'queued' }),
+      });
+      LenzClient.mockImplementation(() => client);
+
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = mockFetch;
+      try {
+        const bundle = {
+          authData: { access_token: 'lenz_good' },
+          inputData: { file: 'https://example.com/interview.wav', depth: 'low' },
+        };
+        const result = await appTester(App.creates.review_draft.operation.perform, bundle);
+
+        expect(result).toMatchObject({ review_id: 'rev_audio_1', status: 'queued' });
+        expect(client.reviewFile).toHaveBeenCalledWith(
+          expect.objectContaining({
+            filename: 'interview.wav',
+            contentType: 'audio/wav',
+            depth: 'low',
+            idempotencyKey: expect.any(String),
+          }),
+          expect.objectContaining({
+            timeoutMs: expect.any(Number),
+          }),
+        );
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
   });
 
   it('stubs sample data and makes NO real call while loading a sample (consistent with the other creates)', async () => {

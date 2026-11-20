@@ -7,6 +7,7 @@ const App = require('../index');
 const {
   validateFileUrl,
   normalizeFilenameAndMime,
+  sniffMagicMime,
   downloadFileUrl,
   extractFileWithZapier,
   reviewFileWithZapier,
@@ -15,6 +16,8 @@ const {
   guardedLookup,
   isBlockedAddress,
   EXT_TO_MIME,
+  MIME_TO_EXT,
+  UNSUPPORTED_FILE_TYPE_MESSAGE,
   MAX_FILE_BYTES,
 } = require('../lib/upload');
 const { FILE_REFUSAL_CODES } = require('../lib/errors');
@@ -122,6 +125,159 @@ describe('lib/upload.js', () => {
       const res = normalizeFilenameAndMime(null, undefined);
       expect(res.filename).toBe('upload');
       expect(res.contentType).toBe('application/octet-stream');
+    });
+
+    it('resolves audio extensions to audio MIME types', () => {
+      expect(normalizeFilenameAndMime('track.mp3', '').contentType).toBe('audio/mpeg');
+      expect(normalizeFilenameAndMime('track.m4a', '').contentType).toBe('audio/mp4');
+      expect(normalizeFilenameAndMime('track.wav', '').contentType).toBe('audio/wav');
+      expect(normalizeFilenameAndMime('track.ogg', '').contentType).toBe('audio/ogg');
+      expect(normalizeFilenameAndMime('track.webm', '').contentType).toBe('audio/webm');
+    });
+
+    it('resolves audio MIME types and aliases to filenames with correct extensions', () => {
+      expect(normalizeFilenameAndMime('audio', 'audio/mpeg').filename).toBe('audio.mp3');
+      expect(normalizeFilenameAndMime('audio', 'audio/mp3').filename).toBe('audio.mp3');
+      expect(normalizeFilenameAndMime('audio', 'audio/mp4').filename).toBe('audio.m4a');
+      expect(normalizeFilenameAndMime('audio', 'audio/x-m4a').filename).toBe('audio.m4a');
+      expect(normalizeFilenameAndMime('audio', 'audio/m4a').filename).toBe('audio.m4a');
+      expect(normalizeFilenameAndMime('audio', 'audio/wav').filename).toBe('audio.wav');
+      expect(normalizeFilenameAndMime('audio', 'audio/x-wav').filename).toBe('audio.wav');
+      expect(normalizeFilenameAndMime('audio', 'audio/wave').filename).toBe('audio.wav');
+      expect(normalizeFilenameAndMime('audio', 'audio/ogg').filename).toBe('audio.ogg');
+      expect(normalizeFilenameAndMime('audio', 'application/ogg').filename).toBe('audio.ogg');
+      expect(normalizeFilenameAndMime('audio', 'audio/webm').filename).toBe('audio.webm');
+    });
+
+    it('normalizes .webm filename with video/webm MIME to audio/webm', () => {
+      const res = normalizeFilenameAndMime('meeting.webm', 'video/webm');
+      expect(res.filename).toBe('meeting.webm');
+      expect(res.contentType).toBe('audio/webm');
+    });
+  });
+
+  describe('sniffMagicMime', () => {
+    it('returns null for non-buffers, empty buffers, or too short buffers', () => {
+      expect(sniffMagicMime(null)).toBeNull();
+      expect(sniffMagicMime(undefined)).toBeNull();
+      expect(sniffMagicMime('not a buffer')).toBeNull();
+      expect(sniffMagicMime(Buffer.alloc(0))).toBeNull();
+      expect(sniffMagicMime(Buffer.from([0x01, 0x02]))).toBeNull();
+      expect(sniffMagicMime(Buffer.from('random string of bytes'))).toBeNull();
+    });
+
+    it('sniffs JPEG', () => {
+      expect(sniffMagicMime(Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00]))).toBe('image/jpeg');
+    });
+
+    it('sniffs PDF', () => {
+      expect(sniffMagicMime(Buffer.from('%PDF-1.4 sample content'))).toBe('application/pdf');
+    });
+
+    it('sniffs PNG', () => {
+      expect(
+        sniffMagicMime(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00])),
+      ).toBe('image/png');
+    });
+
+    it('sniffs DOCX / ZIP', () => {
+      expect(sniffMagicMime(Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00]))).toBe(
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      );
+      expect(sniffMagicMime(Buffer.from([0x50, 0x4b, 0x05, 0x06, 0x00]))).toBe(
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      );
+    });
+
+    it('sniffs WebP', () => {
+      expect(
+        sniffMagicMime(
+          Buffer.concat([
+            Buffer.from('RIFF'),
+            Buffer.from([0x20, 0x00, 0x00, 0x00]),
+            Buffer.from('WEBP'),
+            Buffer.from('VP8 '),
+          ]),
+        ),
+      ).toBe('image/webp');
+    });
+
+    it('sniffs WAV', () => {
+      expect(
+        sniffMagicMime(
+          Buffer.concat([
+            Buffer.from('RIFF'),
+            Buffer.from([0x24, 0x00, 0x00, 0x00]),
+            Buffer.from('WAVE'),
+            Buffer.from('fmt '),
+          ]),
+        ),
+      ).toBe('audio/wav');
+    });
+
+    it('sniffs Ogg', () => {
+      expect(
+        sniffMagicMime(
+          Buffer.concat([
+            Buffer.from('OggS'),
+            Buffer.from([0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+          ]),
+        ),
+      ).toBe('audio/ogg');
+    });
+
+    it('sniffs WebM', () => {
+      const ebmlHeader = Buffer.from([0x1a, 0x45, 0xdf, 0xa3]);
+      const webmDoc = Buffer.from('....doctype..webm......');
+      const webmBuf = Buffer.concat([ebmlHeader, webmDoc]);
+      expect(sniffMagicMime(webmBuf)).toBe('audio/webm');
+
+      // Header without 'webm' returns null
+      const nonWebm = Buffer.concat([ebmlHeader, Buffer.from('....doctype..mkv.......')]);
+      expect(sniffMagicMime(nonWebm)).toBeNull();
+    });
+
+    it('sniffs M4A / MP4 audio brands', () => {
+      const createFtyp = (brand) =>
+        Buffer.concat([
+          Buffer.from([0x00, 0x00, 0x00, 0x20]),
+          Buffer.from('ftyp'),
+          Buffer.from(brand),
+          Buffer.from([0x00, 0x00, 0x02, 0x00]),
+        ]);
+
+      expect(sniffMagicMime(createFtyp('M4A '))).toBe('audio/mp4');
+      expect(sniffMagicMime(createFtyp('M4B '))).toBe('audio/mp4');
+      expect(sniffMagicMime(createFtyp('mp42'))).toBe('audio/mp4');
+      expect(sniffMagicMime(createFtyp('isom'))).toBe('audio/mp4');
+      expect(sniffMagicMime(createFtyp('dash'))).toBeNull();
+    });
+
+    it('sniffs MP3 with ID3 header', () => {
+      const id3Buf = Buffer.concat([
+        Buffer.from('ID3'),
+        Buffer.from([0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0a]),
+        Buffer.alloc(10),
+      ]);
+      expect(sniffMagicMime(id3Buf)).toBe('audio/mpeg');
+    });
+
+    it('sniffs MP3 with MPEG frame sync', () => {
+      // 0xFF followed by 0xFB (11111011: sync 111, version 11 (MPEG1), layer 01 (Layer III), no CRC)
+      // byte 2: 0x90 (10010000: bitrate index 1001 (128kbps), sample rate 00 (44100Hz))
+      const mp3Frame = Buffer.from([0xff, 0xfb, 0x90, 0x44, 0x00, 0x00, 0x00, 0x00]);
+      expect(sniffMagicMime(mp3Frame)).toBe('audio/mpeg');
+
+      // Invalid sync
+      expect(sniffMagicMime(Buffer.from([0xff, 0x10, 0x90, 0x44]))).toBeNull();
+      // Reserved version (version_id === 1)
+      expect(sniffMagicMime(Buffer.from([0xff, 0xe9, 0x90, 0x44]))).toBeNull();
+      // Reserved layer (layer_id === 0)
+      expect(sniffMagicMime(Buffer.from([0xff, 0xf1, 0x90, 0x44]))).toBeNull();
+      // Bad bitrate (15)
+      expect(sniffMagicMime(Buffer.from([0xff, 0xfb, 0xf0, 0x44]))).toBeNull();
+      // Bad sample rate (3)
+      expect(sniffMagicMime(Buffer.from([0xff, 0xfb, 0x9c, 0x44]))).toBeNull();
     });
   });
 
@@ -283,6 +439,70 @@ describe('lib/upload.js', () => {
 
       await expect(
         downloadFileUrl(zStub, 'https://example.com/file.pdf', { fetchImpl: mockFetch, isSample: true }),
+      ).rejects.toThrow(zStub.errors.Error);
+    });
+
+    it('downloads audio files and identifies them via MIME type or magic bytes', async () => {
+      const wavHeader = Buffer.concat([
+        Buffer.from('RIFF'),
+        Buffer.from([0x24, 0x00, 0x00, 0x00]),
+        Buffer.from('WAVE'),
+        Buffer.from('fmt '),
+      ]);
+      const mockWavFetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({
+          'Content-Type': 'audio/wav',
+          'Content-Disposition': 'attachment; filename="recording.wav"',
+        }),
+        arrayBuffer: async () => wavHeader,
+      });
+
+      const wavRes = await downloadFileUrl(zStub, 'https://example.com/recording.wav', { fetchImpl: mockWavFetch });
+      expect(wavRes.filename).toBe('recording.wav');
+      expect(wavRes.contentType).toBe('audio/wav');
+
+      const oggHeader = Buffer.concat([
+        Buffer.from('OggS'),
+        Buffer.from([0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+      ]);
+      const mockOggFetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({
+          'Content-Type': 'application/octet-stream',
+          'Content-Disposition': 'attachment; filename="audio-stream"',
+        }),
+        arrayBuffer: async () => oggHeader,
+      });
+
+      const oggRes = await downloadFileUrl(zStub, 'https://example.com/audio-stream', { fetchImpl: mockOggFetch });
+      expect(oggRes.filename).toBe('audio-stream.ogg');
+      expect(oggRes.contentType).toBe('audio/ogg');
+    });
+
+    it('rejects unsupported file type with UNSUPPORTED_FILE_TYPE_MESSAGE', async () => {
+      const mockFetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({
+          'Content-Type': 'application/octet-stream',
+          'Content-Disposition': 'attachment; filename="program.exe"',
+        }),
+        arrayBuffer: async () => Buffer.from('MZ\x90\x00\x03\x00\x00\x00'),
+      });
+
+      await expect(
+        downloadFileUrl(zStub, 'https://example.com/program.exe', { fetchImpl: mockFetch, isSample: false }),
+      ).rejects.toThrow(zStub.errors.HaltedError);
+
+      await expect(
+        downloadFileUrl(zStub, 'https://example.com/program.exe', { fetchImpl: mockFetch, isSample: false }),
+      ).rejects.toThrow(UNSUPPORTED_FILE_TYPE_MESSAGE);
+
+      await expect(
+        downloadFileUrl(zStub, 'https://example.com/program.exe', { fetchImpl: mockFetch, isSample: true }),
       ).rejects.toThrow(zStub.errors.Error);
     });
   });

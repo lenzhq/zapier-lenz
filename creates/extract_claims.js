@@ -261,7 +261,7 @@ module.exports = {
     // labels. This description is the only place a user building a Filter on
     // Status can learn what to compare against.
     description:
-      'Pulls the verifiable factual claims out of a block of text, or out of a public web page, Google Doc, PDF, YouTube video, or image given its URL, without checking them. Status is "ready" when claims were found, "not_a_claim" when none were, or "no_match" when a Focus excluded all of them.',
+      'Pulls the verifiable factual claims out of a block of text, an uploaded file, or out of a public web page, Google Doc, PDF, YouTube video, image, or audio URL, without checking them. Status is "ready" when claims were found, "not_a_claim" when none were, or "no_match" when a Focus excluded all of them.',
   },
   operation: {
     inputFields: [
@@ -271,7 +271,7 @@ module.exports = {
         type: 'text',
         required: false,
         helpText:
-          "The text to pull claims from, or a single public web page, Google Doc, PDF, YouTube video, or image URL. Lenz reads the page, a Google Doc, a PDF (.pdf), a YouTube video's transcript, or an image (.png, .jpg, .jpeg, .webp), and extracts the claims from its first 50,000 characters; pages behind a login can't be read. A Zap step has 30 seconds and a page read can take longer, so for a long page send its text instead. Provide either Text or File, not both.",
+          "The text to pull claims from, or a single public web page, Google Doc, PDF, YouTube video, image, or audio URL. Lenz reads the page, a Google Doc, a PDF (.pdf), a YouTube video's transcript, an image (.png, .jpg, .jpeg, .webp), or an audio recording (.mp3, .m4a, .wav, .ogg, .webm), and extracts the claims from its first 50,000 characters; pages behind a login can't be read. A Zap step has 30 seconds and a page read can take longer, so for a long page send its text instead. Provide either Text or File, not both.",
       },
       {
         key: 'file',
@@ -279,7 +279,7 @@ module.exports = {
         type: 'file',
         required: false,
         helpText:
-          'A file (.docx, .pdf up to 100 pages, .png, .jpg, or .webp, up to 10 MB) to extract claims from instead of Text. Provide either Text or File, not both.',
+          'A file (.docx, .pdf up to 100 pages, .png, .jpg, .webp, .mp3, .m4a, .wav, .ogg, or .webm, up to 10 MB) to extract claims from instead of Text. Provide either Text or File, not both.',
       },
       languageField(LANGUAGE_HELP_TEXT_AUTO),
       {

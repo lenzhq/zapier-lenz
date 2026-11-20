@@ -389,7 +389,7 @@ module.exports = {
         type: 'text',
         required: false,
         helpText:
-          'The text to review, such as an AI-written answer, an article or an email (up to 50,000 characters; longer text is cut and the Input Truncated output says so), or one public http(s) URL to a web page, Google Doc, PDF (.pdf), YouTube video, or image (.png, .jpg, .jpeg, .webp). Clicking Test shows an example review so you can map the output fields; a turned-on Zap reviews this draft. Provide either Text or File, not both.',
+          'The text to review, such as an AI-written answer, an article or an email (up to 50,000 characters; longer text is cut and the Input Truncated output says so), or one public http(s) URL to a web page, Google Doc, PDF (.pdf), YouTube video, image (.png, .jpg, .jpeg, .webp), or audio recording (.mp3, .m4a, .wav, .ogg, .webm). Clicking Test shows an example review so you can map the output fields; a turned-on Zap reviews this draft. Provide either Text or File, not both.',
       },
       {
         key: 'file',
@@ -397,7 +397,7 @@ module.exports = {
         type: 'file',
         required: false,
         helpText:
-          'A document or image to review (.docx, .pdf up to 100 pages, .png, .jpg, .webp up to 10 MB) passed from a previous step or as a public HTTPS link. Provide either Text or File, not both.',
+          'A document, image, or audio file to review (.docx, .pdf up to 100 pages, .png, .jpg, .webp, .mp3, .m4a, .wav, .ogg, .webm up to 10 MB) passed from a previous step or as a public HTTPS link. Provide either Text or File, not both.',
       },
       languageField(),
       {
