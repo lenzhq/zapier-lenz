@@ -34,7 +34,6 @@ function mockClient(overrides = {}) {
     getStatus: jest.fn(),
     assess: jest.fn(),
     extract: jest.fn(),
-    ask: { send: jest.fn() },
     usage: jest.fn(),
     ...overrides,
   };
@@ -1748,46 +1747,13 @@ describe('creates.extract_claims', () => {
   });
 });
 
-describe('creates.ask', () => {
-  it('returns the reply content as answer', async () => {
-    const client = mockClient({
-      ask: { send: jest.fn().mockResolvedValue({ role: 'expert', content: 'Because sources say so.' }) },
-    });
-    LenzClient.mockImplementation(() => client);
-
-    const bundle = {
-      authData: { access_token: 'lenz_good' },
-      inputData: { verificationId: 'ab12cd34', question: 'Why?' },
-    };
-    const result = await appTester(App.creates.ask.operation.perform, bundle);
-
-    expect(result).toEqual({ answer: 'Because sources say so.' });
-    expect(client.ask.send).toHaveBeenCalledWith('ab12cd34', expect.objectContaining({ message: 'Why?' }));
-  });
-
-  it('stubs sample data and makes NO real call while loading a sample (no ask exchange spent; also handles the chained placeholder ID)', async () => {
-    const client = mockClient({ ask: { send: jest.fn() } });
-    LenzClient.mockImplementation(() => client);
-
-    const bundle = {
-      authData: { access_token: 'lenz_good' },
-      inputData: { verificationId: 'ab12cd34', question: 'Why?' },
-      meta: { isLoadingSample: true },
-    };
-    const result = await appTester(App.creates.ask.operation.perform, bundle);
-
-    expect(result.answer).toBeTruthy();
-    expect(client.ask.send).not.toHaveBeenCalled();
-  });
-});
-
 // #17 — `language` was free text described as "ISO 639-1", but the API
 // accepts exactly thirty-nine codes and 422s everything else. A 422 becomes a
 // plain z.errors.Error, which counts toward the error rate that turns a Zap
 // off, so `English` or `en-US` in that box failed EVERY run with nothing in
 // the editor to explain it.
 describe('language is a closed set on every action', () => {
-  const ACTIONS = ['verify_claim', 'assess', 'extract_claims', 'ask'];
+  const ACTIONS = ['verify_claim', 'assess', 'extract_claims'];
 
   // Copied from SUPPORTED_LANGUAGES in lenz/languages.py, which that module
   // names as its source of truth — `en` first, then roughly descending
@@ -1858,15 +1824,6 @@ describe('language is a closed set on every action', () => {
     }
   });
 
-  // The two meanings of blank really do differ, so the help text must too.
-  // On ask the server falls back to the CLAIM's stored language
-  // (lenz/api/public_authed.py:2996), not English.
-  it('tells ask users that blank is not English there', () => {
-    const helpText = languageFieldOf('ask').helpText;
-    expect(helpText).toMatch(/does NOT mean English/);
-    expect(helpText).toMatch(/stored in/i);
-  });
-
   it.each(['verify_claim', 'assess', 'extract_claims'])('%s says blank means English', (action) => {
     expect(languageFieldOf(action).helpText).toMatch(/Leave blank for English/i);
   });
@@ -1880,14 +1837,14 @@ describe('language is a closed set on every action', () => {
   });
 });
 
-// `auto` answers in the language of the text on assess, verify and ask. It is
+// `auto` answers in the language of the text on assess, verify and extract. It is
 // wording only: the dropdown keeps its thirty-nine codes, the value is entered as a
 // custom value, and whatever is in the field goes to the API as typed.
 describe('language "auto"', () => {
   const fieldOf = (action) =>
     App.creates[action].operation.inputFields.find((f) => f.key === 'language');
 
-  it.each(['assess', 'verify_claim', 'ask', 'extract_claims'])('%s mentions auto in the help text', (action) => {
+  it.each(['assess', 'verify_claim', 'extract_claims'])('%s mentions auto in the help text', (action) => {
     expect(fieldOf(action).helpText).toMatch(/"auto"/);
   });
 
@@ -1898,7 +1855,7 @@ describe('language "auto"', () => {
     },
   );
 
-  it.each(['assess', 'verify_claim', 'ask', 'extract_claims'])('%s keeps the dropdown to the thirty-nine codes', (action) => {
+  it.each(['assess', 'verify_claim', 'extract_claims'])('%s keeps the dropdown to the thirty-nine codes', (action) => {
     expect(fieldOf(action).choices).toHaveLength(39);
     expect(fieldOf(action).choices.map((c) => c.value)).not.toContain('auto');
   });
@@ -1944,16 +1901,6 @@ describe('language "auto"', () => {
         inputData: { text: 'Die Erde ist rund.', language },
       });
       expect(sentBody(client.extract.mock.calls[0][0])).toEqual(expected);
-    });
-
-    it('ask sends it unchanged, or no language key when empty', async () => {
-      const client = mockClient({ ask: { send: jest.fn().mockResolvedValue({ content: 'A.' }) } });
-      LenzClient.mockImplementation(() => client);
-      await appTester(App.creates.ask.operation.perform, {
-        authData,
-        inputData: { verificationId: 'ab12cd34', question: 'Warum?', language },
-      });
-      expect(sentBody(client.ask.send.mock.calls[0][1])).toEqual(expected);
     });
   });
 });
@@ -2105,74 +2052,6 @@ describe('assess carries the per-claim language echo', () => {
   });
 });
 
-
-// Lenz#425. A Zapier replay of Ask after a timeout would be charged again and
-// append a second answer to the stored conversation. The key has to survive the
-// replay, and — because asking the same question again is normal on /ask —
-// expire quickly (lib/replay-key.js).
-describe('creates.ask replay idempotency key', () => {
-  const live = (over = {}) => ({
-    authData: { access_token: 'lenz_good' },
-    inputData: { verificationId: 'ab12cd34', question: 'Why 330 m?', language: 'en' },
-    meta: { zap: { id: 7 } },
-    ...over,
-  });
-  const keyOf = (client) => client.ask.send.mock.calls[0][1].idempotencyKey;
-  const replyClient = () => mockClient({ ask: { send: jest.fn().mockResolvedValue({ content: 'A.' }) } });
-
-  afterEach(() => jest.useRealTimers());
-
-  it('sends the same digest key on a replay of the same run', async () => {
-    const client = replyClient();
-    LenzClient.mockImplementation(() => client);
-    await appTester(App.creates.ask.operation.perform, live());
-    const first = keyOf(client);
-    expect(first).toMatch(/^[0-9a-f]{64}$/);
-    expect(first).not.toContain('330');
-
-    client.ask.send.mockClear();
-    await appTester(App.creates.ask.operation.perform, live());
-    expect(keyOf(client)).toBe(first);
-  });
-
-  it('differs for a different question, verification or language', async () => {
-    const client = replyClient();
-    LenzClient.mockImplementation(() => client);
-    await appTester(App.creates.ask.operation.perform, live());
-    const base = keyOf(client);
-    for (const inputData of [
-      { verificationId: 'ab12cd34', question: 'Who measured it?', language: 'en' },
-      { verificationId: 'zz99', question: 'Why 330 m?', language: 'en' },
-      { verificationId: 'ab12cd34', question: 'Why 330 m?', language: 'es' },
-    ]) {
-      client.ask.send.mockClear();
-      await appTester(App.creates.ask.operation.perform, live({ inputData }));
-      expect(keyOf(client)).not.toBe(base);
-    }
-  });
-
-  // Ten minutes, not an hour: the same question asked again later is a new
-  // question, and must get a fresh answer.
-  it('expires after ten minutes, unlike Assess', async () => {
-    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
-    const t0 = Date.UTC(2026, 8, 30, 12, 0, 0);
-    jest.setSystemTime(t0);
-    const client = replyClient();
-    LenzClient.mockImplementation(() => client);
-    await appTester(App.creates.ask.operation.perform, live());
-    const first = keyOf(client);
-
-    jest.setSystemTime(t0 + 9 * 60 * 1000);
-    client.ask.send.mockClear();
-    await appTester(App.creates.ask.operation.perform, live());
-    expect(keyOf(client)).toBe(first);
-
-    jest.setSystemTime(t0 + 11 * 60 * 1000);
-    client.ask.send.mockClear();
-    await appTester(App.creates.ask.operation.perform, live());
-    expect(keyOf(client)).not.toBe(first);
-  });
-});
 
 // Lenz#916: `suggested_rewrite`, NOT `suggested_revision` (the issue's name):
 // the API, both SDKs and /review send `suggested_rewrite`, and a Zapier key can

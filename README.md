@@ -24,7 +24,6 @@ Lenz is in Zapier's public App Directory (in Beta): https://zapier.com/apps/lenz
 | **Verify a Claim** *(default)* | Full pipeline (research → debate → adjudication), ~90 seconds. Returns a verdict, confidence, `lenz_score` (1-10, or empty for `No Public Record`), sourced citations, and an executive summary. Reserve for high-stakes claims that need a thorough, cited answer. Runs asynchronously via Zapier's callback mechanism — the Zap step shows as "waiting," not stuck. |
 | **Assess (Fast)** | A quick 3-model panel verdict, ~15 seconds, one entry per claim identified in the input text. Good default for lower-stakes checks. |
 | **Extract Claims** | Free — pulls the verifiable factual claims out of a block of text without checking them. Useful as a first step before running Assess or Verify a Claim on each claim individually. Accepts either **Text** or **File** (not both). **Text** can be plain text or a single public web page, Google Doc, PDF, YouTube video, image, or audio URL: Lenz reads the page, a Google Doc, a PDF (`.pdf`), a YouTube video's transcript, an image (`.png`, `.jpg`, `.jpeg`, `.webp`), or an audio recording (`.mp3`, `.m4a`, `.wav`, `.ogg`, `.webm`), and extracts the claims from its first 50,000 characters. **File** accepts a document, image, or audio file (.docx, .pdf up to 100 pages, .png, .jpg, .webp, .mp3, .m4a, .wav, .ogg, .webm up to 10 MB) from a previous Zapier step or a public `https://` URL. Pages behind a login (Facebook, Instagram, Threads, LinkedIn) can't be read. A URL call typically takes 5-40 seconds and a Zap step has 30, so a slow page can fail the step; for a long page, send its text instead. |
-| **Ask Follow-Up** | Asks a question grounded in the full research behind a completed **Verify a Claim** result. Requires the `verification_id` that action returns — not usable standalone. |
 | **Review a Draft** | Checks a whole draft in one step, two to four minutes: every claim is quick-checked, the ones that look wrong or uncertain are deep-checked, and the result lists the **Issues** (claim, verdict, key finding, a suggested rewrite that is *not* itself verified, and the claim's lenz.io page). Accepts either **Draft** (text up to 50,000 characters, or one public web page, Google Doc, PDF, YouTube video, image, or audio URL) or **File** (.docx, .pdf up to 100 pages, .png, .jpg, .webp, .mp3, .m4a, .wav, .ogg, .webm up to 10 MB from a previous step or public `https://` URL), not both. **Clean** is true when nothing was wrong. Optionally checks the draft's citations too (**Maximum Citations to Check**: blank skips them; up to 20, the first in the draft). Costs 1 credit per claim quick-checked (up to 20) plus 10 per deep check (5 at Low; **Deep Checks** sets how many, default 5); **Credits Charged** says what it cost. Runs via Zapier's callback, like Verify a Claim. |
 | **Check Citations** | Reads each source a draft links to (links, bare URLs, DOIs, `[1]`-style references) and checks that it says what the draft attributes to it. Lists every citation with its **Finding** and the problem ones under **Citation Issues**. Leave **Maximum Citations to Check** blank to check up to 20, the first in the draft (**Citation Limit Reached** says when there were more; they are not checked). 1 credit per citation checked; one Lenz could not read is not charged. Runs via Zapier's callback. |
 
@@ -69,7 +68,7 @@ only what the sample shows. These are the values the API actually sends:
 | `issues[].source` (**Checked By**) | Review a Draft | `assessment` (the quick check) or `verification` (a deep check, which also has a **Key Finding** and a **Lenz Page**). |
 | `citations_skipped` | Review a Draft | Why citations you asked for were **not** checked: `url_input`, `switched_off` or `insufficient_credits`. Empty otherwise. When set, **Clean** says nothing about the citations. |
 | `finding` | Check Citations, Review a Draft (citation rows) | `supported`, `partly_supported`, `contradicted`, `unsupported`, `not_found`, `metadata_mismatch` and more: an open set. To decide whether a citation is a problem, use **Is Issue** or the **Citation Issues** list, not the finding's name. |
-| `language` | Assess (Fast), Extract Claims, Verify a Claim, Ask Follow-Up, Review a Draft, Check Citations (input); also an output of Extract Claims | `en` `es` `de` `fr` `it` `pt` `nl` `sv` `da` `no` `fi` `bg`. A dropdown since 1.4.0 — it was free text, and anything outside this set fails the run. |
+| `language` | Assess (Fast), Extract Claims, Verify a Claim, Review a Draft, Check Citations (input); also an output of Extract Claims | `en` `es` `de` `fr` `it` `pt` `nl` `sv` `da` `no` `fi` `bg`. A dropdown since 1.4.0 — it was free text, and anything outside this set fails the run. |
 
 Every field in the table above, and every other field Verify a Claim, Review a Draft and
 Check Citations declare, is **present on every result** — empty when it does not apply, never missing. Zapier treats
@@ -113,19 +112,15 @@ why. If you have an existing Zap with a hand-typed value, re-pick it from the dr
 answer, never your text; reading it the other way round is the easy mistake, and it
 quietly changes the output.
 
-**`auto` on Assess, Verify a Claim, Ask Follow-Up, Review a Draft and Extract Claims.** To get
+**`auto` on Assess, Verify a Claim, Review a Draft and Extract Claims.** To get
 the answer in the language of your text, enter `auto` as a custom value in the Language field
-(the dropdown lists the thirteen codes only). On Ask Follow-Up it means the language of the claim
-being discussed; on Review a Draft the review comes back in the language of the draft, one
+(the dropdown lists the thirteen codes only). On Review a Draft the review comes back in the language of the draft, one
 language for the whole review; on Extract Claims the claims are written in the language of the
 text (of the fetched page when **Text** is a URL), and a text too short to tell comes back in
 English. A code you pick always wins, and Check Citations does not accept `auto`. Extract
 Claims also returns a **Language** output with the code the claims are written in.
 
-**Blank means two different things.** On Verify a Claim, Assess and Extract Claims a blank
-field means English. On **Ask Follow-Up** it means *the language the verification is stored
-in*, which is usually what you want — you can ask in English about a Spanish verification
-by leaving it blank, or set it explicitly to override.
+**Blank means English.** Leaving the field blank defaults to English.
 
 ### Depth, Visibility and Focus
 
@@ -193,7 +188,7 @@ Since 2.0.0 you connect by **signing in to Lenz**, not by pasting an API key.
    connect and never remembers the answer; that is deliberate.
 3. Zapier tests the connection against your account's usage endpoint.
 
-The access asked for is exactly what the steps use: assess, verify, ask, extract, read your
+The access asked for is exactly what the steps use: assess, verify, extract, read your
 verification history, read your usage, and manage the connection's webhook secret. It never
 asks to delete anything. You can revoke it at any time from lenz.io; the next Zap run then
 asks you to reconnect.
@@ -224,7 +219,6 @@ when 2.0.0 ships; Zaps still using it then will stop.
 
 - **Verify a Claim takes ~90 seconds.** The Zap step will show as "waiting" while the pipeline runs — this is expected, not a stuck Zap.
 - **Verify a Claim**, **Review a Draft** and **Check Citations** need the connection's webhook signing secret, which is fetched automatically when you connect. There is nothing to set up.
-- For **Ask Follow-Up**, chain it directly after **Verify a Claim** in the same Zap, mapping its `verification_id` output into the Ask step's Verification ID field.
 
 ### What happens when something goes wrong
 
@@ -258,15 +252,14 @@ Zap's side. Every action that costs credits guards against paying twice for it.
 Verify a Claim carries a per-run callback URL that keeps runs apart. Review a Draft
 and Check Citations build an idempotency key from that same per-run callback URL and
 their input, so a replay of a run gets the review or check Lenz already started,
-while a new run of the same draft starts its own. Assess (Fast) and Ask Follow-Up
-send an idempotency key built from the Zap, the input and the current time window,
+while a new run of the same draft starts its own. Assess (Fast)
+sends an idempotency key built from the Zap, the input and a one-hour window,
 so a replay inside the window gets the answer Lenz already produced instead of
 running it again:
 
 | Action | Window | The edge that follows |
 |---|---|---|
 | Assess (Fast) | one hour | the same Zap sending the *same* text twice on purpose within the hour gets the first answer again |
-| Ask Follow-Up | ten minutes | the same Zap asking the *same* question of the same verification twice within ten minutes gets the first answer again. Shorter than Assess because asking a question again is normal: the answer depends on the conversation so far |
 
 A replay that lands while Lenz is still working on the first attempt waits and
 tries again, rather than failing the run.

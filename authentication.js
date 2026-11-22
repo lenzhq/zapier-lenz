@@ -30,8 +30,6 @@ const WEBHOOK_SECRET_URL = 'https://lenz.io/api/v1/me/webhook-secret';
 const SCOPES = [
   'assess',
   'verify',
-  'ask',
-  'ask:read',
   'extract',
   'history:read',
   'usage:read',

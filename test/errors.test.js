@@ -40,7 +40,6 @@ function mockClient(overrides = {}) {
     getStatus: jest.fn(),
     assess: jest.fn(),
     extract: jest.fn(),
-    ask: { send: jest.fn() },
     usage: jest.fn(),
     request: jest.fn(),
     verifications: { list: jest.fn() },
@@ -265,19 +264,6 @@ describe('quota (402) → HaltedError', () => {
 
     expect(err.name).toBe('HaltedError');
     expect(err.message).toContain('2026-09-01');
-  });
-
-  it('applies on the Ask action too', async () => {
-    LenzClient.mockImplementation(() =>
-      mockClient({ ask: { send: jest.fn().mockRejectedValue(quotaError()) } }),
-    );
-
-    const err = await captureError(App.creates.ask.operation.perform, {
-      ...AUTH,
-      inputData: { verificationId: 'ab12cd34', question: 'Which source is strongest?' },
-    });
-
-    expect(err.name).toBe('HaltedError');
   });
 
   // Rejects through `request`, not `verifications.list`: the trigger calls the
@@ -625,12 +611,12 @@ describe('non-quota 403 stays a hard error', () => {
   it('a private verification is a real failure, not a billing state', async () => {
     const err403 = new LenzError({ message: 'This report is private.', statusCode: 403 });
     LenzClient.mockImplementation(() =>
-      mockClient({ ask: { send: jest.fn().mockRejectedValue(err403) } }),
+      mockClient({ verify: jest.fn().mockRejectedValue(err403) }),
     );
 
-    const err = await captureError(App.creates.ask.operation.perform, {
+    const err = await captureError(App.creates.verify_claim.operation.perform, {
       ...AUTH,
-      inputData: { verificationId: 'ab12cd34', question: 'q' },
+      inputData: { claim: 'q' },
     });
 
     expect(err.name).not.toBe('HaltedError');
@@ -639,8 +625,8 @@ describe('non-quota 403 stays a hard error', () => {
 });
 
 
-// An Idempotency-Key still in flight. With replay-stable keys on Assess (#19)
-// and Ask (Lenz#425), a Zapier replay can arrive while the first attempt is
+// An Idempotency-Key still in flight. With replay-stable keys on Assess (#19),
+// a Zapier replay can arrive while the first attempt is
 // still running; the server answers this 409 with no `code`, and the SDK
 // leaves it a plain LenzError. It must wait and replay, not fail the run.
 describe('409 idempotency in flight → ThrottledError', () => {
@@ -659,10 +645,10 @@ describe('409 idempotency in flight → ThrottledError', () => {
   });
 
   it('does not promise the retry reuses the first answer', async () => {
-    LenzClient.mockImplementation(() => mockClient({ ask: { send: jest.fn().mockRejectedValue(inFlight()) } }));
-    const err = await captureError(App.creates.ask.operation.perform, {
+    LenzClient.mockImplementation(() => mockClient({ assess: jest.fn().mockRejectedValue(inFlight()) }));
+    const err = await captureError(App.creates.assess.operation.perform, {
       ...AUTH,
-      inputData: { verificationId: 'v1', question: 'why?' },
+      inputData: { text: 'x' },
     });
     expect(err.name).toBe('ThrottledError');
     expect(JSON.parse(err.message).message).not.toMatch(/same answer|not be charged|nothing was charged/i);
