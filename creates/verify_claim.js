@@ -64,7 +64,6 @@ const SAMPLE = {
     },
   ],
   language: 'en',
-  domain: 'Science',
   // Caveats the conclusion attached to this verdict; [] on most claims. Wrapped
   // as line items rather than left as bare strings for the same reason as
   // Candidate Readings below: a string array is not mappable per-item.
@@ -130,7 +129,6 @@ const NO_VERDICT = {
   suggested_rewrite: '',
   sources: [],
   language: '',
-  domain: '',
   warnings: [],
   created_at: '',
   depth: '',
@@ -151,7 +149,7 @@ const NO_INPUT_NEEDED = {
 
 // Lenz can stop a verification to ask for input rather than run the pipeline.
 // Today the only reason it does is `multi_claim` (lenz/api/public_authed.py,
-// /verify/status: claims: [{ claim, domain }]). The API retired
+// /verify/status: claims: [{ claim }]). The API retired
 // `clarification_required` (candidates: [string]) on 2026-09-12 and
 // `duplicate_found` (similar_claims: [{ verification_id, claim, verdict,
 // confidence, lenz_score, url }]) on 2026-09-26, with the near-duplicate
@@ -164,8 +162,8 @@ const NO_INPUT_NEEDED = {
 // per-item in the editor.
 function shapeNeedsInput(status) {
   const reason = status.reason || '';
-  // Each option is `{ claim, domain }`. The output keeps its own key, `text`.
-  const claims = (status.claims || []).map((c) => ({ text: c.claim || '', domain: c.domain || '' }));
+  // Each option is `{ claim }`. The output keeps its own key, `text`.
+  const claims = (status.claims || []).map((c) => ({ text: c.claim || '' }));
   const candidates = (status.candidates || []).map((text) => ({ text: String(text || '') }));
   const similar = (status.similar_claims || []).map((s) => ({
     verification_id: s.verification_id || '',
@@ -413,7 +411,6 @@ const shapeCompleted = (taskId, result) => ({
         origin: s.origin || '',
       })),
       language: result.language || '',
-      domain: result.domain || '',
       // Bare strings on the wire; wrapped as line items so a Zap can iterate
       // them, matching how Candidate Readings is handled.
       warnings: (result.warnings || []).map((text) => ({ text: String(text || '') })),
@@ -668,7 +665,6 @@ module.exports = {
         list: true,
         children: [
           { key: 'text', label: 'Claim' },
-          { key: 'domain', label: 'Domain' },
         ],
       },
       {
@@ -713,13 +709,10 @@ module.exports = {
       // Passthroughs the API always sends and this action used to drop.
       //
       //   language    The language the verdict is written in.
-      //   domain      Capitalised, or '' when the extractor produced none —
-      //               the same vocabulary the trigger and Extract emit.
       //   warnings    Caveats the conclusion attached to this verdict, one
       //               line item each. [] on most claims.
       //   created_at  When the verification was created.
       { key: 'language', label: 'Language' },
-      { key: 'domain', label: 'Domain' },
       {
         key: 'warnings',
         label: 'Warnings',

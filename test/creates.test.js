@@ -430,15 +430,15 @@ describe('creates.verify_claim', () => {
         status: 'needs_input',
         reason: 'multi_claim',
         claims: [
-          { claim: 'The Eiffel Tower is 330 metres tall.', domain: 'Science' },
-          { claim: 'The Eiffel Tower was completed in 1889.', domain: 'History' },
+          { claim: 'The Eiffel Tower is 330 metres tall.' },
+          { claim: 'The Eiffel Tower was completed in 1889.' },
         ],
       });
 
       // The API's `claim` reads as the output's own key, `text`.
       expect(result.claims).toEqual([
-        { text: 'The Eiffel Tower is 330 metres tall.', domain: 'Science' },
-        { text: 'The Eiffel Tower was completed in 1889.', domain: 'History' },
+        { text: 'The Eiffel Tower is 330 metres tall.' },
+        { text: 'The Eiffel Tower was completed in 1889.' },
       ]);
       expect(result.message).toContain('2 separate claims');
       expect(result.message).not.toMatch(/rephrase/i);
@@ -1527,8 +1527,8 @@ describe('creates.extract_claims', () => {
 
   // The sample IS the contract for filter-building: `perform` passes the API
   // response through untouched, so a sample value the API never sends teaches
-  // a filter that silently matches nothing. Three fields shipped that way
-  // until 1.3.2 — `status: 'ok'`, `domain: 'science'` and a one-element
+  // a filter that silently matches nothing. Two fields shipped that way
+  // until 1.3.2 — `status: 'ok'` and a one-element
   // `identified_claims` — so each gets a ratchet.
   it('samples only status values this integration can receive', () => {
     // `no_match` joined this list when the Focus input shipped. Before that it
@@ -1730,21 +1730,6 @@ describe('creates.extract_claims', () => {
     const intent = App.creates.extract_claims.operation.sample.presumed_intent;
     expect(intent).toMatch(/\s/);
     expect(intent.trim()).toMatch(/\.$/);
-  });
-
-  it('samples the domain in the canonical capitalised form', () => {
-    const API_DOMAINS = [
-      'Health',
-      'Science',
-      'Politics',
-      'Finance',
-      'Tech',
-      'History',
-      'Legal',
-      'General',
-    ];
-    expect(API_DOMAINS).toContain(App.creates.extract_claims.operation.sample.domain);
-    expect(API_DOMAINS).toContain(App.triggers.new_verification.operation.sample.domain);
   });
 });
 
@@ -2022,7 +2007,6 @@ describe('the completed verdict carries what the API actually sends', () => {
     result: {
       verdict: 'True',
       language: 'es',
-      domain: 'Science',
       warnings: ['Sources disagree on the exact figure.'],
       created_at: '2026-07-14T12:00:00Z',
       sources: [
@@ -2061,10 +2045,9 @@ describe('the completed verdict carries what the API actually sends', () => {
     });
   });
 
-  it('passes through language, domain and created_at', async () => {
+  it('passes through language and created_at', async () => {
     const result = await resume(COMPLETED);
     expect(result.language).toBe('es');
-    expect(result.domain).toBe('Science');
     expect(result.created_at).toBe('2026-07-14T12:00:00Z');
   });
 
@@ -2080,7 +2063,6 @@ describe('the completed verdict carries what the API actually sends', () => {
   it('falls back to empty rather than undefined when the server omits them', async () => {
     const result = await resume({ status: 'completed', result: { verdict: 'True' } });
     expect(result.language).toBe('');
-    expect(result.domain).toBe('');
     expect(result.warnings).toEqual([]);
     expect(result.created_at).toBe('');
     expect(result.sources).toEqual([]);

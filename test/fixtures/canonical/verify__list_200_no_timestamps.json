@@ -3,8 +3,6 @@
     {
       "verification_id": "97f4229f",
       "claim": "The Earth is round.",
-      "domain": "Science",
-      "entities": [],
       "verdict": "True",
       "confidence": "high",
       "lenz_score": 9,
@@ -16,8 +14,6 @@
     {
       "verification_id": "6946e8ea",
       "claim": "The Earth is round.",
-      "domain": "Science",
-      "entities": [],
       "verdict": "True",
       "confidence": "high",
       "lenz_score": 9,

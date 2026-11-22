@@ -296,8 +296,8 @@ describe('creates.verify_claim reads the failure block and the nested callback',
   it('needs_input options read as Claims Found with a text key', async () => {
     const out = await poll('verify__status_needs_input');
     expect(out.claims).toEqual([
-      { text: 'The Earth is round.', domain: 'Science' },
-      { text: 'Water boils at 100C at sea level.', domain: 'Science' },
+      { text: 'The Earth is round.' },
+      { text: 'Water boils at 100C at sea level.' },
     ]);
   });
 
