@@ -64,14 +64,19 @@ const perform = async (z, bundle) => {
   // only bites if a future/older server omits it — but a field that is ''
   // on one surface and undefined on the other silently breaks a Zap that
   // maps it.
-  return result.items.map(asOutputItem).map((item) => ({
-    id: item.verification_id,
-    ...item,
-    key_finding: item.key_finding || '',
-    // On list items too (lenz-io VerificationListItem). Normalised to '' for
-    // the same reason as key_finding, and to match Verify a Claim.
-    suggested_rewrite: item.suggested_rewrite || '',
-  }));
+  return result.items.map(asOutputItem).map((item) => {
+    const out = {
+      id: item.verification_id,
+      ...item,
+      key_finding: item.key_finding || '',
+      // On list items too (lenz-io VerificationListItem). Normalised to '' for
+      // the same reason as key_finding, and to match Verify a Claim.
+      suggested_rewrite: item.suggested_rewrite || '',
+    };
+    delete out.domain;
+    delete out.entities;
+    return out;
+  });
 };
 
 module.exports = {
@@ -88,10 +93,6 @@ module.exports = {
       id: 'ab12cd34',
       verification_id: 'ab12cd34',
       claim: 'The Eiffel Tower is 330 metres tall.',
-      // Capitalised, as the API emits it: Health, Science, Politics, Finance,
-      // Tech, History, Legal, General. A lowercase sample teaches a filter on
-      // "Domain = science" that never matches a live row.
-      domain: 'Science',
       verdict: 'True',
       confidence: 'high',
       lenz_score: 9,

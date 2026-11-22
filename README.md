@@ -51,10 +51,8 @@ only what the sample shows. These are the values the API actually sends:
 | `claims[].error_code` | Assess (Fast) | Empty on a verdict row. On a row whose `verdict` is `Error`, why it has no verdict: `no_claim`, `internal` or `upstream_unavailable` (a response in the earlier API version can also say `framing_failed` or `timeout`) — an open set, so branch on the ones you know and let the rest fall through. Error rows are free, and `hint` on the same row says what to send instead. |
 | `more_claims` | Assess (Fast) | **Claims Not Checked.** A text with more claims than one call checks (20) gets the most check-worthy ones assessed and the rest listed here, free, to send on as their own steps. A list of strings; empty when there are none. Not the same as `claims[].identified_claims` (the other claims inside the one a row assessed). |
 | `error`, `failure_reason` | Verify a Claim, when `status` is `failed` | `error` says what happened; `failure_reason` is the code (`not_a_claim` for nothing to check, `upstream_unavailable`, `internal`, `cancelled`, or the earlier name of the step that stopped). The code is the same on a live run (read from Lenz's signed callback) and on a read from the status route; the sentence can be worded a little differently between the two. |
-| `domain` | Extract Claims, New Verification Completed | Capitalised: `Health`, `Science`, `Politics`, `Finance`, `Tech`, `History`, `Legal`, `General` — **or empty**, when the extractor produced no usable domain. A Paths step covering all eight still needs a branch for the empty case. |
 | `passed` | Verify a Claim, Assess (Fast) | `true` for a True or Mostly True verdict, `false` for Mixed, Mostly False and False, and **empty** when `verdict` is `No Public Record` (Lenz found no public record of the claim) or there is no verdict at all. Branch on `passed` **is true**, and send an empty `passed` to its own path. |
 | `verdict` | Verify a Claim, Assess (Fast), New Verification Completed | `True`, `Mostly True`, `Mixed`, `Mostly False`, `False`, or `No Public Record`. On `No Public Record`, `lenz_score` is empty. Assess (Fast) also gives `Error` on a row that failed. |
-| `domain` | Verify a Claim | Same eight capitalised values as above, or empty. |
 | `status` | Verify a Claim | `completed`, `needs_input`, `failed`, or `processing`. Built by the integration. A check stopped elsewhere (the Stop button on lenz.io) reads `failed`, with `failure_class` `cancelled` and `retryable` false. |
 | `reason` | Verify a Claim, when `status` is `needs_input` | `multi_claim`. Empty otherwise. Two more values were retired by the API: `clarification_required` on 2026-09-12 and `duplicate_found` on 2026-09-26. Their fields (**Candidate Readings**, **Duplicate Verification ID**, **Duplicate URL**, **Similar Claims**) are still emitted, always empty, so a Zap that maps them keeps working. |
 | `claims[].rationale` | Assess (Fast) | Free text, not a value to filter on: the reasoning of a reviewer who agrees with the panel's verdict. It is a reviewer's note, not a checked source; for sourced evidence, call /verify. Empty on an `Error` row. `claims[].dissent` (**Reviewer Dissent**) is deprecated: the Lenz API no longer returns it, so it is always empty. The field stays so existing Zaps keep working. |
@@ -83,7 +81,7 @@ Today it does that for one reason, and the step carries the data to act on:
 
 | `reason` | What Lenz found | What to map | What to do |
 |---|---|---|---|
-| `multi_claim` | Several separate claims in one input | **Claims Found** (line items: `text`, `domain`) | Fan out — a Verify step per item, or send them one at a time |
+| `multi_claim` | Several separate claims in one input | **Claims Found** (line items: `text`) | Fan out — a Verify step per item, or send them one at a time |
 | ~~`clarification_required`~~ | *Retired 2026-09-12.* A vague claim is now checked on its most likely reading instead of paused | **Candidate Readings** — still present, always empty | Nothing; it no longer occurs |
 | ~~`duplicate_found`~~ | *Retired 2026-09-26.* Lenz no longer pauses on a claim close to one already checked or offers the earlier check; it verifies the claim it was given | **Duplicate Verification ID**, **Duplicate URL**, **Similar Claims** — still present, always empty | Nothing; it no longer occurs |
 
@@ -97,7 +95,7 @@ Two fields on Extract Claims look filterable and are not:
 
 Extract's `status` read `ok` in the sample until 1.3.2 — a value the API never sends — so
 a filter built on it matched nothing on a live run. If you built one before 1.3.2, change
-it to `ready`. A lowercase `domain` needs capitalising the same way.
+it to `ready`.
 
 ### Language
 
@@ -173,7 +171,7 @@ nothing to indicate it happened.
 **The trigger is account-wide, not key-wide.** It fires for every completed verification
 the account owns, whichever surface produced it — a check you ran on the website, through
 the MCP server, or another connection will start this Zap. Filter on something the
-Zap can see (`domain`, `verdict`, `passed`) if you only want a subset.
+Zap can see (`verdict`, `passed`) if you only want a subset.
 
 It reads up to 100 completions per poll. Zapier polls every 1-15 minutes, so an account
 finishing more than 100 verifications between two polls can still outrun it; that is the

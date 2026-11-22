@@ -27,11 +27,6 @@ const { replayKey, HOUR_MS } = require('../lib/replay-key');
 //                      sample is therefore deliberately a two-claim
 //                      extraction, so the field shows the only shape in which
 //                      it is ever populated and stays mappable in the editor.
-//   domain             One of eight capitalised values (Health, Science,
-//                      Politics, Finance, Tech, History, Legal, General) or
-//                      `''` when the extractor produced none.
-//   key_entities       `{name, type}` here. The trigger's `entities` are
-//                      `{name, qid}` — different surfaces, different shape.
 //   presumed_intent    FREE TEXT, one sentence. Not an enum, so it must not
 //                      look like one: a filter cannot be built on it.
 const SAMPLE = {
@@ -44,8 +39,6 @@ const SAMPLE = {
   candidate_claims: [],
   // True when `status` is `not_a_claim`: nothing in the text can be checked.
   not_a_claim: false,
-  domain: 'Science',
-  key_entities: [{ name: 'Eiffel Tower', type: 'place' }],
   presumed_intent: 'Sharing factual details about a landmark.',
   original_input:
     'Did you know the Eiffel Tower is 330 metres tall? It was completed in 1889.',
@@ -79,6 +72,8 @@ const shapeExtraction = (result) => {
     ...result,
   };
   delete out.claims;
+  delete out.domain;
+  delete out.key_entities;
   out.status = result.status === NO_CHECKABLE_CLAIM ? 'not_a_claim' : result.status;
   out.locations = located ? items.map((c) => ({ claim: c.claim || '', positions: c.positions })) : null;
   return out;
@@ -297,7 +292,6 @@ module.exports = {
       { key: 'status', label: 'Status' },
       { key: 'claim', label: 'Primary Claim' },
       { key: 'not_a_claim', label: 'Nothing Checkable', type: 'boolean' },
-      { key: 'domain', label: 'Domain' },
       { key: 'language', label: 'Language' },
       // Present on EVERY path — filled on `no_match` to say why the list is
       // empty, `''` otherwise — never absent. Declared so it is offerable in

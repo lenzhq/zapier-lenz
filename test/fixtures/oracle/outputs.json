@@ -1144,17 +1144,6 @@
       "claim": "Beta fell 3% last year.",
       "identified_claims": [],
       "candidate_claims": [],
-      "domain": "Economics",
-      "key_entities": [
-        {
-          "name": "Alpha",
-          "type": "organization"
-        },
-        {
-          "name": "Beta",
-          "type": "organization"
-        }
-      ],
       "presumed_intent": "Verify reported figures",
       "original_input": "Alpha rose 5% in 2024. Beta fell 3% last year.",
       "locations": null,
@@ -1169,17 +1158,6 @@
         "Beta fell 3% last year."
       ],
       "candidate_claims": [],
-      "domain": "Economics",
-      "key_entities": [
-        {
-          "name": "Alpha",
-          "type": "organization"
-        },
-        {
-          "name": "Beta",
-          "type": "organization"
-        }
-      ],
       "presumed_intent": "Verify reported figures",
       "original_input": "Alpha rose 5% in 2024. Beta fell 3% last year.",
       "locations": null,
@@ -1191,17 +1169,6 @@
       "claim": "",
       "identified_claims": [],
       "candidate_claims": [],
-      "domain": "",
-      "key_entities": [
-        {
-          "name": "Alpha",
-          "type": "organization"
-        },
-        {
-          "name": "Beta",
-          "type": "organization"
-        }
-      ],
       "presumed_intent": "Verify reported figures",
       "original_input": "Alpha rose 5% in 2024. Beta fell 3% last year.",
       "locations": null,
@@ -1216,17 +1183,6 @@
         "Beta fell 3% last year."
       ],
       "candidate_claims": [],
-      "domain": "Economics",
-      "key_entities": [
-        {
-          "name": "Alpha",
-          "type": "organization"
-        },
-        {
-          "name": "Beta",
-          "type": "organization"
-        }
-      ],
       "presumed_intent": "Verify reported figures",
       "original_input": "Alpha rose 5% in 2024. Beta fell 3% last year.",
       "locations": null,
@@ -1238,17 +1194,6 @@
       "claim": "Alpha rose 5% in 2024.",
       "identified_claims": [],
       "candidate_claims": [],
-      "domain": "Economics",
-      "key_entities": [
-        {
-          "name": "Alpha",
-          "type": "organization"
-        },
-        {
-          "name": "Beta",
-          "type": "organization"
-        }
-      ],
       "presumed_intent": "Verify reported figures",
       "original_input": "Alpha rose 5% in 2024. Beta fell 3% last year.",
       "locations": [
@@ -1274,17 +1219,6 @@
         "Beta fell 3% last year."
       ],
       "candidate_claims": [],
-      "domain": "Economics",
-      "key_entities": [
-        {
-          "name": "Alpha",
-          "type": "organization"
-        },
-        {
-          "name": "Beta",
-          "type": "organization"
-        }
-      ],
       "presumed_intent": "Verify reported figures",
       "original_input": "Alpha rose 5% in 2024. Beta fell 3% last year.",
       "locations": [
@@ -1320,17 +1254,6 @@
         "Beta fell 3% last year."
       ],
       "candidate_claims": [],
-      "domain": "Economics",
-      "key_entities": [
-        {
-          "name": "Alpha",
-          "type": "organization"
-        },
-        {
-          "name": "Beta",
-          "type": "organization"
-        }
-      ],
       "presumed_intent": "Verify reported figures",
       "original_input": "Alpha rose 5% in 2024. Beta fell 3% last year.",
       "locations": [
@@ -1363,8 +1286,6 @@
       "claim": "",
       "identified_claims": [],
       "candidate_claims": [],
-      "domain": "",
-      "key_entities": [],
       "presumed_intent": "",
       "original_input": "Alpha rose 5% in 2024. Beta fell 3% last year.",
       "locations": null,
@@ -1376,8 +1297,6 @@
       "claim": "",
       "identified_claims": [],
       "candidate_claims": [],
-      "domain": "",
-      "key_entities": [],
       "presumed_intent": "",
       "original_input": "What a lovely day.",
       "locations": null,
@@ -1389,17 +1308,6 @@
       "claim": "Alpha rose 5% in 2024.",
       "identified_claims": [],
       "candidate_claims": [],
-      "domain": "Economics",
-      "key_entities": [
-        {
-          "name": "Alpha",
-          "type": "organization"
-        },
-        {
-          "name": "Beta",
-          "type": "organization"
-        }
-      ],
       "presumed_intent": "Verify reported figures",
       "original_input": "Alpha rose 5% in 2024.",
       "locations": null,
@@ -1411,17 +1319,6 @@
       "claim": "Alpha rose 5% in 2024.",
       "identified_claims": [],
       "candidate_claims": [],
-      "domain": "Economics",
-      "key_entities": [
-        {
-          "name": "Alpha",
-          "type": "organization"
-        },
-        {
-          "name": "Beta",
-          "type": "organization"
-        }
-      ],
       "presumed_intent": "Verify reported figures",
       "original_input": "Alpha rose 5% in 2024.",
       "locations": null,
@@ -1436,17 +1333,6 @@
         "Beta fell 3% last year."
       ],
       "candidate_claims": [],
-      "domain": "Economics",
-      "key_entities": [
-        {
-          "name": "Alpha",
-          "type": "organization"
-        },
-        {
-          "name": "Beta",
-          "type": "organization"
-        }
-      ],
       "presumed_intent": "Verify reported figures",
       "original_input": "Alpha rose 5% in 2024. Beta fell 3% last year.",
       "locations": null,
@@ -1461,17 +1347,6 @@
         "Beta fell 3% last year."
       ],
       "candidate_claims": [],
-      "domain": "Economics",
-      "key_entities": [
-        {
-          "name": "Alpha",
-          "type": "organization"
-        },
-        {
-          "name": "Beta",
-          "type": "organization"
-        }
-      ],
       "presumed_intent": "Verify reported figures",
       "original_input": "Alpha rose 5% in 2024. Beta fell 3% last year.",
       "locations": null,
@@ -1483,17 +1358,6 @@
       "claim": "Alpha rose 5% in 2024.",
       "identified_claims": [],
       "candidate_claims": [],
-      "domain": "Economics",
-      "key_entities": [
-        {
-          "name": "Alpha",
-          "type": "organization"
-        },
-        {
-          "name": "Beta",
-          "type": "organization"
-        }
-      ],
       "presumed_intent": "Verify reported figures",
       "original_input": "https://example.com/an-article",
       "locations": [
@@ -2742,8 +2606,6 @@
         "id": "97f4229f",
         "verification_id": "97f4229f",
         "claim": "The Earth is round.",
-        "domain": "Science",
-        "entities": [],
         "verdict": "True",
         "confidence": "high",
         "lenz_score": 9,
@@ -2758,8 +2620,6 @@
         "id": "6946e8ea",
         "verification_id": "6946e8ea",
         "claim": "The Earth is round.",
-        "domain": "Science",
-        "entities": [],
         "verdict": "True",
         "confidence": "high",
         "lenz_score": 9,
@@ -2776,8 +2636,6 @@
         "id": "97f4229f",
         "verification_id": "97f4229f",
         "claim": "The Earth is round.",
-        "domain": "Science",
-        "entities": [],
         "verdict": "True",
         "confidence": "high",
         "lenz_score": 9,
@@ -2794,8 +2652,6 @@
         "id": "97f4229f",
         "verification_id": "97f4229f",
         "claim": "The Earth is round.",
-        "domain": "Science",
-        "entities": [],
         "verdict": "True",
         "confidence": "high",
         "lenz_score": 9,
@@ -2812,8 +2668,6 @@
         "id": "97f4229f",
         "verification_id": "97f4229f",
         "claim": "The Earth is round.",
-        "domain": "Science",
-        "entities": [],
         "verdict": "True",
         "confidence": "high",
         "lenz_score": 9,
@@ -2826,8 +2680,6 @@
         "id": "6946e8ea",
         "verification_id": "6946e8ea",
         "claim": "The Earth is round.",
-        "domain": "Science",
-        "entities": [],
         "verdict": "True",
         "confidence": "high",
         "lenz_score": 9,
@@ -2844,8 +2696,6 @@
         "id": "97f4229f",
         "verification_id": "97f4229f",
         "claim": "The Earth is round.",
-        "domain": "Science",
-        "entities": [],
         "verdict": "True",
         "confidence": "high",
         "lenz_score": 9,
@@ -2882,7 +2732,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -2919,7 +2768,6 @@
         }
       ],
       "language": "en",
-      "domain": "Science",
       "warnings": [
         {
           "text": "Relies on limited sources"
@@ -2971,7 +2819,6 @@
         }
       ],
       "language": "en",
-      "domain": "Science",
       "warnings": [
         {
           "text": "Relies on limited sources"
@@ -3023,7 +2870,6 @@
         }
       ],
       "language": "en",
-      "domain": "Science",
       "warnings": [
         {
           "text": "Relies on limited sources"
@@ -3075,7 +2921,6 @@
         }
       ],
       "language": "en",
-      "domain": "Science",
       "warnings": [
         {
           "text": "Relies on limited sources"
@@ -3127,7 +2972,6 @@
         }
       ],
       "language": "en",
-      "domain": "Science",
       "warnings": [
         {
           "text": "Relies on limited sources"
@@ -3179,7 +3023,6 @@
         }
       ],
       "language": "en",
-      "domain": "Science",
       "warnings": [
         {
           "text": "Relies on limited sources"
@@ -3225,7 +3068,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -3256,7 +3098,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -3287,7 +3128,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -3318,7 +3158,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -3342,7 +3181,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -3351,12 +3189,10 @@
       "message": "Lenz found 2 separate claims in this input. Each needs its own check — send them one at a time, or map the Claims Found list into a Verify a Claim step per item.",
       "claims": [
         {
-          "text": "The Earth is round.",
-          "domain": "Science"
+          "text": "The Earth is round."
         },
         {
-          "text": "Water boils at 100C at sea level.",
-          "domain": "Science"
+          "text": "Water boils at 100C at sea level."
         }
       ],
       "candidates": [],
@@ -3389,7 +3225,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -3420,7 +3255,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -3451,7 +3285,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -3482,7 +3315,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -3513,7 +3345,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -3721,7 +3552,6 @@
         }
       ],
       "language": "en",
-      "domain": "Geography",
       "warnings": [
         {
           "text": "Only two sources were found."
@@ -3773,7 +3603,6 @@
         }
       ],
       "language": "en",
-      "domain": "Geography",
       "warnings": [
         {
           "text": "Only two sources were found."
@@ -3825,7 +3654,6 @@
         }
       ],
       "language": "en",
-      "domain": "Geography",
       "warnings": [
         {
           "text": "Only two sources were found."
@@ -3877,7 +3705,6 @@
         }
       ],
       "language": "en",
-      "domain": "Geography",
       "warnings": [
         {
           "text": "Only two sources were found."
@@ -3923,7 +3750,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -3954,7 +3780,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -3985,7 +3810,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -5143,17 +4967,6 @@
       "claim": "Beta fell 3% last year.",
       "identified_claims": [],
       "candidate_claims": [],
-      "domain": "Economics",
-      "key_entities": [
-        {
-          "name": "Alpha",
-          "type": "organization"
-        },
-        {
-          "name": "Beta",
-          "type": "organization"
-        }
-      ],
       "presumed_intent": "Verify reported figures",
       "original_input": "Alpha rose 5% in 2024. Beta fell 3% last year.",
       "locations": null,
@@ -5168,17 +4981,6 @@
         "Beta fell 3% last year."
       ],
       "candidate_claims": [],
-      "domain": "Economics",
-      "key_entities": [
-        {
-          "name": "Alpha",
-          "type": "organization"
-        },
-        {
-          "name": "Beta",
-          "type": "organization"
-        }
-      ],
       "presumed_intent": "Verify reported figures",
       "original_input": "Alpha rose 5% in 2024. Beta fell 3% last year.",
       "locations": null,
@@ -5190,17 +4992,6 @@
       "claim": "",
       "identified_claims": [],
       "candidate_claims": [],
-      "domain": "",
-      "key_entities": [
-        {
-          "name": "Alpha",
-          "type": "organization"
-        },
-        {
-          "name": "Beta",
-          "type": "organization"
-        }
-      ],
       "presumed_intent": "Verify reported figures",
       "original_input": "Alpha rose 5% in 2024. Beta fell 3% last year.",
       "locations": null,
@@ -5215,17 +5006,6 @@
         "Beta fell 3% last year."
       ],
       "candidate_claims": [],
-      "domain": "Economics",
-      "key_entities": [
-        {
-          "name": "Alpha",
-          "type": "organization"
-        },
-        {
-          "name": "Beta",
-          "type": "organization"
-        }
-      ],
       "presumed_intent": "Verify reported figures",
       "original_input": "Alpha rose 5% in 2024. Beta fell 3% last year.",
       "locations": null,
@@ -5237,17 +5017,6 @@
       "claim": "Alpha rose 5% in 2024.",
       "identified_claims": [],
       "candidate_claims": [],
-      "domain": "Economics",
-      "key_entities": [
-        {
-          "name": "Alpha",
-          "type": "organization"
-        },
-        {
-          "name": "Beta",
-          "type": "organization"
-        }
-      ],
       "presumed_intent": "Verify reported figures",
       "original_input": "Alpha rose 5% in 2024. Beta fell 3% last year.",
       "locations": [
@@ -5273,17 +5042,6 @@
         "Beta fell 3% last year."
       ],
       "candidate_claims": [],
-      "domain": "Economics",
-      "key_entities": [
-        {
-          "name": "Alpha",
-          "type": "organization"
-        },
-        {
-          "name": "Beta",
-          "type": "organization"
-        }
-      ],
       "presumed_intent": "Verify reported figures",
       "original_input": "Alpha rose 5% in 2024. Beta fell 3% last year.",
       "locations": [
@@ -5319,17 +5077,6 @@
         "Beta fell 3% last year."
       ],
       "candidate_claims": [],
-      "domain": "Economics",
-      "key_entities": [
-        {
-          "name": "Alpha",
-          "type": "organization"
-        },
-        {
-          "name": "Beta",
-          "type": "organization"
-        }
-      ],
       "presumed_intent": "Verify reported figures",
       "original_input": "Alpha rose 5% in 2024. Beta fell 3% last year.",
       "locations": [
@@ -5362,8 +5109,6 @@
       "claim": "",
       "identified_claims": [],
       "candidate_claims": [],
-      "domain": "",
-      "key_entities": [],
       "presumed_intent": "",
       "original_input": "Alpha rose 5% in 2024. Beta fell 3% last year.",
       "locations": null,
@@ -5375,8 +5120,6 @@
       "claim": "",
       "identified_claims": [],
       "candidate_claims": [],
-      "domain": "",
-      "key_entities": [],
       "presumed_intent": "",
       "original_input": "What a lovely day.",
       "locations": null,
@@ -5388,17 +5131,6 @@
       "claim": "Alpha rose 5% in 2024.",
       "identified_claims": [],
       "candidate_claims": [],
-      "domain": "Economics",
-      "key_entities": [
-        {
-          "name": "Alpha",
-          "type": "organization"
-        },
-        {
-          "name": "Beta",
-          "type": "organization"
-        }
-      ],
       "presumed_intent": "Verify reported figures",
       "original_input": "Alpha rose 5% in 2024.",
       "locations": null,
@@ -5410,17 +5142,6 @@
       "claim": "Alpha rose 5% in 2024.",
       "identified_claims": [],
       "candidate_claims": [],
-      "domain": "Economics",
-      "key_entities": [
-        {
-          "name": "Alpha",
-          "type": "organization"
-        },
-        {
-          "name": "Beta",
-          "type": "organization"
-        }
-      ],
       "presumed_intent": "Verify reported figures",
       "original_input": "Alpha rose 5% in 2024.",
       "locations": null,
@@ -5435,17 +5156,6 @@
         "Beta fell 3% last year."
       ],
       "candidate_claims": [],
-      "domain": "Economics",
-      "key_entities": [
-        {
-          "name": "Alpha",
-          "type": "organization"
-        },
-        {
-          "name": "Beta",
-          "type": "organization"
-        }
-      ],
       "presumed_intent": "Verify reported figures",
       "original_input": "Alpha rose 5% in 2024. Beta fell 3% last year.",
       "locations": null,
@@ -5460,17 +5170,6 @@
         "Beta fell 3% last year."
       ],
       "candidate_claims": [],
-      "domain": "Economics",
-      "key_entities": [
-        {
-          "name": "Alpha",
-          "type": "organization"
-        },
-        {
-          "name": "Beta",
-          "type": "organization"
-        }
-      ],
       "presumed_intent": "Verify reported figures",
       "original_input": "Alpha rose 5% in 2024. Beta fell 3% last year.",
       "locations": null,
@@ -5482,17 +5181,6 @@
       "claim": "Alpha rose 5% in 2024.",
       "identified_claims": [],
       "candidate_claims": [],
-      "domain": "Economics",
-      "key_entities": [
-        {
-          "name": "Alpha",
-          "type": "organization"
-        },
-        {
-          "name": "Beta",
-          "type": "organization"
-        }
-      ],
       "presumed_intent": "Verify reported figures",
       "original_input": "https://example.com/an-article",
       "locations": [
@@ -6741,8 +6429,6 @@
         "id": "97f4229f",
         "verification_id": "97f4229f",
         "claim": "The Earth is round.",
-        "domain": "Science",
-        "entities": [],
         "verdict": "True",
         "confidence": "high",
         "lenz_score": 9,
@@ -6757,8 +6443,6 @@
         "id": "6946e8ea",
         "verification_id": "6946e8ea",
         "claim": "The Earth is round.",
-        "domain": "Science",
-        "entities": [],
         "verdict": "True",
         "confidence": "high",
         "lenz_score": 9,
@@ -6775,8 +6459,6 @@
         "id": "97f4229f",
         "verification_id": "97f4229f",
         "claim": "The Earth is round.",
-        "domain": "Science",
-        "entities": [],
         "verdict": "True",
         "confidence": "high",
         "lenz_score": 9,
@@ -6793,8 +6475,6 @@
         "id": "97f4229f",
         "verification_id": "97f4229f",
         "claim": "The Earth is round.",
-        "domain": "Science",
-        "entities": [],
         "verdict": "True",
         "confidence": "high",
         "lenz_score": 9,
@@ -6811,8 +6491,6 @@
         "id": "97f4229f",
         "verification_id": "97f4229f",
         "claim": "The Earth is round.",
-        "domain": "Science",
-        "entities": [],
         "verdict": "True",
         "confidence": "high",
         "lenz_score": 9,
@@ -6825,8 +6503,6 @@
         "id": "6946e8ea",
         "verification_id": "6946e8ea",
         "claim": "The Earth is round.",
-        "domain": "Science",
-        "entities": [],
         "verdict": "True",
         "confidence": "high",
         "lenz_score": 9,
@@ -6843,8 +6519,6 @@
         "id": "97f4229f",
         "verification_id": "97f4229f",
         "claim": "The Earth is round.",
-        "domain": "Science",
-        "entities": [],
         "verdict": "True",
         "confidence": "high",
         "lenz_score": 9,
@@ -6881,7 +6555,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -6918,7 +6591,6 @@
         }
       ],
       "language": "en",
-      "domain": "Science",
       "warnings": [
         {
           "text": "Relies on limited sources"
@@ -6970,7 +6642,6 @@
         }
       ],
       "language": "en",
-      "domain": "Science",
       "warnings": [
         {
           "text": "Relies on limited sources"
@@ -7022,7 +6693,6 @@
         }
       ],
       "language": "en",
-      "domain": "Science",
       "warnings": [
         {
           "text": "Relies on limited sources"
@@ -7074,7 +6744,6 @@
         }
       ],
       "language": "en",
-      "domain": "Science",
       "warnings": [
         {
           "text": "Relies on limited sources"
@@ -7126,7 +6795,6 @@
         }
       ],
       "language": "en",
-      "domain": "Science",
       "warnings": [
         {
           "text": "Relies on limited sources"
@@ -7178,7 +6846,6 @@
         }
       ],
       "language": "en",
-      "domain": "Science",
       "warnings": [
         {
           "text": "Relies on limited sources"
@@ -7224,7 +6891,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -7255,7 +6921,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -7286,7 +6951,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -7317,7 +6981,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -7341,7 +7004,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -7350,12 +7012,10 @@
       "message": "Lenz found 2 separate claims in this input. Each needs its own check — send them one at a time, or map the Claims Found list into a Verify a Claim step per item.",
       "claims": [
         {
-          "text": "The Earth is round.",
-          "domain": "Science"
+          "text": "The Earth is round."
         },
         {
-          "text": "Water boils at 100C at sea level.",
-          "domain": "Science"
+          "text": "Water boils at 100C at sea level."
         }
       ],
       "candidates": [],
@@ -7388,7 +7048,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -7419,7 +7078,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -7450,7 +7108,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -7481,7 +7138,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -7512,7 +7168,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -7720,7 +7375,6 @@
         }
       ],
       "language": "en",
-      "domain": "Geography",
       "warnings": [
         {
           "text": "Only two sources were found."
@@ -7772,7 +7426,6 @@
         }
       ],
       "language": "en",
-      "domain": "Geography",
       "warnings": [
         {
           "text": "Only two sources were found."
@@ -7824,7 +7477,6 @@
         }
       ],
       "language": "en",
-      "domain": "Geography",
       "warnings": [
         {
           "text": "Only two sources were found."
@@ -7876,7 +7528,6 @@
         }
       ],
       "language": "en",
-      "domain": "Geography",
       "warnings": [
         {
           "text": "Only two sources were found."
@@ -7922,7 +7573,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -7953,7 +7603,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -7984,7 +7633,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -8008,7 +7656,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -8017,12 +7664,10 @@
       "message": "Lenz found 2 separate claims in this input. Each needs its own check — send them one at a time, or map the Claims Found list into a Verify a Claim step per item.",
       "claims": [
         {
-          "text": "The Earth is round.",
-          "domain": "Science"
+          "text": "The Earth is round."
         },
         {
-          "text": "Water boils at 100C at sea level.",
-          "domain": "Science"
+          "text": "Water boils at 100C at sea level."
         }
       ],
       "candidates": [],
@@ -8237,7 +7882,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
@@ -8268,7 +7912,6 @@
       "suggested_rewrite": "",
       "sources": [],
       "language": "",
-      "domain": "",
       "warnings": [],
       "created_at": "",
       "depth": "",
