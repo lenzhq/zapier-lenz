@@ -150,10 +150,6 @@ const START = {
   verify: (App_) => [App_.creates.verify_claim.operation.perform, { authData: AUTH, inputData: { claim: 'x' } }],
   review: (App_) => [App_.creates.review_draft.operation.perform, { authData: AUTH, inputData: { text: 'x' } }],
   citecheck: (App_) => [App_.creates.check_citations.operation.perform, { authData: AUTH, inputData: { text: 'x' } }],
-  ask: (App_) => [
-    App_.creates.ask.operation.perform,
-    { authData: AUTH, inputData: { verificationId: 'ab12cd34', question: 'Why?' } },
-  ],
   // Testing a callback action in the editor reads /me/usage for one fact:
   // whether the connection has a webhook signing secret.
   usage: (App_) => [
@@ -166,7 +162,6 @@ const START = {
 const ACTION_FOR = {
   errors__payment_required_assess: 'assess',
   errors__payment_required_verify: 'verify',
-  errors__payment_required_ask: 'ask',
   review__402_no_credits: 'review',
   review__402_no_credits_exhausted: 'review',
   citecheck__402_no_credits: 'citecheck',
@@ -174,7 +169,6 @@ const ACTION_FOR = {
   review__429_review_in_flight: 'review',
   citecheck__429_citecheck_in_flight: 'citecheck',
   errors__service_unavailable_capacity: 'assess',
-  errors__service_unavailable_ask: 'ask',
   review__503_capacity: 'review',
   citecheck__503_citations_unavailable: 'citecheck',
   verify__capacity_503: 'verify',
@@ -184,7 +178,6 @@ const ACTION_FOR = {
   verify__webhook_secret_missing_422: 'verify',
   review__422_webhook_secret_missing: 'review',
   citecheck__422_webhook_secret_missing: 'citecheck',
-  errors__ask_failed: 'ask',
   errors__auth_insufficient_scope: 'assess',
   verify__unauthenticated_401: 'verify',
   verify__submit_202: 'verify',
@@ -383,7 +376,6 @@ describe('every endpoint the app calls sends the version', () => {
       'GET /api/v1/reviews/{id}',
       'GET /api/v1/verifications',
       'GET /api/v1/verify/status/{id}',
-      'POST /api/v1/ask/{id}',
       'POST /api/v1/assess',
       'POST /api/v1/citecheck',
       'POST /api/v1/extract',

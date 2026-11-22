@@ -161,7 +161,7 @@ const shapeRow = (c) => ({
   identified_claims: moreClaims(c),
 });
 
-// The replay-stable Idempotency-Key (#19). Shared with creates/ask.js; the
+// The replay-stable Idempotency-Key (#19); the
 // reasoning, and why Assess uses a one-hour window, is in lib/replay-key.js.
 const assessKey = (z, bundle) =>
   replayKey(z, bundle, [(bundle.inputData || {}).language, (bundle.inputData || {}).text], HOUR_MS);

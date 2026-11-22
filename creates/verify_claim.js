@@ -188,10 +188,10 @@ function shapeNeedsInput(status) {
       're-run with that exact wording.';
   } else if (reason === 'duplicate_found') {
     // NOT "rephrase and re-run". The check already exists; reusing it costs
-    // nothing, and it feeds straight into Ask Follow-Up.
+    // nothing.
     message =
       `This claim has already been verified (${first.verification_id || 'see Similar Claims'}). ` +
-      'Reusing it costs nothing: map Duplicate Verification ID into Ask Follow-Up, or open ' +
+      'Reusing it costs nothing: open ' +
       'Duplicate URL. Re-running would spend a full check for the same answer.';
   } else {
     message = `Lenz needs more input before it can verify this claim (reason: ${reason || 'unknown'}).`;

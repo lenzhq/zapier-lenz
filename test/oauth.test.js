@@ -296,7 +296,7 @@ describe('OAuth token requests', () => {
     // token at all.
     it('asks for exactly the scopes the app uses, plus offline_access', () => {
       expect(cfg.scope.split(' ').sort()).toEqual(
-        ['ask', 'ask:read', 'assess', 'extract', 'history:read', 'offline_access', 'usage:read', 'verify', 'webhooks:manage'].sort(),
+        ['assess', 'extract', 'history:read', 'offline_access', 'usage:read', 'verify', 'webhooks:manage'].sort(),
       );
       expect(cfg.scope).not.toContain('history:write');
     });

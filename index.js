@@ -4,7 +4,6 @@ const newVerification = require('./triggers/new_verification');
 const verifyClaim = require('./creates/verify_claim');
 const assess = require('./creates/assess');
 const extractClaims = require('./creates/extract_claims');
-const ask = require('./creates/ask');
 const reviewDraft = require('./creates/review_draft');
 const checkCitations = require('./creates/check_citations');
 
@@ -37,7 +36,6 @@ module.exports = {
     [verifyClaim.key]: verifyClaim,
     [assess.key]: assess,
     [extractClaims.key]: extractClaims,
-    [ask.key]: ask,
     [reviewDraft.key]: reviewDraft,
     [checkCitations.key]: checkCitations,
   },

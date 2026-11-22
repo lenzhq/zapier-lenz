@@ -8035,7 +8035,7 @@
     "account__me_usage_oauth": {
       "__error": {
         "name": "AppError",
-        "message": "{\"message\":\"Verify a Claim needs this Lenz connection to have a webhook signing secret, and it doesn't. Reconnect your Lenz account (Connect a new account) and try this step again. (Assess, Extract Claims, and Ask Follow-Up work without it.)\",\"code\":\"WebhookSecretMissing\",\"status\":422}"
+        "message": "{\"message\":\"Verify a Claim needs this Lenz connection to have a webhook signing secret, and it doesn't. Reconnect your Lenz account (Connect a new account) and try this step again. (Assess and Extract Claims work without it.)\",\"code\":\"WebhookSecretMissing\",\"status\":422}"
       }
     },
     "citecheck__402_no_credits": {
@@ -8082,22 +8082,10 @@
       "citecheck_id": "217c8a01",
       "status": "queued"
     },
-    "errors__ask_failed": {
-      "__error": {
-        "name": "LenzAPIError",
-        "message": "The chat model could not answer this question."
-      }
-    },
     "errors__auth_insufficient_scope": {
       "__error": {
         "name": "AppError",
         "message": "{\"message\":\"The access token does not allow this call.\",\"code\":\"Forbidden\",\"status\":403}"
-      }
-    },
-    "errors__payment_required_ask": {
-      "__error": {
-        "name": "HaltedError",
-        "message": "No remaining ask credits. This call costs 1 credit and you have 0 left. Retrying won't help — top up or upgrade at https://lenz.io/plans?wall=0b5c2d0e-6a51-4c1a-9b8e-2f7d4c3a1e90, or wait for the reset at 2026-11-01T00:00:00+00:00."
       }
     },
     "errors__payment_required_assess": {
@@ -8116,12 +8104,6 @@
       "__error": {
         "name": "ThrottledError",
         "message": "{\"message\":\"Daily /extract limit of 1000 reached for this account. The allowance is shared by every key on the account and by extractions run from the Lenz website. Retrying in Ns.\",\"delay\":900}"
-      }
-    },
-    "errors__service_unavailable_ask": {
-      "__error": {
-        "name": "ThrottledError",
-        "message": "{\"message\":\"Lenz's model providers are temporarily unavailable — nothing was charged. Retrying in Ns.\",\"delay\":90}"
       }
     },
     "errors__service_unavailable_capacity": {
