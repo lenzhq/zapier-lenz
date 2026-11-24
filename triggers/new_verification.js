@@ -72,6 +72,7 @@ const perform = async (z, bundle) => {
       // On list items too (lenz-io VerificationListItem). Normalised to '' for
       // the same reason as key_finding, and to match Verify a Claim.
       suggested_rewrite: item.suggested_rewrite || '',
+      url: item.url || '',
     };
     delete out.domain;
     delete out.entities;
@@ -101,6 +102,7 @@ module.exports = {
       suggested_rewrite: '',
       created_at: '2026-07-14T12:00:00Z',
       modified_at: null,
+      url: 'https://lenz.io/c/the-eiffel-tower-is-330-metres-tall-ab12cd34',
       language: 'en',
     },
     outputFields: [
@@ -115,6 +117,7 @@ module.exports = {
       { key: 'key_finding', label: 'Key Finding' },
       { key: 'executive_summary', label: 'Executive Summary' },
       { key: 'suggested_rewrite', label: 'Suggested Rewrite (not verified)' },
+      { key: 'url', label: 'Lenz Page' },
       { key: 'created_at', label: 'Created At', type: 'datetime' },
     ],
   },

@@ -2095,6 +2095,51 @@ describe('suggested_rewrite', () => {
   });
 });
 
+describe('url (Lenz Page)', () => {
+  const resume = async (status) => {
+    const client = mockClient({ getStatus: jest.fn().mockResolvedValue(status) });
+    LenzClient.mockImplementation(() => client);
+    return appTester(App.creates.verify_claim.operation.performResume, {
+      authData: { access_token: 'lenz_good' },
+      outputData: { task_id: 't1', status: 'processing' },
+    });
+  };
+
+  it('passes a completed verification\'s claim page URL through', async () => {
+    const out = await resume({
+      status: 'completed',
+      result: {
+        verification_id: 'ab12cd34',
+        claim: 'The Eiffel Tower is 330 metres tall.',
+        verdict: 'True',
+        url: 'https://lenz.io/c/the-eiffel-tower-is-330-metres-tall-ab12cd34',
+      },
+    });
+    expect(out.url).toBe('https://lenz.io/c/the-eiffel-tower-is-330-metres-tall-ab12cd34');
+  });
+
+  it.each([
+    ['null url', { status: 'completed', result: { verdict: 'True', url: null } }],
+    ['omitted url (older server)', { status: 'completed', result: { verdict: 'True' } }],
+    ['failed', { status: 'failed', error: 'boom' }],
+    ['needs_input', { status: 'needs_input', reason: 'multi_claim', claims: [] }],
+  ])('emits an empty string when %s', async (_name, status) => {
+    const out = await resume(status);
+    expect(out).toHaveProperty('url', '');
+  });
+
+  it('emits an empty string on perform kickoff', async () => {
+    LenzClient.mockImplementation(() =>
+      mockClient({ verify: jest.fn().mockResolvedValue({ task_id: 'task_123' }) }),
+    );
+    const result = await appTester(App.creates.verify_claim.operation.perform, {
+      authData: { access_token: 'lenz_good' },
+      inputData: { claim: 'The Eiffel Tower is 330 metres tall.' },
+    });
+    expect(result).toHaveProperty('url', '');
+  });
+});
+
 describe('mapSuppliedSources', () => {
   it('returns empty array for non-array inputs', () => {
     for (const bad of [undefined, null, 'string', 123, true, {}]) {

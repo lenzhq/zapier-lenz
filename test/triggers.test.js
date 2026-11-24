@@ -82,6 +82,27 @@ describe('triggers.new_verification', () => {
     expect(result[1].key_finding).toBe('');
   });
 
+  it('passes url through and normalizes null or omitted to ""', async () => {
+    const client = mockClient({
+      items: [
+        { verification_id: 'ab12cd34', claim: 'A', url: 'https://lenz.io/c/a-ab12cd34' },
+        { verification_id: 'ef56gh78', claim: 'B', url: null },
+        { verification_id: 'ij90kl12', claim: 'C' },
+      ],
+      total: 3,
+      page: 1,
+      page_size: 100,
+    });
+    LenzClient.mockImplementation(() => client);
+
+    const bundle = { authData: { access_token: 'lenz_good' } };
+    const result = await appTester(App.triggers.new_verification.operation.perform, bundle);
+
+    expect(result[0].url).toBe('https://lenz.io/c/a-ab12cd34');
+    expect(result[1].url).toBe('');
+    expect(result[2].url).toBe('');
+  });
+
   it('returns an empty array when there are no verifications yet', async () => {
     const client = mockClient({ items: [], total: 0, page: 1, page_size: 100 });
     LenzClient.mockImplementation(() => client);
