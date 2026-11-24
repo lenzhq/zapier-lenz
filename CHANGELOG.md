@@ -3,6 +3,10 @@
 User-facing changes to the Lenz integration for Zapier. Build and release
 mechanics live in [README.md](README.md#building-and-pushing).
 
+## [Unreleased]
+
+- **Lenz Page (`url`) on Verify a Claim and New Verification Completed:** completed verifications now output `url` (`https://lenz.io/c/<slug>`, or empty when there is no page), matching Review a Draft's child verifications.
+
 ## 2.4.0
 
 - Removed: the **Ask Follow-Up** action has been removed; its OAuth scopes (`ask`, `ask:read`) are no longer requested.
