@@ -975,6 +975,90 @@ describe('lib/upload.js', () => {
       );
       expect(sent.get('visibility')).toBe('private');
     });
+
+    it('sends start_page and end_page on extractFileWithZapier and reviewFileWithZapier when provided', async () => {
+      let extractBody;
+      let reviewBody;
+      const mockFetch = jest.fn(async (url, init) => {
+        if (url.endsWith('/extract/file')) {
+          extractBody = init.body;
+          return new Response(JSON.stringify({ status: 'ready', claims: [] }), { status: 200 });
+        }
+        reviewBody = init.body;
+        return new Response(JSON.stringify({ review_id: 'r1', status: 'queued' }), { status: 202 });
+      });
+      await extractFileWithZapier(
+        {
+          file: Buffer.from('%PDF-1.4'),
+          filename: 'a.pdf',
+          contentType: 'application/pdf',
+          startPage: 2,
+          endPage: 5,
+        },
+        { apiKey: 'test', fetchImpl: mockFetch },
+      );
+      expect(extractBody.get('start_page')).toBe('2');
+      expect(extractBody.get('end_page')).toBe('5');
+
+      await reviewFileWithZapier(
+        {
+          file: Buffer.from('%PDF-1.4'),
+          filename: 'a.pdf',
+          contentType: 'application/pdf',
+          startPage: 3,
+          endPage: 7,
+        },
+        { apiKey: 'test', fetchImpl: mockFetch },
+      );
+      expect(reviewBody.get('start_page')).toBe('3');
+      expect(reviewBody.get('end_page')).toBe('7');
+    });
+
+    it('parsePdfPageRange validates page numbers, order, file presence, and PDF type', () => {
+      const { parsePdfPageRange } = require('../lib/upload');
+
+      expect(parsePdfPageRange(zStub, {})).toEqual({ startPage: undefined, endPage: undefined });
+      expect(
+        parsePdfPageRange(
+          zStub,
+          { start_page: '2', end_page: 8 },
+          {
+            hasFile: true,
+            downloaded: { filename: 'paper.pdf', contentType: 'application/pdf' },
+          },
+        ),
+      ).toEqual({ startPage: 2, endPage: 8 });
+
+      expect(() =>
+        parsePdfPageRange(zStub, { start_page: 0 }, { hasFile: true }),
+      ).toThrow('Start Page (PDF) must be a whole number between 1 and 300.');
+
+      expect(() =>
+        parsePdfPageRange(zStub, { end_page: 301 }, { hasFile: true, isSample: true }),
+      ).toThrow('End Page (PDF) must be a whole number between 1 and 300.');
+
+      expect(() =>
+        parsePdfPageRange(zStub, { start_page: 9, end_page: 3 }, { hasFile: true }),
+      ).toThrow('Start Page (PDF) must be less than or equal to End Page (PDF).');
+
+      expect(() =>
+        parsePdfPageRange(zStub, { start_page: 1 }, { hasFile: false, isSample: false }),
+      ).toThrow('only supported when a PDF File is provided');
+
+      expect(() =>
+        parsePdfPageRange(
+          zStub,
+          { start_page: 1 },
+          {
+            hasFile: true,
+            downloaded: {
+              filename: 'report.docx',
+              contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            },
+          },
+        ),
+      ).toThrow('only supported for PDF (.pdf) files');
+    });
   });
 
   describe('generic content types', () => {
