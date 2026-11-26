@@ -3,13 +3,19 @@
 User-facing changes to the Lenz integration for Zapier. Build and release
 mechanics live in [README.md](README.md#building-and-pushing).
 
-## [Unreleased]
+## 3.0.0
 
-- **Lenz Page (`url`) on Verify a Claim and New Verification Completed:** completed verifications now output `url` (`https://lenz.io/c/<slug>`, or empty when there is no page), matching Review a Draft's child verifications.
+3.0.0 removes an action and an output field, so a Zap that uses either needs a change; nothing else a Zap maps changes.
+
+- Removed: the **Ask Follow-Up** action. The Lenz API retired the endpoint behind it, so on 2.4.0 the action already fails; a Zap with an Ask Follow-Up step needs that step deleted. Its OAuth scopes (`ask`, `ask:read`) are no longer requested.
+- Removed: the **Domain** output on Verify a Claim (also on each item of its Claims Found list) and on Extract Claims, which the Lenz API retired. The undeclared `entities` / `key_entities` values on Extract Claims and New Verification Completed are gone too. A Zap that mapped Domain now gets nothing there.
+- Feature: **Lenz Page (`url`) on Verify a Claim and New Verification Completed:** completed verifications now output `url` (`https://lenz.io/c/<slug>`, or empty when there is no page), matching Review a Draft's child verifications.
+- Feature: **Audio file and URL support on Extract Claims and Review a Draft.** Both actions now support audio file uploads (`.mp3`, `.m4a`, `.wav`, `.ogg`, `.webm` up to 10 MiB) via **File**, as well as direct audio URLs via **Text** / **Draft**. Audio files are identified via MIME type or magic-byte sniffing, and audio `.webm` files recorded by browsers are normalized automatically.
+- Update: the **Language** dropdown on every action offers the 39 output languages the Lenz API supports (was 13). `auto` and any other code can still be entered as a custom value.
+- Docs: the README and field help describe Lenz as an accuracy verification API and use the current product positioning. Nothing the actions do changes.
 
 ## 2.4.0
 
-- Removed: the **Ask Follow-Up** action has been removed; its OAuth scopes (`ask`, `ask:read`) are no longer requested.
 - Feature: **Supplied Sources** on Verify a Claim, Check Citations and Review a Draft: sources you provide (Source Text, with an optional URL, DOI, citation, title and published date) that Lenz checks against beside the web. On Verify a Claim each source says where it came from in **Source Origin** (`web` or `supplied`).
 - Fix: **a check stopped elsewhere now ends the step.** A verification, review or citation check stopped with lenz.io's Stop button read as "still running" since 2.3.0, which asks for the API version that names such a job `cancelled`. It now reads `failed`, with Failure Class `cancelled` and Retryable false, as it did before 2.3.0, so a Zap that filters on Status sees it end.
 - Update: internal only. The app uses lenz-io 3.6 (was 2.18), the SDK release that sends Supplied Sources; 2.18 dropped them from every request. Outputs are unchanged, except that one error a step can stop with (a review whose result can no longer be read) is now named `LenzNotFoundError` instead of `LenzError`, with the same message. A required field left blank on a live run (an empty Claim) stops the step with "claim is required." instead of being sent; the step is not retried.
@@ -19,8 +25,7 @@ mechanics live in [README.md](README.md#building-and-pushing).
   is gone. **No output changes**: for every recorded API response, every action and the
   trigger give the same fields, in the same order, with the same values as 2.3.0. Like
   2.3.0, it needs a Lenz API that serves 2026-10-11.
-- Feature: **File upload support on Extract Claims and Review a Draft.** Both actions now accept either **Text** (draft/text string) or **File** (a document, image, or audio file up to 10 MiB, passed from a previous step or as a public `https://` URL), supporting `.docx`, `.pdf`, `.png`, `.jpg`, `.webp`, `.mp3`, `.m4a`, `.wav`, `.ogg`, and `.webm`. Providing both or neither is rejected before sending. Files are downloaded safely (bounded to 10 MiB, SSRF/private network protection) and submitted via multipart endpoints (`POST /api/v1/extract/file` and `POST /api/v1/review/file`). File refusal errors (`empty_file`, `file_too_large`, `unsupported_file_type`, etc.) halt the Zap gracefully on live runs and show a clear configuration error during editor testing.
-- Feature: **Audio file and URL support on Extract Claims and Review a Draft.** Both actions now support audio file uploads (`.mp3`, `.m4a`, `.wav`, `.ogg`, `.webm` up to 10 MiB) via **File**, as well as direct audio URLs via **Text** / **Draft**. Audio files are identified via MIME type or magic-byte sniffing, and audio `.webm` files recorded by browsers are normalized automatically.
+- Feature: **File upload support on Extract Claims and Review a Draft.** Both actions now accept either **Text** (draft/text string) or **File** (a document or image up to 10 MiB, passed from a previous step or as a public `https://` URL), supporting `.docx`, `.pdf`, `.png`, `.jpg`, and `.webp`. Providing both or neither is rejected before sending. Files are downloaded safely (bounded to 10 MiB, SSRF/private network protection) and submitted via multipart endpoints (`POST /api/v1/extract/file` and `POST /api/v1/review/file`). File refusal errors (`empty_file`, `file_too_large`, `unsupported_file_type`, etc.) halt the Zap gracefully on live runs and show a clear configuration error during editor testing.
 - Docs: the Review a Draft Status row now says why a review can come back `queued`, `assessing` or `verifying` (Zapier resumes on the first message to its callback address, and a covered account's deep check can send a certificate message first) and how to read the finished review by its Review ID. Nothing the action does changes.
 - Docs: Verify a Claim's `needs_input` reason is now documented as `multi_claim` only. The README still listed `duplicate_found`, which the Lenz API retired on 2026-09-26. Its fields (Duplicate Verification ID, Duplicate URL, Similar Claims) stay on every result, always empty. Nothing the action does changes.
 
