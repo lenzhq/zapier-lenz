@@ -1,6 +1,6 @@
 {
   "name": "zapier-lenz",
-  "version": "2.4.0",
+  "version": "3.0.0",
   "description": "Check the facts, figures, and citations in your work with Lenz — sourced verdicts and reasoning inside your Zaps.",
   "license": "MIT",
   "engines": {
