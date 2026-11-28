@@ -4,7 +4,7 @@ const { mapLenzError } = require('../lib/errors');
 const { lenzClient, CALL_TIMEOUT_MS } = require('../client');
 const { languageField, LANGUAGE_HELP_TEXT_AUTO } = require('../lib/languages');
 const { isObject, NO_CHECKABLE_CLAIM } = require('../lib/shapes');
-const { downloadFileUrl } = require('../lib/upload');
+const { downloadFileUrl, parsePdfPageRange } = require('../lib/upload');
 const { replayKey, HOUR_MS } = require('../lib/replay-key');
 
 // `perform` returns the API's response untouched, so every value here has to
@@ -185,6 +185,8 @@ const perform = async (z, bundle) => {
     throw new z.errors.HaltedError('Provide either Text or File.');
   }
 
+  const pageRange = parsePdfPageRange(z, inputData, { hasFile, isSample });
+
   if (isSample) {
     // Copied, not returned by reference — see the same note in
     // creates/assess.js and creates/verify_claim.js.
@@ -200,11 +202,16 @@ const perform = async (z, bundle) => {
         timeoutMs: Math.max(1000, deadline - Date.now()),
         isSample,
       });
+      parsePdfPageRange(z, inputData, { hasFile, downloaded, isSample });
       const fileSha256 = z.hash('sha256', downloaded.buffer, 'hex');
+      const keyParts = ['extract', fileSha256, inputData.language || '', focus || ''];
+      if (pageRange.startPage !== undefined || pageRange.endPage !== undefined) {
+        keyParts.push(pageRange.startPage ?? '', pageRange.endPage ?? '');
+      }
       const idempotencyKey = replayKey(
         z,
         bundle,
-        ['extract', fileSha256, inputData.language || '', focus || ''],
+        keyParts,
         HOUR_MS,
       );
       const result = await client.extractFile(
@@ -214,6 +221,8 @@ const perform = async (z, bundle) => {
           contentType: downloaded.contentType,
           language: inputData.language || undefined,
           focus: focus || undefined,
+          ...(pageRange.startPage !== undefined ? { startPage: pageRange.startPage } : {}),
+          ...(pageRange.endPage !== undefined ? { endPage: pageRange.endPage } : {}),
         },
         {
           idempotencyKey,
@@ -274,7 +283,23 @@ module.exports = {
         type: 'file',
         required: false,
         helpText:
-          'A file (.docx, .pdf up to 100 pages, .png, .jpg, .webp, .mp3, .m4a, .wav, .ogg, or .webm, up to 10 MB) to extract claims from instead of Text. Provide either Text or File, not both.',
+          'A file (.docx, .pdf up to 300 pages, .png, .jpg, .webp, .mp3, .m4a, .wav, .ogg, or .webm, up to 10 MB) to extract claims from instead of Text. Provide either Text or File, not both.',
+      },
+      {
+        key: 'start_page',
+        label: 'Start Page (PDF)',
+        type: 'integer',
+        required: false,
+        helpText:
+          'Optional first PDF page to read (1-indexed, inclusive, 1 to 300; PDF files only). Leave blank to start at page 1.',
+      },
+      {
+        key: 'end_page',
+        label: 'End Page (PDF)',
+        type: 'integer',
+        required: false,
+        helpText:
+          'Optional last PDF page to read (1-indexed, inclusive, 1 to 300; PDF files only). Leave blank to read through the last page.',
       },
       languageField(LANGUAGE_HELP_TEXT_AUTO),
       {

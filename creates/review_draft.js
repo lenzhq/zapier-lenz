@@ -4,7 +4,7 @@ const { mapLenzError } = require('../lib/errors');
 const { lenzClient, CALL_TIMEOUT_MS } = require('../client');
 const { languageField } = require('../lib/languages');
 const { replayKey, HOUR_MS } = require('../lib/replay-key');
-const { downloadFileUrl } = require('../lib/upload');
+const { downloadFileUrl, parsePdfPageRange } = require('../lib/upload');
 const {
   parseSignedCallback,
   requireWebhookSecretWhileTesting,
@@ -243,23 +243,23 @@ const reviewInput = (bundle) => {
 // the FIRST run's URL, leaving this one waiting for a callback that never
 // comes. A replay of the same run carries the same URL and gets the first
 // review.
-const reviewKey = (z, bundle, input, callbackUrl) =>
-  replayKey(
-    z,
-    bundle,
-    [
-      'review',
-      callbackUrl,
-      input.file_sha256 || input.text,
-      input.language,
-      input.depth,
-      input.maxVerifications,
-      input.maxCitations,
-      input.visibility,
-      input.supplied_sources ? JSON.stringify(input.supplied_sources) : '',
-    ],
-    HOUR_MS,
-  );
+const reviewKey = (z, bundle, input, callbackUrl) => {
+  const parts = [
+    'review',
+    callbackUrl,
+    input.file_sha256 || input.text,
+    input.language,
+    input.depth,
+    input.maxVerifications,
+    input.maxCitations,
+    input.visibility,
+    input.supplied_sources ? JSON.stringify(input.supplied_sources) : '',
+  ];
+  if (input.startPage !== undefined || input.endPage !== undefined) {
+    parts.push(input.startPage ?? '', input.endPage ?? '');
+  }
+  return replayKey(z, bundle, parts, HOUR_MS);
+};
 
 const perform = async (z, bundle) => {
   const isSample = Boolean(bundle.meta && bundle.meta.isLoadingSample);
@@ -286,6 +286,8 @@ const perform = async (z, bundle) => {
     throw new z.errors.HaltedError('Provide either Text or File.');
   }
 
+  const pageRange = parsePdfPageRange(z, inputData, { hasFile, isSample });
+
   // Editor testing never runs a real two-to-four-minute review and never
   // spends credits: only the free webhook-secret check, then the sample.
   if (isSample) {
@@ -305,8 +307,19 @@ const perform = async (z, bundle) => {
         isSample,
         timeoutMs: Math.max(1_000, deadline - Date.now()),
       });
+      parsePdfPageRange(z, inputData, { hasFile, downloaded, isSample });
       const fileSha256 = z.hash('sha256', downloaded.buffer, 'hex');
-      const idempotencyKey = reviewKey(z, bundle, { ...input, file_sha256: fileSha256 }, callbackUrl);
+      const idempotencyKey = reviewKey(
+        z,
+        bundle,
+        {
+          ...input,
+          file_sha256: fileSha256,
+          startPage: pageRange.startPage,
+          endPage: pageRange.endPage,
+        },
+        callbackUrl,
+      );
       const remainingMs = Math.max(1_000, deadline - Date.now());
       const accepted = await client.reviewFile(
         {
@@ -321,6 +334,8 @@ const perform = async (z, bundle) => {
           maxCitations: input.maxCitations,
           visibility: input.visibility,
           suppliedSources: input.supplied_sources,
+          ...(pageRange.startPage !== undefined ? { startPage: pageRange.startPage } : {}),
+          ...(pageRange.endPage !== undefined ? { endPage: pageRange.endPage } : {}),
         },
         // `timeoutMs`, the key client.js's wrapper sets: passing `timeout`
         // left the wrapper's full 28s in place after a slow download.
@@ -397,7 +412,23 @@ module.exports = {
         type: 'file',
         required: false,
         helpText:
-          'A document, image, or audio file to review (.docx, .pdf up to 100 pages, .png, .jpg, .webp, .mp3, .m4a, .wav, .ogg, .webm up to 10 MB) passed from a previous step or as a public HTTPS link. Provide either Text or File, not both.',
+          'A document, image, or audio file to review (.docx, .pdf up to 300 pages, .png, .jpg, .webp, .mp3, .m4a, .wav, .ogg, .webm up to 10 MB) passed from a previous step or as a public HTTPS link. Provide either Text or File, not both.',
+      },
+      {
+        key: 'start_page',
+        label: 'Start Page (PDF)',
+        type: 'integer',
+        required: false,
+        helpText:
+          'Optional first PDF page to review (1-indexed, inclusive, 1 to 300; PDF files only). Leave blank to start at page 1.',
+      },
+      {
+        key: 'end_page',
+        label: 'End Page (PDF)',
+        type: 'integer',
+        required: false,
+        helpText:
+          'Optional last PDF page to review (1-indexed, inclusive, 1 to 300; PDF files only). Leave blank to read through the last page.',
       },
       languageField(),
       {
